@@ -11,6 +11,8 @@ class SidebarPanel : public QWidget {
 public:
     explicit SidebarPanel(QWidget *parent = nullptr);
     QPushButton *addButton(const QString &text);
+    // 带图标的侧栏按钮
+    QPushButton *addButton(const QString &text, const QString &iconPath);
 
 signals:
     void buttonClicked(int index);

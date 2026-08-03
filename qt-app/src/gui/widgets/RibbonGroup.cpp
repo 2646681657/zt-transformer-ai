@@ -23,9 +23,45 @@ RibbonGroup::RibbonGroup(const QString &title, QWidget *parent)
 void RibbonGroup::addButton(RibbonButton *button)
 {
     m_contentLayout->addWidget(button);
+    m_buttons.append(button);
+    connect(button, &QToolButton::toggled, this, &RibbonGroup::onButtonToggled);
 }
 
 void RibbonGroup::addWidget(QWidget *widget)
 {
     m_contentLayout->addWidget(widget);
+}
+
+void RibbonGroup::setExclusive(bool exclusive)
+{
+    m_exclusive = exclusive;
+}
+
+bool RibbonGroup::hasSelection() const
+{
+    for (auto *btn : m_buttons) {
+        if (btn->isChecked())
+            return true;
+    }
+    return false;
+}
+
+void RibbonGroup::onButtonToggled(bool checked)
+{
+    if (!m_exclusive) return;
+
+    auto *sender = qobject_cast<RibbonButton *>(this->sender());
+    if (!sender) return;
+
+    if (checked) {
+        // 取消组内其他按钮
+        for (auto *btn : m_buttons) {
+            if (btn != sender && btn->isChecked()) {
+                btn->blockSignals(true);
+                btn->setActive(false);
+                btn->blockSignals(false);
+            }
+        }
+    }
+    emit selectionChanged();
 }

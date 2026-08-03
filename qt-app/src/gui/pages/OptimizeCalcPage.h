@@ -2,9 +2,11 @@
 #define OPTIMIZECALCPAGE_H
 
 #include <QWidget>
+#include <QVector>
 #include "TransformerParams.h"
 
 class RibbonBar;
+class RibbonGroup;
 class ParamTableWidget;
 class SidebarPanel;
 class QTextEdit;
@@ -19,6 +21,9 @@ signals:
     void navigateToEnterCalc();
     void navigateBack();
 
+private slots:
+    void onEnterCalcClicked();
+
 private:
     void setupRibbon();
     void setupMainArea();
@@ -27,6 +32,7 @@ private:
     SidebarPanel *m_sidebar;
     QTextEdit *m_helpPanel;
     TransformerParams m_params;
+    QVector<RibbonGroup *> m_selectGroups;
 };
 
 #endif // OPTIMIZECALCPAGE_H

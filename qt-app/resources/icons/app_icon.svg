@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#3a7bd5"/>
+      <stop offset="100%" style="stop-color:#1e4070"/>
+    </linearGradient>
+  </defs>
+  <!-- Rounded square background -->
+  <rect x="4" y="4" width="56" height="56" rx="12" ry="12" fill="url(#bg)"/>
+  <!-- Transformer core (E-shape) -->
+  <rect x="16" y="14" width="4" height="36" rx="1" fill="white"/>
+  <rect x="16" y="14" width="20" height="4" rx="1" fill="white"/>
+  <rect x="16" y="30" width="16" height="4" rx="1" fill="white"/>
+  <rect x="16" y="46" width="20" height="4" rx="1" fill="white"/>
+  <!-- Coil windings -->
+  <rect x="38" y="14" width="4" height="36" rx="1" fill="white"/>
+  <path d="M42 18 C48 18 48 26 42 26" stroke="#ffd700" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+  <path d="M42 22 C52 22 52 34 42 34" stroke="#ffd700" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+  <path d="M42 38 C48 38 48 46 42 46" stroke="#ffd700" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+  <!-- Small optimization sparkle -->
+  <circle cx="50" cy="12" r="3" fill="#ffd700"/>
+  <line x1="50" y1="7" x2="50" y2="9" stroke="#ffd700" stroke-width="1.5" stroke-linecap="round"/>
+  <line x1="50" y1="15" x2="50" y2="17" stroke="#ffd700" stroke-width="1.5" stroke-linecap="round"/>
+  <line x1="45" y1="12" x2="47" y2="12" stroke="#ffd700" stroke-width="1.5" stroke-linecap="round"/>
+  <line x1="53" y1="12" x2="55" y2="12" stroke="#ffd700" stroke-width="1.5" stroke-linecap="round"/>
+</svg>

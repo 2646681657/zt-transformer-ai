@@ -3,6 +3,7 @@ project(ztf-designer VERSION 2.0.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_RC_COMPILER "D:/QT/Tools/mingw1310_64/bin/windres.exe")
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
@@ -22,6 +23,7 @@ qt_add_executable(ztf-designer WIN32
     ${ADAPTER_SOURCES}
     ${GUI_SOURCES}
     resources/resources.qrc
+    app.rc
 )
 
 target_include_directories(ztf-designer PRIVATE

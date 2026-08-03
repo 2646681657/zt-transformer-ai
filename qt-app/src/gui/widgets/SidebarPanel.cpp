@@ -1,4 +1,5 @@
 #include "SidebarPanel.h"
+#include <QIcon>
 
 SidebarPanel::SidebarPanel(QWidget *parent)
     : QWidget(parent)
@@ -13,7 +14,14 @@ SidebarPanel::SidebarPanel(QWidget *parent)
 
 QPushButton *SidebarPanel::addButton(const QString &text)
 {
+    return addButton(text, QString());
+}
+
+QPushButton *SidebarPanel::addButton(const QString &text, const QString &iconPath)
+{
     auto *btn = new QPushButton(text, this);
+    if (!iconPath.isEmpty())
+        btn->setIcon(QIcon(iconPath));
     btn->setFixedHeight(30);
     btn->setStyleSheet(
         "QPushButton { background: #4a7aba; color: white; border-radius: 3px; font-size: 11px; }"

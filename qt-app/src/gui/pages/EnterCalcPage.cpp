@@ -23,13 +23,29 @@ EnterCalcPage::EnterCalcPage(QWidget *parent)
     mainLayout->setContentsMargins(0, 0, 0, 0);
     mainLayout->setSpacing(0);
 
-    // Title bar
-    auto *titleBar = new QLabel(
-        QStringLiteral("油浸式变压器电磁计算(长方形线圈的非晶合金铁心)导线优化设计软件 V2.0-2025"), this);
-    titleBar->setFixedHeight(28);
-    titleBar->setAlignment(Qt::AlignCenter);
-    titleBar->setObjectName("PageTitleBar");
-    mainLayout->addWidget(titleBar);
+    // Title bar with back button
+    auto *titleWidget = new QWidget(this);
+    titleWidget->setFixedHeight(28);
+    titleWidget->setObjectName("PageTitleBar");
+    auto *titleLayout = new QHBoxLayout(titleWidget);
+    titleLayout->setContentsMargins(4, 0, 4, 0);
+    titleLayout->setSpacing(8);
+
+    auto *backBtn = new QPushButton(QStringLiteral("< 返回"), titleWidget);
+    backBtn->setFlat(true);
+    backBtn->setCursor(Qt::PointingHandCursor);
+    backBtn->setStyleSheet("QPushButton { color: white; font-size: 11px; border: none; padding: 2px 8px; }"
+                           "QPushButton:hover { background: rgba(255,255,255,0.2); border-radius: 3px; }");
+    connect(backBtn, &QPushButton::clicked, this, &EnterCalcPage::navigateBack);
+    titleLayout->addWidget(backBtn);
+
+    auto *titleLabel = new QLabel(
+        QStringLiteral("油浸式变压器电磁计算(长方形线圈的非晶合金铁心)导线优化设计软件 V2.0-2025"), titleWidget);
+    titleLabel->setAlignment(Qt::AlignCenter);
+    titleLabel->setStyleSheet("color: white; font-size: 12px;");
+    titleLayout->addWidget(titleLabel, 1);
+
+    mainLayout->addWidget(titleWidget);
 
     // Ribbon stack (shows different ribbon per tab)
     m_ribbonStack = new QWidget(this);
@@ -66,52 +82,72 @@ EnterCalcPage::EnterCalcPage(QWidget *parent)
 void EnterCalcPage::buildOptimizeRibbon()
 {
     auto *g1 = m_optimizeRibbon->addGroup(QStringLiteral("初始化设置"));
-    g1->addButton(new RibbonButton(QStringLiteral("快速计算"), g1));
-    g1->addButton(new RibbonButton(QStringLiteral("产品结构"), g1));
-    g1->addButton(new RibbonButton(QStringLiteral("材料选择"), g1));
-    g1->addButton(new RibbonButton(QStringLiteral("修正参数"), g1));
-    g1->addButton(new RibbonButton(QStringLiteral("循环参数"), g1));
-    g1->addButton(new RibbonButton(QStringLiteral("约束条件"), g1));
-    g1->addButton(new RibbonButton(QStringLiteral("初始化信息"), g1));
+    g1->addButton(new RibbonButton(QStringLiteral("快速计算"), ":/icons/fast_calc.svg", g1));
+    g1->addButton(new RibbonButton(QStringLiteral("产品结构"), ":/icons/product.svg", g1));
+    g1->addButton(new RibbonButton(QStringLiteral("材料选择"), ":/icons/material.svg", g1));
+    g1->addButton(new RibbonButton(QStringLiteral("修正参数"), ":/icons/adjust.svg", g1));
+    g1->addButton(new RibbonButton(QStringLiteral("循环参数"), ":/icons/loop_param.svg", g1));
+    g1->addButton(new RibbonButton(QStringLiteral("约束条件"), ":/icons/constraint.svg", g1));
+    g1->addButton(new RibbonButton(QStringLiteral("初始化信息"), ":/icons/init_info.svg", g1));
     m_optimizeRibbon->addSeparator();
 
     auto *g2 = m_optimizeRibbon->addGroup(QStringLiteral("寻优计算"));
-    g2->addButton(new RibbonButton(QStringLiteral("开始运行计算"), g2));
-    g2->addButton(new RibbonButton(QStringLiteral("暂停计算"), g2));
-    g2->addButton(new RibbonButton(QStringLiteral("停止计算"), g2));
+    auto *startBtn = new RibbonButton(QStringLiteral("开始运行计算"), ":/icons/play.svg", g2);
+    startBtn->setCheckable(false);
+    g2->addButton(startBtn);
+    auto *pauseBtn = new RibbonButton(QStringLiteral("暂停计算"), ":/icons/pause.svg", g2);
+    pauseBtn->setCheckable(false);
+    g2->addButton(pauseBtn);
+    auto *stopBtn = new RibbonButton(QStringLiteral("停止计算"), ":/icons/stop.svg", g2);
+    stopBtn->setCheckable(false);
+    g2->addButton(stopBtn);
     m_optimizeRibbon->addSeparator();
 
     auto *g3 = m_optimizeRibbon->addGroup(QStringLiteral("方案库"));
-    g3->addButton(new RibbonButton(QStringLiteral("进入方案选择"), g3));
+    auto *schemeBtn = new RibbonButton(QStringLiteral("进入方案选择"), ":/icons/scheme.svg", g3);
+    schemeBtn->setCheckable(false);
+    g3->addButton(schemeBtn);
 }
 
 void EnterCalcPage::buildSchemeRibbon()
 {
     auto *g1 = m_schemeRibbon->addGroup(QStringLiteral("显示选项"));
-    g1->addButton(new RibbonButton(QStringLiteral("显示主要参数"), g1));
+    g1->addButton(new RibbonButton(QStringLiteral("显示主要参数"), ":/icons/visibility.svg", g1));
     m_schemeRibbon->addSeparator();
 
     auto *g2 = m_schemeRibbon->addGroup(QStringLiteral("排序与筛选"));
-    g2->addButton(new RibbonButton(QStringLiteral("升序"), g2));
-    g2->addButton(new RibbonButton(QStringLiteral("降序"), g2));
-    g2->addButton(new RibbonButton(QStringLiteral("筛选"), g2));
+    g2->addButton(new RibbonButton(QStringLiteral("升序"), ":/icons/sort_asc.svg", g2));
+    g2->addButton(new RibbonButton(QStringLiteral("降序"), ":/icons/sort_desc.svg", g2));
+    g2->addButton(new RibbonButton(QStringLiteral("筛选"), ":/icons/filter.svg", g2));
     m_schemeRibbon->addSeparator();
 
     auto *g3 = m_schemeRibbon->addGroup(QStringLiteral("方案选择"));
-    g3->addButton(new RibbonButton(QStringLiteral("方案确认"), g3));
+    auto *confirmBtn = new RibbonButton(QStringLiteral("方案确认"), ":/icons/confirm.svg", g3);
+    confirmBtn->setCheckable(false);
+    g3->addButton(confirmBtn);
 }
 
 void EnterCalcPage::buildPrintRibbon()
 {
     auto *g1 = m_printRibbon->addGroup(QStringLiteral("打印"));
-    g1->addButton(new RibbonButton(QStringLiteral("快速打印"), g1));
-    g1->addButton(new RibbonButton(QStringLiteral("打印"), g1));
-    g1->addButton(new RibbonButton(QStringLiteral("打印预览"), g1));
+    auto *b1 = new RibbonButton(QStringLiteral("快速打印"), ":/icons/print_fast.svg", g1);
+    b1->setCheckable(false);
+    g1->addButton(b1);
+    auto *b2 = new RibbonButton(QStringLiteral("打印"), ":/icons/print.svg", g1);
+    b2->setCheckable(false);
+    g1->addButton(b2);
+    auto *b3 = new RibbonButton(QStringLiteral("打印预览"), ":/icons/preview.svg", g1);
+    b3->setCheckable(false);
+    g1->addButton(b3);
     m_printRibbon->addSeparator();
 
     auto *g2 = m_printRibbon->addGroup(QStringLiteral("输出Excel"));
-    g2->addButton(new RibbonButton(QStringLiteral("输出外部文件"), g2));
-    g2->addButton(new RibbonButton(QStringLiteral("保存为计算单"), g2));
+    auto *b4 = new RibbonButton(QStringLiteral("输出外部文件"), ":/icons/export.svg", g2);
+    b4->setCheckable(false);
+    g2->addButton(b4);
+    auto *b5 = new RibbonButton(QStringLiteral("保存为计算单"), ":/icons/save.svg", g2);
+    b5->setCheckable(false);
+    g2->addButton(b5);
 }
 
 void EnterCalcPage::setupOptimizeTab()
@@ -123,12 +159,12 @@ void EnterCalcPage::setupOptimizeTab()
 
     // Left sidebar
     auto *sidebar = new SidebarPanel(tab);
-    sidebar->addButton(QStringLiteral("选用推荐方案"));
-    sidebar->addButton(QStringLiteral("保存为我的方案"));
-    sidebar->addButton(QStringLiteral("从方案库中选择"));
-    sidebar->addButton(QStringLiteral("返回上一次方案"));
-    sidebar->addButton(QStringLiteral("下一步"));
-    sidebar->addButton(QStringLiteral("取消"));
+    sidebar->addButton(QStringLiteral("选用推荐方案"), ":/icons/recommend.svg");
+    sidebar->addButton(QStringLiteral("保存为我的方案"), ":/icons/save_scheme.svg");
+    sidebar->addButton(QStringLiteral("从方案库中选择"), ":/icons/library.svg");
+    sidebar->addButton(QStringLiteral("返回上一次方案"), ":/icons/undo.svg");
+    sidebar->addButton(QStringLiteral("下一步"), ":/icons/enter_calc.svg");
+    sidebar->addButton(QStringLiteral("取消"), ":/icons/stop.svg");
     layout->addWidget(sidebar);
 
     // Structure config table
