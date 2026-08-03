@@ -1,0 +1,33 @@
+# Build
+build/
+cmake-build-*/
+
+# Qt generated
+moc_*
+ui_*
+qrc_*
+*_autogen/
+
+# Compiled objects
+*.o
+*.obj
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Qt Creator
+*.pro.user
+*.qbs.user
+
+# IDE & OS
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.env.*
