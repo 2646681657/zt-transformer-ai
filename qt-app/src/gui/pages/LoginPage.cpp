@@ -9,23 +9,24 @@ LoginPage::LoginPage(UserStore *store, QWidget *parent)
       m_settings("ZTF", "Designer")
 {
     setStyleSheet("LoginPage { background: qlineargradient(x1:0,y1:0,x2:1,y2:1,"
-                  "stop:0 #1e3a5f, stop:1 #2a5a9a); }");
+                  "stop:0 #0d1117, stop:0.5 #1a1d23, stop:1 #0d1117); }");
     setAttribute(Qt::WA_StyledBackground, true);
 
     auto *mainLayout = new QVBoxLayout(this);
     mainLayout->setAlignment(Qt::AlignCenter);
 
     auto *card = new QFrame(this);
-    card->setFixedSize(380, 320);
-    card->setStyleSheet("QFrame { background: white; border-radius: 8px; }");
+    card->setFixedSize(400, 340);
+    card->setStyleSheet("QFrame { background: #22262e; border-radius: 12px;"
+                        "border: 1px solid #3a4050; }");
 
     auto *cardLayout = new QVBoxLayout(card);
     cardLayout->setSpacing(14);
     cardLayout->setContentsMargins(36, 28, 36, 28);
 
-    auto *title = new QLabel(QStringLiteral("同优计算优化设计软件(V2.0)"), card);
+    auto *title = new QLabel(QStringLiteral("中天伯乐达变压器电磁计算AI寻优软件"), card);
     title->setAlignment(Qt::AlignCenter);
-    title->setStyleSheet("color: #2a5a9a; font-size: 17px; font-weight: bold;"
+    title->setStyleSheet("color: #4dd0e1; font-size: 17px; font-weight: bold;"
                          "background: transparent;");
     cardLayout->addWidget(title);
     cardLayout->addSpacing(8);
@@ -34,9 +35,9 @@ LoginPage::LoginPage(UserStore *store, QWidget *parent)
     m_usernameEdit->setPlaceholderText(QStringLiteral("请输入用户名"));
     m_usernameEdit->setFixedHeight(34);
     m_usernameEdit->setStyleSheet(
-        "QLineEdit { border: 1px solid #ccc; border-radius: 4px; padding: 4px 10px;"
-        "font-size: 13px; background: #fafafa; color: #333; }"
-        "QLineEdit:focus { border: 1px solid #2a5a9a; background: white; }");
+        "QLineEdit { border: 1px solid #3a4050; border-radius: 6px; padding: 6px 12px;"
+        "font-size: 13px; background: #1a1d23; color: #e0e6ed; }"
+        "QLineEdit:focus { border: 1px solid #00bcd4; background: #1e2228; }");
     cardLayout->addWidget(m_usernameEdit);
 
     m_passwordEdit = new QLineEdit(card);
@@ -47,12 +48,12 @@ LoginPage::LoginPage(UserStore *store, QWidget *parent)
     cardLayout->addWidget(m_passwordEdit);
 
     m_rememberCheck = new QCheckBox(QStringLiteral("记住账号密码"), card);
-    m_rememberCheck->setStyleSheet("QCheckBox { color: #555; font-size: 12px;"
+    m_rememberCheck->setStyleSheet("QCheckBox { color: #8a9bb0; font-size: 12px;"
                                    "background: transparent; }");
     cardLayout->addWidget(m_rememberCheck);
 
     m_errorLabel = new QLabel(card);
-    m_errorLabel->setStyleSheet("color: #e53935; font-size: 12px; background: transparent;");
+    m_errorLabel->setStyleSheet("color: #ef5350; font-size: 12px; background: transparent;");
     m_errorLabel->setAlignment(Qt::AlignCenter);
     cardLayout->addWidget(m_errorLabel);
 
@@ -60,10 +61,10 @@ LoginPage::LoginPage(UserStore *store, QWidget *parent)
     loginBtn->setFixedHeight(38);
     loginBtn->setCursor(Qt::PointingHandCursor);
     loginBtn->setStyleSheet(
-        "QPushButton { background: #2a5a9a; color: white; border: none;"
-        "border-radius: 4px; font-size: 14px; font-weight: bold; }"
-        "QPushButton:hover { background: #3a6aaa; }"
-        "QPushButton:pressed { background: #1e4070; }");
+        "QPushButton { background: #00bcd4; color: #0d1117; border: none;"
+        "border-radius: 6px; font-size: 14px; font-weight: bold; }"
+        "QPushButton:hover { background: #4dd0e1; }"
+        "QPushButton:pressed { background: #0097a7; color: white; }");
     cardLayout->addWidget(loginBtn);
 
     mainLayout->addWidget(card);

@@ -1,5 +1,6 @@
 #ifndef TRANSFORMERPARAMS_H
 #define TRANSFORMERPARAMS_H
+// 变压器输入参数结构体（容量/电压/损耗/温升等设计输入）
 
 #include <QString>
 
@@ -30,6 +31,7 @@ struct TransformerParams {
     double lvCoilTempRise_K = 65.0;
 
     // 选项
+    QString efficiencyCalcMethod = QStringLiteral("标准计算");
     QString productModel = QStringLiteral("S13配变");
     QString connectionGroup = QStringLiteral("Dyn");
     int frequency_Hz = 50;

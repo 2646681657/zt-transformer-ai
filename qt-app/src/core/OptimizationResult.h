@@ -1,5 +1,6 @@
 #ifndef OPTIMIZATIONRESULT_H
 #define OPTIMIZATIONRESULT_H
+// 优化方案结果（单个方案的成本/铁芯尺寸/绕组参数）
 
 struct OptimizationResult {
     int schemeIdx = 0;

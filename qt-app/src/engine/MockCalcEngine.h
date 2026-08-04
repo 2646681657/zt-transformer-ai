@@ -1,5 +1,6 @@
 #ifndef MOCKCALCENGINE_H
 #define MOCKCALCENGINE_H
+// Mock计算引擎（返回固定演示数据，用于UI开发阶段）
 
 #include "ICalcEngine.h"
 

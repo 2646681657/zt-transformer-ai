@@ -15,7 +15,7 @@ MainDashboardPage::MainDashboardPage(const QString &username, QWidget *parent)
     : QWidget(parent), m_username(username)
 {
     setAttribute(Qt::WA_StyledBackground, true);
-    setStyleSheet("MainDashboardPage { background: #d6e4f0; }");
+    setStyleSheet("MainDashboardPage { background: #1a1d23; }");
 
     auto *mainLayout = new QVBoxLayout(this);
     mainLayout->setContentsMargins(0, 0, 0, 0);
@@ -23,7 +23,7 @@ MainDashboardPage::MainDashboardPage(const QString &username, QWidget *parent)
 
     // Top navigation area (light blue background with icons)
     auto *navArea = new QWidget(this);
-    navArea->setStyleSheet("background: #dce8f4; border-bottom: 2px solid #7eaed4;");
+    navArea->setStyleSheet("background: #22262e; border-bottom: 1px solid #00bcd4;");
     auto *navAreaLayout = new QHBoxLayout(navArea);
     navAreaLayout->setContentsMargins(20, 12, 20, 12);
     navAreaLayout->setSpacing(0);
@@ -32,7 +32,7 @@ MainDashboardPage::MainDashboardPage(const QString &username, QWidget *parent)
 
     // Sub buttons area (action shortcuts)
     auto *subArea = new QWidget(this);
-    subArea->setStyleSheet("background: #eaf2fa; border-bottom: 1px solid #c0d4e8;");
+    subArea->setStyleSheet("background: #1e2228; border-bottom: 1px solid #3a4050;");
     subArea->setFixedHeight(90);
     auto *subLayout = new QHBoxLayout(subArea);
     subLayout->setContentsMargins(20, 10, 20, 10);
@@ -42,20 +42,20 @@ MainDashboardPage::MainDashboardPage(const QString &username, QWidget *parent)
 
     // Content area
     auto *content = new QWidget(this);
-    content->setStyleSheet("background: #d6e4f0;");
+    content->setStyleSheet("background: #1a1d23;");
     mainLayout->addWidget(content, 1);
 
     // Footer
     auto *footer = new QWidget(this);
     footer->setFixedHeight(26);
-    footer->setStyleSheet("background: #c8dced; border-top: 1px solid #a0bcd8;");
+    footer->setStyleSheet("background: #22262e; border-top: 1px solid #3a4050;");
     auto *footerLayout = new QHBoxLayout(footer);
     footerLayout->setContentsMargins(12, 0, 12, 0);
     int hour = QTime::currentTime().hour();
     QString greeting = hour < 12 ? "上午好" : (hour < 18 ? "下午好" : "晚上好");
     auto *footerLabel = new QLabel(
         QString("%1, %2! 欢迎进入程序选择！").arg(greeting, m_username), footer);
-    footerLabel->setStyleSheet("font-size: 11px; color: #336;");
+    footerLabel->setStyleSheet("font-size: 11px; color: #8a9bb0;");
     footerLayout->addWidget(footerLabel);
     footerLayout->addStretch();
     mainLayout->addWidget(footer);
@@ -66,10 +66,10 @@ void MainDashboardPage::setupToolBar(QHBoxLayout *layout)
     // 4 large navigation icons
     struct NavItem { QString text; QString icon; };
     QVector<NavItem> navItems = {
-        {"优化设计", ":/icons/optimize_dark.svg"},
-        {"产品报价", ":/icons/quote_dark.svg"},
-        {"程序工具", ":/icons/tools_dark.svg"},
-        {"数据查询", ":/icons/search_dark.svg"},
+        {"优化设计", ":/icons/optimize.svg"},
+        {"产品报价", ":/icons/quote.svg"},
+        {"程序工具", ":/icons/tools.svg"},
+        {"数据查询", ":/icons/search.svg"},
     };
 
     for (int i = 0; i < navItems.size(); ++i) {
@@ -81,8 +81,8 @@ void MainDashboardPage::setupToolBar(QHBoxLayout *layout)
         btn->setFixedSize(80, 70);
         btn->setCursor(Qt::PointingHandCursor);
         btn->setStyleSheet(
-            "QToolButton { background: transparent; border: none; color: #2a5a9a; font-size: 12px; }"
-            "QToolButton:hover { background: rgba(42,90,154,0.1); border-radius: 6px; }");
+            "QToolButton { background: transparent; border: none; color: #e0e6ed; font-size: 12px; }"
+            "QToolButton:hover { background: rgba(0,188,212,0.15); border-radius: 6px; color: #4dd0e1; }");
         layout->addWidget(btn);
     }
 
@@ -90,14 +90,15 @@ void MainDashboardPage::setupToolBar(QHBoxLayout *layout)
 
     // Right-side tool buttons
     QStringList toolTexts = {"数据管理", "帮助", "退出"};
-    QStringList toolIcons = {":/icons/database_dark.svg", ":/icons/help_dark.svg", ":/icons/logout_dark.svg"};
+    QStringList toolIcons = {":/icons/database.svg", ":/icons/help.svg", ":/icons/logout.svg"};
     for (int i = 0; i < toolTexts.size(); ++i) {
         auto *btn = new QPushButton(QIcon(toolIcons[i]), toolTexts[i], this);
         btn->setFlat(true);
         btn->setCursor(Qt::PointingHandCursor);
         btn->setStyleSheet(
-            "QPushButton { color: #444; font-size: 11px; padding: 4px 8px; border: 1px solid #bbb; border-radius: 3px; background: #f8f8f8; }"
-            "QPushButton:hover { background: #e8e8e8; }");
+            "QPushButton { color: #8a9bb0; font-size: 11px; padding: 4px 10px;"
+            "border: 1px solid #3a4050; border-radius: 4px; background: #2a2f38; }"
+            "QPushButton:hover { background: rgba(0,188,212,0.15); border-color: #00bcd4; color: #4dd0e1; }");
         if (toolTexts[i] == "退出")
             connect(btn, &QPushButton::clicked, this, &MainDashboardPage::onLogoutClicked);
         layout->addWidget(btn);
@@ -115,8 +116,9 @@ void MainDashboardPage::setupCardArea(QHBoxLayout *layout)
     calcBtn->setFixedHeight(36);
     calcBtn->setCursor(Qt::PointingHandCursor);
     calcBtn->setStyleSheet(
-        "QToolButton { background: #2a5a9a; color: white; border-radius: 4px; padding: 4px 16px; font-size: 12px; }"
-        "QToolButton:hover { background: #3a6aaa; }");
+        "QToolButton { background: #00bcd4; color: #0d1117; border-radius: 6px;"
+        "padding: 6px 20px; font-size: 13px; font-weight: bold; }"
+        "QToolButton:hover { background: #4dd0e1; }");
     connect(calcBtn, &QToolButton::clicked, this, &MainDashboardPage::navigateToOptimizeCalc);
     layout->addWidget(calcBtn);
 
@@ -129,7 +131,8 @@ void MainDashboardPage::setupCardArea(QHBoxLayout *layout)
     swBtn->setFixedHeight(36);
     swBtn->setEnabled(false);
     swBtn->setStyleSheet(
-        "QToolButton { background: #ccc; color: #666; border-radius: 4px; padding: 4px 16px; font-size: 12px; }");
+        "QToolButton { background: #2a2f38; color: #5a6a7a; border-radius: 6px;"
+        "padding: 6px 20px; font-size: 13px; border: 1px solid #3a4050; }");
     layout->addWidget(swBtn);
 
     layout->addStretch();

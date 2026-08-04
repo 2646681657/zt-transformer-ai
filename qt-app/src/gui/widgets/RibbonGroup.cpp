@@ -54,7 +54,6 @@ void RibbonGroup::onButtonToggled(bool checked)
     if (!sender) return;
 
     if (checked) {
-        // 取消组内其他按钮
         for (auto *btn : m_buttons) {
             if (btn != sender && btn->isChecked()) {
                 btn->blockSignals(true);
@@ -64,4 +63,13 @@ void RibbonGroup::onButtonToggled(bool checked)
         }
     }
     emit selectionChanged();
+}
+
+int RibbonGroup::selectedIndex() const
+{
+    for (int i = 0; i < m_buttons.size(); ++i) {
+        if (m_buttons[i]->isChecked())
+            return i;
+    }
+    return -1;
 }

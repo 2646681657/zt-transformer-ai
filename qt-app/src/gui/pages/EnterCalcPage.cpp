@@ -34,15 +34,15 @@ EnterCalcPage::EnterCalcPage(QWidget *parent)
     auto *backBtn = new QPushButton(QStringLiteral("< 返回"), titleWidget);
     backBtn->setFlat(true);
     backBtn->setCursor(Qt::PointingHandCursor);
-    backBtn->setStyleSheet("QPushButton { color: white; font-size: 11px; border: none; padding: 2px 8px; }"
-                           "QPushButton:hover { background: rgba(255,255,255,0.2); border-radius: 3px; }");
+    backBtn->setStyleSheet("QPushButton { color: #8a9bb0; font-size: 11px; border: none; padding: 2px 8px; }"
+                           "QPushButton:hover { background: rgba(0,188,212,0.2); border-radius: 3px; color: #4dd0e1; }");
     connect(backBtn, &QPushButton::clicked, this, &EnterCalcPage::navigateBack);
     titleLayout->addWidget(backBtn);
 
     auto *titleLabel = new QLabel(
-        QStringLiteral("油浸式变压器电磁计算(长方形线圈的非晶合金铁心)导线优化设计软件 V2.0-2025"), titleWidget);
+        QStringLiteral("中天伯乐达变压器电磁计算AI寻优软件 V2.0"), titleWidget);
     titleLabel->setAlignment(Qt::AlignCenter);
-    titleLabel->setStyleSheet("color: white; font-size: 12px;");
+    titleLabel->setStyleSheet("color: #e0e6ed; font-size: 12px;");
     titleLayout->addWidget(titleLabel, 1);
 
     mainLayout->addWidget(titleWidget);
@@ -75,7 +75,8 @@ EnterCalcPage::EnterCalcPage(QWidget *parent)
     // Status bar
     auto *statusBar = new QLabel(QStringLiteral("就绪"), this);
     statusBar->setFixedHeight(22);
-    statusBar->setStyleSheet("background: #f0f0f0; padding-left: 8px; font-size: 11px;");
+    statusBar->setStyleSheet("background: #22262e; padding-left: 8px; font-size: 11px;"
+                             "color: #8a9bb0; border-top: 1px solid #3a4050;");
     mainLayout->addWidget(statusBar);
 }
 
@@ -197,7 +198,7 @@ void EnterCalcPage::setupOptimizeTab()
         table->setItem(row, 0, new QTableWidgetItem(QString::number(row + 1)));
         auto *hdr = new QTableWidgetItem(sections[s]);
         QFont f = hdr->font(); f.setBold(true); hdr->setFont(f);
-        hdr->setBackground(QColor("#fffde0"));
+        hdr->setBackground(QColor("#1a3a4a"));
         table->setItem(row, 1, hdr);
         table->setSpan(row, 1, 1, 3);
         row++;

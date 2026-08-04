@@ -1,5 +1,6 @@
 #ifndef RIBBONBUTTON_H
 #define RIBBONBUTTON_H
+// Ribbon按钮（带图标和选中状态的工具按钮）
 
 #include <QToolButton>
 

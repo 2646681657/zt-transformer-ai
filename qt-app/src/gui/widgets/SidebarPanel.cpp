@@ -9,7 +9,7 @@ SidebarPanel::SidebarPanel(QWidget *parent)
     m_layout->setSpacing(8);
     m_layout->addStretch();
     setFixedWidth(130);
-    setStyleSheet("SidebarPanel { background: #f0f4f8; border-right: 1px solid #ddd; }");
+    setStyleSheet("SidebarPanel { background: #22262e; border-right: 1px solid #3a4050; }");
 }
 
 QPushButton *SidebarPanel::addButton(const QString &text)
@@ -24,8 +24,9 @@ QPushButton *SidebarPanel::addButton(const QString &text, const QString &iconPat
         btn->setIcon(QIcon(iconPath));
     btn->setFixedHeight(30);
     btn->setStyleSheet(
-        "QPushButton { background: #4a7aba; color: white; border-radius: 3px; font-size: 11px; }"
-        "QPushButton:hover { background: #5a8aca; }");
+        "QPushButton { background: rgba(0,188,212,0.15); color: #4dd0e1;"
+        "border: 1px solid #3a4050; border-radius: 4px; font-size: 11px; }"
+        "QPushButton:hover { background: #00bcd4; color: #0d1117; border-color: #00bcd4; }");
     int idx = m_buttons.size();
     m_layout->insertWidget(idx, btn);
     m_buttons.append(btn);

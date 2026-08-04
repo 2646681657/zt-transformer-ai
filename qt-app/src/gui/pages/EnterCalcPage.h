@@ -1,5 +1,6 @@
 #ifndef ENTERCALCPAGE_H
 #define ENTERCALCPAGE_H
+// 计算主页（包含优化/方案/打印三个Tab，驱动优化器执行）
 
 #include <QWidget>
 #include <QTabWidget>
@@ -23,6 +24,7 @@ signals:
 
 private slots:
     void onTabChanged(int index);
+    // 启动优化器执行异步寻优计算
     void onStartOptimize();
 
 private:

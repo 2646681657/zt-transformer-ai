@@ -1,5 +1,6 @@
 #ifndef SIDEBARPANEL_H
 #define SIDEBARPANEL_H
+// 侧栏面板（垂直排列的快捷操作按钮列表）
 
 #include <QWidget>
 #include <QVBoxLayout>

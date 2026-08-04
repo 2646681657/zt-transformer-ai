@@ -1,5 +1,6 @@
 #ifndef RIBBONBAR_H
 #define RIBBONBAR_H
+// Ribbon工具栏容器（水平排列多个分组，模拟Office风格选项卡）
 
 #include <QWidget>
 #include <QHBoxLayout>
