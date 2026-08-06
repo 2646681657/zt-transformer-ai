@@ -3,12 +3,21 @@
 #include "pages/MainDashboardPage.h"
 #include "pages/OptimizeCalcPage.h"
 #include "pages/EnterCalcPage.h"
+#include "widgets/TransformerTypeDialog.h"
+#include <QScreen>
+#include <QGuiApplication>
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
 {
-    setWindowTitle(QStringLiteral("同优计算优化设计软件(V2.0)"));
-    resize(1280, 800);
+    setWindowTitle(QStringLiteral("中天伯乐达变压器电磁计算AI寻优软件 V2.0"));
+
+    QScreen *screen = QGuiApplication::primaryScreen();
+    QSize screenSize = screen->availableSize();
+    int w = qMin(screenSize.width() * 3 / 4, 1280);
+    int h = qMin(screenSize.height() * 3 / 4, 800);
+    resize(w, h);
+    move((screenSize.width() - w) / 2, (screenSize.height() - h) / 2);
 
     m_stack = new QStackedWidget(this);
     setCentralWidget(m_stack);
@@ -24,7 +33,8 @@ MainWindow::MainWindow(QWidget *parent)
     m_stack->addWidget(m_enterCalcPage);
 
     connect(m_loginPage, &LoginPage::loginSuccess, this, &MainWindow::onLoginSuccess);
-    connect(m_dashboardPage, &MainDashboardPage::navigateToOptimizeCalc, this, &MainWindow::showOptimizeCalc);
+    connect(m_dashboardPage, &MainDashboardPage::navigateToOptimizeCalc,
+            this, &MainWindow::onOptimizeCalcRequested);
     connect(m_dashboardPage, &MainDashboardPage::logoutRequested, this, &MainWindow::onLogout);
     connect(m_optimizeCalcPage, &OptimizeCalcPage::navigateToEnterCalc, this, &MainWindow::showEnterCalc);
     connect(m_optimizeCalcPage, &OptimizeCalcPage::navigateBack, this, &MainWindow::showDashboard);
@@ -52,6 +62,18 @@ void MainWindow::showDashboard()
 void MainWindow::showOptimizeCalc()
 {
     m_stack->setCurrentWidget(m_optimizeCalcPage);
+}
+
+// 弹出变压器类型对话框，用户确认后将选型传入参数设置页并切换过去
+void MainWindow::onOptimizeCalcRequested()
+{
+    TransformerTypeDialog dlg(this);
+    if (dlg.exec() == QDialog::Accepted) {
+        m_config.category = dlg.selectedCategory();
+        m_config.windingProcess = dlg.selectedProcess();
+        m_optimizeCalcPage->setStructureConfig(m_config);
+        m_stack->setCurrentWidget(m_optimizeCalcPage);
+    }
 }
 
 void MainWindow::showEnterCalc()

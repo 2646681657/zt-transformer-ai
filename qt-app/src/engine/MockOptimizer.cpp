@@ -4,6 +4,7 @@
 MockOptimizer::MockOptimizer(QObject *parent)
     : IOptimizer(parent) {}
 
+// 模拟异步优化：延时100ms后一次性发射所有模拟方案结果
 void MockOptimizer::start(const TransformerParams &,
                           const StructureConfig &,
                           const OptimizationSettings &)

@@ -1,5 +1,6 @@
 #ifndef MAINDASHBOARDPAGE_H
 #define MAINDASHBOARDPAGE_H
+// 主仪表盘页（登录后首页，展示功能卡片入口）
 
 #include <QWidget>
 #include <QPushButton>

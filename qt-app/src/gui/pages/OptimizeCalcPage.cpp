@@ -29,15 +29,16 @@ OptimizeCalcPage::OptimizeCalcPage(QWidget *parent)
     auto *backBtn = new QPushButton(QStringLiteral("< 返回"), titleWidget);
     backBtn->setFlat(true);
     backBtn->setCursor(Qt::PointingHandCursor);
-    backBtn->setStyleSheet("QPushButton { color: white; font-size: 11px; border: none; padding: 2px 8px; }"
-                           "QPushButton:hover { background: rgba(255,255,255,0.2); border-radius: 3px; }");
+    backBtn->setStyleSheet("QPushButton { color: #8a9bb0; font-size: 11px; border: none; padding: 2px 8px; }"
+                           "QPushButton:hover { background: rgba(0,188,212,0.2); border-radius: 3px; color: #4dd0e1; }");
     connect(backBtn, &QPushButton::clicked, this, &OptimizeCalcPage::navigateBack);
     titleLayout->addWidget(backBtn);
 
     auto *titleLabel = new QLabel(
-        QStringLiteral("油浸式变压器电磁计算(长方形线圈的非晶合金铁心)导线优化设计软件 V2.0-2025"), titleWidget);
+        QStringLiteral("中天伯乐达变压器电磁计算AI寻优软件 V2.0"), titleWidget);
+    titleLabel->setObjectName("pageTitleLabel");
     titleLabel->setAlignment(Qt::AlignCenter);
-    titleLabel->setStyleSheet("color: white; font-size: 12px;");
+    titleLabel->setStyleSheet("color: #e0e6ed; font-size: 12px;");
     titleLayout->addWidget(titleLabel, 1);
 
     mainLayout->addWidget(titleWidget);
@@ -122,6 +123,11 @@ void OptimizeCalcPage::setupRibbon()
 
     // 保存选项分组引用用于验证
     m_selectGroups = {g1, g2, g3, g4, g5};
+
+    // 连接选型变化信号到参数表刷新
+    for (auto *group : m_selectGroups) {
+        connect(group, &RibbonGroup::selectionChanged, this, &OptimizeCalcPage::onSelectionChanged);
+    }
 }
 
 void OptimizeCalcPage::setupMainArea()
@@ -138,7 +144,7 @@ void OptimizeCalcPage::setupMainArea()
 
     // Param table
     m_paramTable = new ParamTableWidget(this);
-    m_paramTable->loadParams(m_params);
+    m_paramTable->loadParamsForConfig(m_params, m_config);
 
     // Help panel
     m_helpPanel = new QTextEdit(this);
@@ -149,7 +155,8 @@ void OptimizeCalcPage::setupMainArea()
         "1. 在左侧选择设计方案\n"
         "2. 在中间表格修改参数\n"
         "3. 确认后点击\"进入计算\""));
-    m_helpPanel->setStyleSheet("QTextEdit { background: #f8f8f8; border-left: 1px solid #ddd; }");
+    m_helpPanel->setStyleSheet("QTextEdit { background: #1e2228; border-left: 1px solid #3a4050;"
+                               "color: #8a9bb0; }");
 }
 
 void OptimizeCalcPage::onEnterCalcClicked()
@@ -162,5 +169,71 @@ void OptimizeCalcPage::onEnterCalcClicked()
             return;
         }
     }
+    m_params = m_paramTable->getParams();
+    updateConfigFromRibbon();
     emit navigateToEnterCalc();
+}
+
+// Ribbon选项变更时同步更新结构配置并刷新参数表
+void OptimizeCalcPage::onSelectionChanged()
+{
+    updateConfigFromRibbon();
+    refreshParamTable();
+}
+
+// 从Ribbon各分组的选中索引映射到StructureConfig枚举值
+void OptimizeCalcPage::updateConfigFromRibbon()
+{
+    int idx;
+
+    idx = m_selectGroups[0]->selectedIndex();
+    m_config.calcMode = (idx == 1) ? StructureConfig::Professional : StructureConfig::Normal;
+
+    idx = m_selectGroups[1]->selectedIndex();
+    switch (idx) {
+    case 0: m_config.coreType = StructureConfig::StackedSilicon; break;
+    case 1: m_config.coreType = StructureConfig::StereoscopicRoll; break;
+    case 2: m_config.coreType = StructureConfig::PlanarAmorphous; break;
+    }
+
+    idx = m_selectGroups[2]->selectedIndex();
+    switch (idx) {
+    case 0: m_config.coreShape = StructureConfig::Circle; break;
+    case 1: m_config.coreShape = StructureConfig::LongRound; break;
+    case 2: m_config.coreShape = StructureConfig::Ellipse; break;
+    case 3: m_config.coreShape = StructureConfig::HalfEllipse; break;
+    case 4: m_config.coreShape = StructureConfig::EllipseLike; break;
+    }
+
+    idx = m_selectGroups[3]->selectedIndex();
+    m_config.windingForm = (idx == 1) ? StructureConfig::DualSplit : StructureConfig::Dual;
+
+    idx = m_selectGroups[4]->selectedIndex();
+    m_config.hvCoilStructure = (idx == 1) ? StructureConfig::TwoSegCylinder : StructureConfig::MultiLayerCylinder;
+}
+
+// 保存当前表格编辑内容后按新配置重新加载参数表
+void OptimizeCalcPage::refreshParamTable()
+{
+    m_params = m_paramTable->getParams();
+    m_paramTable->loadParamsForConfig(m_params, m_config);
+}
+
+// 外部设置结构配置（由类型选择对话框调用），更新标题栏并刷新参数表
+void OptimizeCalcPage::setStructureConfig(const StructureConfig &config)
+{
+    m_config = config;
+
+    // 更新标题栏显示当前选择的类型
+    QString catStr = (config.category == StructureConfig::OilImmersed) ?
+        QStringLiteral("油浸式变压器") : QStringLiteral("干式变压器");
+    QString procStr = (config.windingProcess == StructureConfig::FoilWound) ?
+        QStringLiteral("箔绕") : QStringLiteral("线绕");
+    auto *titleLabel = findChild<QLabel *>("pageTitleLabel");
+    if (titleLabel) {
+        titleLabel->setText(catStr + " - " + procStr +
+            QStringLiteral(" 电磁计算AI寻优 V2.0"));
+    }
+
+    refreshParamTable();
 }

@@ -45,6 +45,6 @@ target_link_libraries(ztf-designer PRIVATE
 )
 
 set_target_properties(ztf-designer PROPERTIES
-    OUTPUT_NAME "ZTF-Designer"
+    OUTPUT_NAME "ZTBLD-Designer"
     WIN32_EXECUTABLE TRUE
 )

@@ -1,5 +1,6 @@
 #ifndef MOCKOPTIMIZER_H
 #define MOCKOPTIMIZER_H
+// Mock优化器（模拟异步寻优过程，生成演示方案数据）
 
 #include "IOptimizer.h"
 

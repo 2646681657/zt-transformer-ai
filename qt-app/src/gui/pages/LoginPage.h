@@ -1,5 +1,6 @@
 #ifndef LOGINPAGE_H
 #define LOGINPAGE_H
+// 登录页（用户名密码验证，支持记住密码）
 
 #include <QWidget>
 #include <QLineEdit>
