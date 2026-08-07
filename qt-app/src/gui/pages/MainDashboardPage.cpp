@@ -10,9 +10,11 @@
 #include <QEvent>
 #include <QMouseEvent>
 #include <QToolButton>
+#include <QButtonGroup>
+#include <QStackedWidget>
 
 MainDashboardPage::MainDashboardPage(const QString &username, QWidget *parent)
-    : QWidget(parent), m_username(username)
+    : QWidget(parent), m_username(username), m_navGroup(nullptr), m_subStack(nullptr)
 {
     setAttribute(Qt::WA_StyledBackground, true);
     setStyleSheet("MainDashboardPage { background: #1a1d23; }");
@@ -30,15 +32,17 @@ MainDashboardPage::MainDashboardPage(const QString &username, QWidget *parent)
     setupToolBar(navAreaLayout);
     mainLayout->addWidget(navArea);
 
-    // Sub buttons area (action shortcuts)
+    // Sub buttons area (动态切换，根据选中的主按钮显示对应子按钮)
     auto *subArea = new QWidget(this);
     subArea->setStyleSheet("background: #1e2228; border-bottom: 1px solid #3a4050;");
-    subArea->setFixedHeight(90);
-    auto *subLayout = new QHBoxLayout(subArea);
-    subLayout->setContentsMargins(20, 10, 20, 10);
-    subLayout->setSpacing(20);
-    setupCardArea(subLayout);
+    subArea->setFixedHeight(110);
+    auto *subLayout = new QVBoxLayout(subArea);
+    subLayout->setContentsMargins(0, 0, 0, 0);
+    subLayout->setSpacing(0);
+    m_subStack = new QStackedWidget(subArea);
+    subLayout->addWidget(m_subStack);
     mainLayout->addWidget(subArea);
+    setupSubArea();
 
     // Content area
     auto *content = new QWidget(this);
@@ -63,28 +67,36 @@ MainDashboardPage::MainDashboardPage(const QString &username, QWidget *parent)
 
 void MainDashboardPage::setupToolBar(QHBoxLayout *layout)
 {
+    m_navGroup = new QButtonGroup(this);
+    m_navGroup->setExclusive(true);
+
     // 4 large navigation icons
     struct NavItem { QString text; QString icon; };
     QVector<NavItem> navItems = {
-        {"优化设计", ":/icons/optimize.svg"},
-        {"产品报价", ":/icons/quote.svg"},
-        {"程序工具", ":/icons/tools.svg"},
-        {"数据查询", ":/icons/search.svg"},
+        {QStringLiteral("优化设计"), ":/icons/optimize.svg"},
+        {QStringLiteral("产品报价"), ":/icons/quote.svg"},
+        {QStringLiteral("程序工具"), ":/icons/tools.svg"},
+        {QStringLiteral("数据查询"), ":/icons/search.svg"},
     };
 
     for (int i = 0; i < navItems.size(); ++i) {
         auto *btn = new QToolButton(this);
         btn->setText(navItems[i].text);
         btn->setIcon(QIcon(navItems[i].icon));
-        btn->setIconSize(QSize(40, 40));
+        btn->setIconSize(QSize(60, 60));
         btn->setToolButtonStyle(Qt::ToolButtonTextUnderIcon);
-        btn->setFixedSize(80, 70);
+        btn->setFixedSize(112, 92);
         btn->setCursor(Qt::PointingHandCursor);
+        btn->setCheckable(true);
         btn->setStyleSheet(
-            "QToolButton { background: transparent; border: none; color: #e0e6ed; font-size: 12px; }"
-            "QToolButton:hover { background: rgba(0,188,212,0.15); border-radius: 6px; color: #4dd0e1; }");
+            "QToolButton { background: transparent; border: none; color: #e0e6ed; font-size: 13px; }"
+            "QToolButton:hover { background: rgba(0,188,212,0.15); border-radius: 6px; color: #4dd0e1; }"
+            "QToolButton:checked { background: rgba(0,188,212,0.2); border-radius: 6px; color: #4dd0e1; }");
+        m_navGroup->addButton(btn, i);
         layout->addWidget(btn);
     }
+
+    connect(m_navGroup, &QButtonGroup::idClicked, this, &MainDashboardPage::onNavButtonClicked);
 
     layout->addStretch();
 
@@ -105,37 +117,62 @@ void MainDashboardPage::setupToolBar(QHBoxLayout *layout)
     }
 }
 
-void MainDashboardPage::setupCardArea(QHBoxLayout *layout)
+void MainDashboardPage::setupSubArea()
 {
-    // "优化计算" action button with icon
-    auto *calcBtn = new QToolButton(this);
-    calcBtn->setText(QStringLiteral("优化计算"));
+    // index 0: 默认空白页（未点击任何主按钮时显示）
+    m_subStack->addWidget(new QWidget(m_subStack));
+    // index 1: 优化设计 - 两个子按钮（主按钮 0 点击后显示）
+    m_subStack->addWidget(createOptimizeSubPage());
+    // index 2/3/4: 其他主按钮对应的空白页
+    for (int i = 0; i < 3; ++i)
+        m_subStack->addWidget(new QWidget(m_subStack));
+    // 默认显示空白页
+    m_subStack->setCurrentIndex(0);
+}
+
+QWidget *MainDashboardPage::createOptimizeSubPage()
+{
+    // 子按钮页：图标在上文字在下，图标略小于上方主按钮，左边距缩进更多
+    auto *page = new QWidget(m_subStack);
+    auto *layout = new QHBoxLayout(page);
+    layout->setContentsMargins(40, 10, 20, 10);
+    layout->setSpacing(24);
+
+    // "优化设计" 子按钮
+    auto *calcBtn = new QToolButton(page);
+    calcBtn->setText(QStringLiteral("优化设计"));
     calcBtn->setIcon(QIcon(":/icons/calculate.svg"));
-    calcBtn->setIconSize(QSize(28, 28));
-    calcBtn->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
-    calcBtn->setFixedHeight(36);
+    calcBtn->setIconSize(QSize(48, 48));
+    calcBtn->setToolButtonStyle(Qt::ToolButtonTextUnderIcon);
+    calcBtn->setFixedSize(96, 84);
     calcBtn->setCursor(Qt::PointingHandCursor);
     calcBtn->setStyleSheet(
-        "QToolButton { background: #00bcd4; color: #0d1117; border-radius: 6px;"
-        "padding: 6px 20px; font-size: 13px; font-weight: bold; }"
-        "QToolButton:hover { background: #4dd0e1; }");
+        "QToolButton { background: transparent; border: none; color: #c0c8d0; font-size: 12px; }"
+        "QToolButton:hover { background: rgba(0,188,212,0.15); border-radius: 6px; color: #4dd0e1; }");
     connect(calcBtn, &QToolButton::clicked, this, &MainDashboardPage::navigateToOptimizeCalc);
     layout->addWidget(calcBtn);
 
-    // "SW参数化出图" (disabled)
-    auto *swBtn = new QToolButton(this);
+    // "SW参数化出图" 子按钮（暂未实现）
+    auto *swBtn = new QToolButton(page);
     swBtn->setText(QStringLiteral("SW参数化出图"));
-    swBtn->setIcon(QIcon(":/icons/tools_dark.svg"));
-    swBtn->setIconSize(QSize(28, 28));
-    swBtn->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
-    swBtn->setFixedHeight(36);
-    swBtn->setEnabled(false);
+    swBtn->setIcon(QIcon(":/icons/tools.svg"));
+    swBtn->setIconSize(QSize(48, 48));
+    swBtn->setToolButtonStyle(Qt::ToolButtonTextUnderIcon);
+    swBtn->setFixedSize(96, 84);
+    swBtn->setCursor(Qt::PointingHandCursor);
     swBtn->setStyleSheet(
-        "QToolButton { background: #2a2f38; color: #5a6a7a; border-radius: 6px;"
-        "padding: 6px 20px; font-size: 13px; border: 1px solid #3a4050; }");
+        "QToolButton { background: transparent; border: none; color: #c0c8d0; font-size: 12px; }"
+        "QToolButton:hover { background: rgba(0,188,212,0.15); border-radius: 6px; color: #4dd0e1; }");
     layout->addWidget(swBtn);
 
     layout->addStretch();
+    return page;
+}
+
+void MainDashboardPage::onNavButtonClicked(int index)
+{
+    // 主按钮 index 对应子页面 index+1（index 0 为默认空白页）
+    m_subStack->setCurrentIndex(index + 1);
 }
 
 void MainDashboardPage::onLogoutClicked()

@@ -7,6 +7,8 @@
 
 class QHBoxLayout;
 class QVBoxLayout;
+class QButtonGroup;
+class QStackedWidget;
 
 class MainDashboardPage : public QWidget {
     Q_OBJECT
@@ -22,11 +24,15 @@ signals:
 
 private slots:
     void onLogoutClicked();
+    void onNavButtonClicked(int index);
 
 private:
     void setupToolBar(QHBoxLayout *layout);
-    void setupCardArea(QHBoxLayout *layout);
+    void setupSubArea();
+    QWidget *createOptimizeSubPage();
     QString m_username;
+    QButtonGroup *m_navGroup;
+    QStackedWidget *m_subStack;
 };
 
 #endif // MAINDASHBOARDPAGE_H
