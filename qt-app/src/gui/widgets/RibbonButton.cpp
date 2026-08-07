@@ -14,7 +14,7 @@ RibbonButton::RibbonButton(const QString &text, const QString &iconPath, QWidget
 {
     setText(text);
     setIcon(QIcon(iconPath));
-    setIconSize(QSize(20, 20));
+    setIconSize(QSize(36, 36));
     init();
 }
 
@@ -23,7 +23,8 @@ void RibbonButton::init()
     setToolButtonStyle(Qt::ToolButtonTextUnderIcon);
     setCheckable(true);
     setAutoExclusive(false);
-    setMinimumWidth(50);
+    setMinimumWidth(84);
+    setMinimumHeight(84);
     setObjectName("RibbonButton");
     connect(this, &QToolButton::clicked, this, &RibbonButton::onClicked);
 }

@@ -16,6 +16,10 @@
         <file>icons/core_roll.svg</file>
         <file>icons/core_amorphous.svg</file>
         <file>icons/shape_circle.svg</file>
+        <file>icons/shape_long_round.svg</file>
+        <file>icons/shape_ellipse.svg</file>
+        <file>icons/shape_half_ellipse.svg</file>
+        <file>icons/shape_ellipse_like.svg</file>
         <file>icons/winding_dual.svg</file>
         <file>icons/winding_split.svg</file>
         <file>icons/coil_multi.svg</file>

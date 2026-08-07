@@ -12,6 +12,7 @@ class RibbonGroup;
 class ParamTableWidget;
 class SidebarPanel;
 class QTextEdit;
+class QPushButton;
 
 class OptimizeCalcPage : public QWidget {
     Q_OBJECT
@@ -40,6 +41,7 @@ private:
     ParamTableWidget *m_paramTable;
     SidebarPanel *m_sidebar;
     QTextEdit *m_helpPanel;
+    QPushButton *m_navButton;
     TransformerParams m_params;
     StructureConfig m_config;
     QVector<RibbonGroup *> m_selectGroups;
