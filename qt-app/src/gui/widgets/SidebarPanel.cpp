@@ -1,5 +1,6 @@
 #include "SidebarPanel.h"
 #include <QIcon>
+#include <QSizePolicy>
 
 SidebarPanel::SidebarPanel(QWidget *parent)
     : QWidget(parent)
@@ -12,24 +13,28 @@ SidebarPanel::SidebarPanel(QWidget *parent)
     setStyleSheet("SidebarPanel { background: #22262e; border-right: 1px solid #3a4050; }");
 }
 
-QPushButton *SidebarPanel::addButton(const QString &text)
+QToolButton *SidebarPanel::addButton(const QString &text)
 {
     return addButton(text, QString());
 }
 
-QPushButton *SidebarPanel::addButton(const QString &text, const QString &iconPath)
+QToolButton *SidebarPanel::addButton(const QString &text, const QString &iconPath)
 {
-    auto *btn = new QPushButton(text, this);
+    auto *btn = new QToolButton(this);
+    btn->setText(text);
     if (!iconPath.isEmpty())
         btn->setIcon(QIcon(iconPath));
-    btn->setFixedHeight(30);
+    btn->setIconSize(QSize(24, 24));
+    btn->setToolButtonStyle(Qt::ToolButtonTextUnderIcon);
+    btn->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    btn->setFixedHeight(64);
     btn->setStyleSheet(
-        "QPushButton { background: rgba(0,188,212,0.15); color: #4dd0e1;"
-        "border: 1px solid #3a4050; border-radius: 4px; font-size: 11px; }"
-        "QPushButton:hover { background: #00bcd4; color: #0d1117; border-color: #00bcd4; }");
+        "QToolButton { background: rgba(0,188,212,0.15); color: #4dd0e1;"
+        "border: 1px solid #3a4050; border-radius: 4px; font-size: 11px; padding: 4px; }"
+        "QToolButton:hover { background: #00bcd4; color: #0d1117; border-color: #00bcd4; }");
     int idx = m_buttons.size();
     m_layout->insertWidget(idx, btn);
     m_buttons.append(btn);
-    connect(btn, &QPushButton::clicked, this, [this, idx]() { emit buttonClicked(idx); });
+    connect(btn, &QToolButton::clicked, this, [this, idx]() { emit buttonClicked(idx); });
     return btn;
 }

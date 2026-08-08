@@ -10,6 +10,9 @@
 #include <QTextEdit>
 #include <QPushButton>
 #include <QMessageBox>
+#include <QSizePolicy>
+#include <QToolButton>
+#include <QMenu>
 
 OptimizeCalcPage::OptimizeCalcPage(QWidget *parent)
     : QWidget(parent)
@@ -43,6 +46,49 @@ OptimizeCalcPage::OptimizeCalcPage(QWidget *parent)
 
     mainLayout->addWidget(titleWidget);
 
+    // Ribbon 头部栏：方案库下拉 + 设计输入静态标签
+    auto *headerBar = new QWidget(this);
+    headerBar->setFixedHeight(28);
+    headerBar->setObjectName("RibbonHeaderBar");
+    headerBar->setStyleSheet(
+        "QWidget#RibbonHeaderBar { background: #2a2f38; border-bottom: 1px solid #3a4050; }");
+    auto *headerLayout = new QHBoxLayout(headerBar);
+    headerLayout->setContentsMargins(4, 2, 4, 2);
+    headerLayout->setSpacing(4);
+
+    // 左控件：方案库下拉按钮
+    auto *schemeBtn = new QToolButton(headerBar);
+    schemeBtn->setText(QStringLiteral("方案库"));
+    schemeBtn->setPopupMode(QToolButton::InstantPopup);
+    schemeBtn->setToolButtonStyle(Qt::ToolButtonTextOnly);
+    schemeBtn->setStyleSheet(
+        "QToolButton { background: rgba(0,188,212,0.15); color: #4dd0e1;"
+        "border: 1px solid #3a4050; border-radius: 4px; font-size: 11px; padding: 4px 16px; }"
+        "QToolButton:hover { background: #00bcd4; color: #0d1117; border-color: #00bcd4; }"
+        "QToolButton::menu-indicator { subcontrol-origin: padding; subcontrol-position: right center; width: 8px; }");
+    auto *schemeMenu = new QMenu(schemeBtn);
+    schemeMenu->addAction(QStringLiteral("方案一"));
+    schemeMenu->addAction(QStringLiteral("方案二"));
+    schemeMenu->addAction(QStringLiteral("方案三"));
+    schemeBtn->setMenu(schemeMenu);
+    connect(schemeMenu, &QMenu::triggered, headerBar, [schemeBtn](QAction *action) {
+        schemeBtn->setText(action->text());
+    });
+    headerLayout->addWidget(schemeBtn);
+
+    // 右控件：设计输入静态高亮按钮（禁用交互）
+    auto *designInputBtn = new QPushButton(QStringLiteral("设计输入"), headerBar);
+    designInputBtn->setEnabled(false);
+    designInputBtn->setStyleSheet(
+        "QPushButton { background: qlineargradient(x1:0, y1:0, x2:0, y2:1,"
+        "stop:0 #00bcd4, stop:1 #0097a7); color: #ffffff;"
+        "border: none; font-size: 12px; font-weight: bold; padding: 4px 12px; }"
+        "QPushButton:disabled { background: qlineargradient(x1:0, y1:0, x2:0, y2:1,"
+        "stop:0 #00bcd4, stop:1 #0097a7); color: #ffffff; }");
+    headerLayout->addWidget(designInputBtn, 1);
+
+    mainLayout->addWidget(headerBar);
+
     // Ribbon
     m_ribbon = new RibbonBar(this);
     setupRibbon();
@@ -54,6 +100,7 @@ OptimizeCalcPage::OptimizeCalcPage(QWidget *parent)
     areaLayout->setContentsMargins(0, 0, 0, 0);
     areaLayout->setSpacing(0);
     setupMainArea();
+    areaLayout->addWidget(m_navButton);
     areaLayout->addWidget(m_sidebar);
     areaLayout->addWidget(m_paramTable, 1);
     areaLayout->addWidget(m_helpPanel);
@@ -85,10 +132,10 @@ void OptimizeCalcPage::setupRibbon()
     auto *g3 = m_ribbon->addGroup(QStringLiteral("铁芯结构"));
     g3->setExclusive(true);
     g3->addButton(new RibbonButton(QStringLiteral("圆形"), ":/icons/shape_circle.svg", g3));
-    g3->addButton(new RibbonButton(QStringLiteral("长圆形"), ":/icons/shape_circle.svg", g3));
-    g3->addButton(new RibbonButton(QStringLiteral("椭圆形"), ":/icons/shape_circle.svg", g3));
-    g3->addButton(new RibbonButton(QStringLiteral("半椭圆形"), ":/icons/shape_circle.svg", g3));
-    auto *elBtn = new RibbonButton(QStringLiteral("类椭圆型"), ":/icons/shape_circle.svg", g3);
+    g3->addButton(new RibbonButton(QStringLiteral("长圆形"), ":/icons/shape_long_round.svg", g3));
+    g3->addButton(new RibbonButton(QStringLiteral("椭圆形"), ":/icons/shape_ellipse.svg", g3));
+    g3->addButton(new RibbonButton(QStringLiteral("半椭圆形"), ":/icons/shape_half_ellipse.svg", g3));
+    auto *elBtn = new RibbonButton(QStringLiteral("类椭圆型"), ":/icons/shape_ellipse_like.svg", g3);
     elBtn->setActive(true);
     g3->addButton(elBtn);
     m_ribbon->addSeparator();
@@ -115,7 +162,7 @@ void OptimizeCalcPage::setupRibbon()
     auto *g6 = m_ribbon->addGroup(QStringLiteral("确认设置"));
     auto *enterCalcBtn = new RibbonButton(QStringLiteral("进入计算"), ":/icons/enter_calc.svg", g6);
     enterCalcBtn->setCheckable(false);
-    connect(enterCalcBtn, &QPushButton::clicked, this, &OptimizeCalcPage::onEnterCalcClicked);
+    connect(enterCalcBtn, &QToolButton::clicked, this, &OptimizeCalcPage::onEnterCalcClicked);
     g6->addButton(enterCalcBtn);
     auto *verifyBtn = new RibbonButton(QStringLiteral("校验算单"), ":/icons/verify.svg", g6);
     verifyBtn->setCheckable(false);
@@ -132,6 +179,18 @@ void OptimizeCalcPage::setupRibbon()
 
 void OptimizeCalcPage::setupMainArea()
 {
+    // 竖排"程序选择"导航按钮（点击返回主界面），顶格放置于侧边栏左侧
+    m_navButton = new QPushButton(QStringLiteral("程\n序\n选\n择"), this);
+    m_navButton->setCursor(Qt::PointingHandCursor);
+    m_navButton->setToolTip(QStringLiteral("返回主界面"));
+    m_navButton->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Expanding);
+    m_navButton->setStyleSheet(
+        "QPushButton { background: rgba(0,188,212,0.15); color: #4dd0e1;"
+        "border: none; border-right: 1px solid #3a4050; border-radius: 0px;"
+        "font-size: 12px; padding: 4px; }"
+        "QPushButton:hover { background: #00bcd4; color: #0d1117; }");
+    connect(m_navButton, &QPushButton::clicked, this, &OptimizeCalcPage::navigateBack);
+
     // Left sidebar
     m_sidebar = new SidebarPanel(this);
     m_sidebar->addButton(QStringLiteral("选用推荐方案"), ":/icons/recommend.svg");
@@ -140,7 +199,7 @@ void OptimizeCalcPage::setupMainArea()
     m_sidebar->addButton(QStringLiteral("从记忆库中选择"), ":/icons/memory.svg");
     m_sidebar->addButton(QStringLiteral("采用上一次方案"), ":/icons/undo.svg");
     auto *enterBtn = m_sidebar->addButton(QStringLiteral("进入计算"), ":/icons/enter_calc.svg");
-    connect(enterBtn, &QPushButton::clicked, this, &OptimizeCalcPage::onEnterCalcClicked);
+    connect(enterBtn, &QToolButton::clicked, this, &OptimizeCalcPage::onEnterCalcClicked);
 
     // Param table
     m_paramTable = new ParamTableWidget(this);

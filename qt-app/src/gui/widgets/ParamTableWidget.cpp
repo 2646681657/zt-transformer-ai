@@ -13,7 +13,7 @@ void ParamTableWidget::setupTable()
     setColumnCount(6);
     setHorizontalHeaderLabels({"#", "参数名称", "数值", "选项名称", "选项", "备注"});
     horizontalHeader()->setStretchLastSection(true);
-    setColumnWidth(0, 30);
+    setColumnWidth(0, 40);
     setColumnWidth(1, 160);
     setColumnWidth(2, 80);
     setColumnWidth(3, 180);
@@ -33,7 +33,9 @@ void ParamTableWidget::addSectionRow(int row, const QString &title,
     font.setBold(true);
     item->setFont(font);
     item->setBackground(QColor("#1a3a4a"));
-    setItem(row, 0, new QTableWidgetItem(QString::number(row + 1)));
+    auto *numItem = new QTableWidgetItem(QString::number(row + 1));
+    numItem->setTextAlignment(Qt::AlignCenter);
+    setItem(row, 0, numItem);
     setItem(row, 1, item);
     setItem(row, 2, new QTableWidgetItem(""));
     auto *optNameItem = new QTableWidgetItem(optName);
@@ -49,7 +51,9 @@ void ParamTableWidget::addParamRow(int row, const QString &name, const QString &
                                     const QString &optName, const QString &optValue)
 {
     insertRow(row);
-    setItem(row, 0, new QTableWidgetItem(QString::number(row + 1)));
+    auto *numItem = new QTableWidgetItem(QString::number(row + 1));
+    numItem->setTextAlignment(Qt::AlignCenter);
+    setItem(row, 0, numItem);
     setItem(row, 1, new QTableWidgetItem(name));
     auto *valItem = new QTableWidgetItem(value);
     setItem(row, 2, valItem);

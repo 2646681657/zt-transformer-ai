@@ -10,7 +10,7 @@ RibbonBar::RibbonBar(QWidget *parent)
     m_layout->setContentsMargins(4, 2, 4, 2);
     m_layout->setSpacing(0);
     m_layout->addStretch();
-    setFixedHeight(70);
+    setFixedHeight(104);
     setObjectName("RibbonBar");
 }
 
