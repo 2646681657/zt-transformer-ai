@@ -15,6 +15,8 @@
 #include <QStackedWidget>
 #include <QTableWidget>
 #include <QHeaderView>
+#include <QSizePolicy>
+#include <QToolButton>
 
 EnterCalcPage::EnterCalcPage(QWidget *parent)
     : QWidget(parent)
@@ -47,6 +49,24 @@ EnterCalcPage::EnterCalcPage(QWidget *parent)
 
     mainLayout->addWidget(titleWidget);
 
+    // Tab bar（位于 Ribbon 上方）
+    m_tabBar = new QTabBar(this);
+    m_tabBar->addTab(QStringLiteral("优化计算"));
+    m_tabBar->addTab(QStringLiteral("方案选择"));
+    m_tabBar->addTab(QStringLiteral("输出打印"));
+    m_tabBar->setExpanding(false);
+    m_tabBar->setDrawBase(false);
+    m_tabBar->setFixedHeight(30);
+    m_tabBar->setStyleSheet(
+        "QTabBar { background: #22262e; border-bottom: 1px solid #3a4050; }"
+        "QTabBar::pane { border: none; }"
+        "QTabBar::tab { background: #2a2f38; color: #8a9bb0; border: 1px solid #3a4050;"
+        "border-bottom: none; padding: 6px 18px; margin-right: 2px; font-size: 12px; }"
+        "QTabBar::tab:selected { background: #0d1117; color: #4dd0e1;"
+        "border-color: #00bcd4; border-bottom: 2px solid #00bcd4; }"
+        "QTabBar::tab:hover:!selected { background: #3a4050; color: #e0e6ed; }");
+    mainLayout->addWidget(m_tabBar);
+
     // Ribbon stack (shows different ribbon per tab)
     m_ribbonStack = new QWidget(this);
     auto *ribbonStackLayout = new QVBoxLayout(m_ribbonStack);
@@ -64,13 +84,13 @@ EnterCalcPage::EnterCalcPage(QWidget *parent)
     m_printRibbon->hide();
     mainLayout->addWidget(m_ribbonStack);
 
-    // Tab widget
-    m_tabWidget = new QTabWidget(this);
+    // Stacked content
+    m_stack = new QStackedWidget(this);
     setupOptimizeTab();
     setupSchemeTab();
     setupPrintTab();
-    connect(m_tabWidget, &QTabWidget::currentChanged, this, &EnterCalcPage::onTabChanged);
-    mainLayout->addWidget(m_tabWidget, 1);
+    connect(m_tabBar, &QTabBar::currentChanged, this, &EnterCalcPage::onTabChanged);
+    mainLayout->addWidget(m_stack, 1);
 
     // Status bar
     auto *statusBar = new QLabel(QStringLiteral("就绪"), this);
@@ -82,14 +102,23 @@ EnterCalcPage::EnterCalcPage(QWidget *parent)
 
 void EnterCalcPage::buildOptimizeRibbon()
 {
-    auto *g1 = m_optimizeRibbon->addGroup(QStringLiteral("初始化设置"));
-    g1->addButton(new RibbonButton(QStringLiteral("快速计算"), ":/icons/fast_calc.svg", g1));
+    auto *g0 = m_optimizeRibbon->addGroup(QString());
+    g0->addButton(new RibbonButton(QStringLiteral("快速计算"), ":/icons/fast_calc.svg", g0));
+    m_optimizeRibbon->addSeparator();
+
+    auto *g1 = m_optimizeRibbon->addGroup(QStringLiteral("初始化设置(从左到右顺序设置)"));
     g1->addButton(new RibbonButton(QStringLiteral("产品结构"), ":/icons/product.svg", g1));
     g1->addButton(new RibbonButton(QStringLiteral("材料选择"), ":/icons/material.svg", g1));
     g1->addButton(new RibbonButton(QStringLiteral("修正参数"), ":/icons/adjust.svg", g1));
     g1->addButton(new RibbonButton(QStringLiteral("循环参数"), ":/icons/loop_param.svg", g1));
     g1->addButton(new RibbonButton(QStringLiteral("约束条件"), ":/icons/constraint.svg", g1));
     g1->addButton(new RibbonButton(QStringLiteral("初始化信息"), ":/icons/init_info.svg", g1));
+    m_optimizeRibbon->addSeparator();
+
+    auto *gMem = m_optimizeRibbon->addGroup(QStringLiteral("学习记忆"));
+    auto *memBtn = new RibbonButton(QStringLiteral("打开记忆功能"), ":/icons/memory_on.svg", gMem);
+    memBtn->setCheckable(false);
+    gMem->addButton(memBtn);
     m_optimizeRibbon->addSeparator();
 
     auto *g2 = m_optimizeRibbon->addGroup(QStringLiteral("寻优计算"));
@@ -107,6 +136,9 @@ void EnterCalcPage::buildOptimizeRibbon()
     auto *g3 = m_optimizeRibbon->addGroup(QStringLiteral("方案库"));
     auto *schemeBtn = new RibbonButton(QStringLiteral("进入方案选择"), ":/icons/scheme.svg", g3);
     schemeBtn->setCheckable(false);
+    connect(schemeBtn, &QToolButton::clicked, this, [this]() {
+        m_tabBar->setCurrentIndex(1);
+    });
     g3->addButton(schemeBtn);
 }
 
@@ -125,6 +157,9 @@ void EnterCalcPage::buildSchemeRibbon()
     auto *g3 = m_schemeRibbon->addGroup(QStringLiteral("方案选择"));
     auto *confirmBtn = new RibbonButton(QStringLiteral("方案确认"), ":/icons/confirm.svg", g3);
     confirmBtn->setCheckable(false);
+    connect(confirmBtn, &QToolButton::clicked, this, [this]() {
+        m_tabBar->setCurrentIndex(2);
+    });
     g3->addButton(confirmBtn);
 }
 
@@ -158,6 +193,19 @@ void EnterCalcPage::setupOptimizeTab()
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(0);
 
+    // 竖排"程序选择"导航按钮（点击返回主界面），顶格放置于侧边栏左侧
+    m_navButton = new QPushButton(QStringLiteral("程\n序\n选\n择"), tab);
+    m_navButton->setCursor(Qt::PointingHandCursor);
+    m_navButton->setToolTip(QStringLiteral("返回主界面"));
+    m_navButton->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Expanding);
+    m_navButton->setStyleSheet(
+        "QPushButton { background: rgba(0,188,212,0.15); color: #4dd0e1;"
+        "border: none; border-right: 1px solid #3a4050; border-radius: 0px;"
+        "font-size: 12px; padding: 4px; }"
+        "QPushButton:hover { background: #00bcd4; color: #0d1117; }");
+    connect(m_navButton, &QPushButton::clicked, this, &EnterCalcPage::navigateBack);
+    layout->addWidget(m_navButton);
+
     // Left sidebar
     auto *sidebar = new SidebarPanel(tab);
     sidebar->addButton(QStringLiteral("选用推荐方案"), ":/icons/recommend.svg");
@@ -166,6 +214,11 @@ void EnterCalcPage::setupOptimizeTab()
     sidebar->addButton(QStringLiteral("返回上一次方案"), ":/icons/undo.svg");
     sidebar->addButton(QStringLiteral("下一步"), ":/icons/enter_calc.svg");
     sidebar->addButton(QStringLiteral("取消"), ":/icons/stop.svg");
+    // 取消按钮(index 5)返回优化计算参数设置页
+    connect(sidebar, &SidebarPanel::buttonClicked, this, [this](int index) {
+        if (index == 5)
+            emit navigateBack();
+    });
     layout->addWidget(sidebar);
 
     // Structure config table
@@ -213,7 +266,7 @@ void EnterCalcPage::setupOptimizeTab()
         }
     }
     layout->addWidget(table, 1);
-    m_tabWidget->addTab(tab, QStringLiteral("优化计算"));
+    m_stack->addWidget(tab);
 }
 
 void EnterCalcPage::setupSchemeTab()
@@ -223,7 +276,7 @@ void EnterCalcPage::setupSchemeTab()
     layout->setContentsMargins(0, 0, 0, 0);
     m_schemeTable = new SchemeTableWidget(tab);
     layout->addWidget(m_schemeTable);
-    m_tabWidget->addTab(tab, QStringLiteral("方案选择"));
+    m_stack->addWidget(tab);
 }
 
 void EnterCalcPage::setupPrintTab()
@@ -235,7 +288,7 @@ void EnterCalcPage::setupPrintTab()
     MockCalcEngine engine;
     m_printTable->loadData(engine.calculate(m_params, m_config));
     layout->addWidget(m_printTable);
-    m_tabWidget->addTab(tab, QStringLiteral("输出打印"));
+    m_stack->addWidget(tab);
 }
 
 void EnterCalcPage::onTabChanged(int index)
@@ -243,6 +296,7 @@ void EnterCalcPage::onTabChanged(int index)
     m_optimizeRibbon->setVisible(index == 0);
     m_schemeRibbon->setVisible(index == 1);
     m_printRibbon->setVisible(index == 2);
+    m_stack->setCurrentIndex(index);
 }
 
 void EnterCalcPage::onStartOptimize()

@@ -51,6 +51,7 @@
         <file>icons/save_scheme.svg</file>
         <file>icons/library.svg</file>
         <file>icons/memory.svg</file>
+        <file>icons/memory_on.svg</file>
         <file>icons/undo.svg</file>
         <file>icons/optimize_dark.svg</file>
         <file>icons/quote_dark.svg</file>
