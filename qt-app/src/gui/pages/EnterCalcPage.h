@@ -3,7 +3,9 @@
 // 计算主页（包含优化/方案/打印三个Tab，驱动优化器执行）
 
 #include <QWidget>
-#include <QTabWidget>
+#include <QTabBar>
+#include <QStackedWidget>
+#include <QPushButton>
 #include "TransformerParams.h"
 #include "StructureConfig.h"
 
@@ -35,11 +37,13 @@ private:
     void buildSchemeRibbon();
     void buildPrintRibbon();
 
-    QTabWidget *m_tabWidget;
+    QTabBar *m_tabBar;
+    QStackedWidget *m_stack;
     RibbonBar *m_optimizeRibbon;
     RibbonBar *m_schemeRibbon;
     RibbonBar *m_printRibbon;
     QWidget *m_ribbonStack;
+    QPushButton *m_navButton;
     SchemeTableWidget *m_schemeTable;
     PrintTableWidget *m_printTable;
     TransformerParams m_params;
