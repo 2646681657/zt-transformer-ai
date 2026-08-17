@@ -5,8 +5,7 @@
 #include "SidebarPanel.h"
 #include "SchemeTableWidget.h"
 #include "PrintTableWidget.h"
-#include "MockOptimizer.h"
-#include "MockCalcEngine.h"
+#include "EmResultPanel.h"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -17,6 +16,11 @@
 #include <QHeaderView>
 #include <QSizePolicy>
 #include <QToolButton>
+#include <QSplitter>
+#include <QMessageBox>
+#include <QFileDialog>
+#include <QFile>
+#include <QTextStream>
 
 EnterCalcPage::EnterCalcPage(QWidget *parent)
     : QWidget(parent)
@@ -93,17 +97,24 @@ EnterCalcPage::EnterCalcPage(QWidget *parent)
     mainLayout->addWidget(m_stack, 1);
 
     // Status bar
-    auto *statusBar = new QLabel(QStringLiteral("就绪"), this);
-    statusBar->setFixedHeight(22);
-    statusBar->setStyleSheet("background: #22262e; padding-left: 8px; font-size: 11px;"
-                             "color: #8a9bb0; border-top: 1px solid #3a4050;");
-    mainLayout->addWidget(statusBar);
+    m_statusBar = new QLabel(QStringLiteral("就绪"), this);
+    m_statusBar->setFixedHeight(22);
+    m_statusBar->setStyleSheet("background: #22262e; padding-left: 8px; font-size: 11px;"
+                               "color: #8a9bb0; border-top: 1px solid #3a4050;");
+    mainLayout->addWidget(m_statusBar);
 }
 
 void EnterCalcPage::buildOptimizeRibbon()
 {
     auto *g0 = m_optimizeRibbon->addGroup(QString());
-    g0->addButton(new RibbonButton(QStringLiteral("快速计算"), ":/icons/fast_calc.svg", g0));
+    auto *quickBtn = new RibbonButton(QStringLiteral("快速计算"), ":/icons/fast_calc.svg", g0);
+    quickBtn->setCheckable(false);
+    connect(quickBtn, &QToolButton::clicked, this, &EnterCalcPage::onRunEmCalc);
+    g0->addButton(quickBtn);
+    auto *verifyBtn = new RibbonButton(QStringLiteral("对拍自检"), ":/icons/verify.svg", g0);
+    verifyBtn->setCheckable(false);
+    connect(verifyBtn, &QToolButton::clicked, this, &EnterCalcPage::onSelfTest);
+    g0->addButton(verifyBtn);
     m_optimizeRibbon->addSeparator();
 
     auto *g1 = m_optimizeRibbon->addGroup(QStringLiteral("初始化设置(从左到右顺序设置)"));
@@ -124,6 +135,7 @@ void EnterCalcPage::buildOptimizeRibbon()
     auto *g2 = m_optimizeRibbon->addGroup(QStringLiteral("寻优计算"));
     auto *startBtn = new RibbonButton(QStringLiteral("开始运行计算"), ":/icons/play.svg", g2);
     startBtn->setCheckable(false);
+    connect(startBtn, &QToolButton::clicked, this, &EnterCalcPage::onRunEmCalc);
     g2->addButton(startBtn);
     auto *pauseBtn = new RibbonButton(QStringLiteral("暂停计算"), ":/icons/pause.svg", g2);
     pauseBtn->setCheckable(false);
@@ -183,6 +195,7 @@ void EnterCalcPage::buildPrintRibbon()
     g2->addButton(b4);
     auto *b5 = new RibbonButton(QStringLiteral("保存为计算单"), ":/icons/save.svg", g2);
     b5->setCheckable(false);
+    connect(b5, &QToolButton::clicked, this, &EnterCalcPage::onSaveCalcSheet);
     g2->addButton(b5);
 }
 
@@ -265,7 +278,17 @@ void EnterCalcPage::setupOptimizeTab()
             row++;
         }
     }
-    layout->addWidget(table, 1);
+
+    // 主区分割：左结构配置表，右电磁计算结果面板
+    auto *splitter = new QSplitter(Qt::Horizontal, tab);
+    splitter->setHandleWidth(1);
+    splitter->addWidget(table);
+    m_emResultPanel = new EmResultPanel(splitter);
+    splitter->addWidget(m_emResultPanel);
+    splitter->setStretchFactor(0, 2);
+    splitter->setStretchFactor(1, 3);
+    splitter->setSizes({ 500, 700 });
+    layout->addWidget(splitter, 1);
     m_stack->addWidget(tab);
 }
 
@@ -285,8 +308,7 @@ void EnterCalcPage::setupPrintTab()
     auto *layout = new QVBoxLayout(tab);
     layout->setContentsMargins(0, 0, 0, 0);
     m_printTable = new PrintTableWidget(tab);
-    MockCalcEngine engine;
-    m_printTable->loadData(engine.calculate(m_params, m_config));
+    m_printTable->loadData(m_engine.calculate(m_params, m_config));
     layout->addWidget(m_printTable);
     m_stack->addWidget(tab);
 }
@@ -299,13 +321,93 @@ void EnterCalcPage::onTabChanged(int index)
     m_stack->setCurrentIndex(index);
 }
 
-void EnterCalcPage::onStartOptimize()
+void EnterCalcPage::onRunEmCalc()
 {
-    if (!m_optimizer) {
-        m_optimizer = new MockOptimizer(this);
-        connect(m_optimizer, &IOptimizer::resultReady, m_schemeTable, &SchemeTableWidget::addResult);
+    CalcInput input;   // 默认设计变量（SB20-M-630-10）
+    if (!m_engine.calcElectromagnetic(input, m_emResult) || !m_emResult.valid) {
+        m_statusBar->setText(QStringLiteral("电磁计算失败: %1").arg(m_emResult.error));
+        QMessageBox::warning(this, QStringLiteral("电磁计算"),
+                             QStringLiteral("计算失败: %1").arg(m_emResult.error));
+        return;
     }
-    m_schemeTable->clearResults();
-    OptimizationSettings settings;
-    m_optimizer->start(m_params, m_config, settings);
+    m_hasResult = true;
+
+    // 结果面板 + 打印表 + 方案入库
+    m_emResultPanel->loadResult(m_emResult);
+    m_printTable->loadData(m_engine.calculate(m_params, m_config));
+    appendScheme(input, m_emResult);
+
+    m_statusBar->setText(
+        QStringLiteral("电磁计算完成：空载损耗 %1 W | 负载损耗 %2 W | 阻抗电压 %3% | "
+                       "油面温升 %4 K | 总重 %5 kg | 材料成本 %6 元")
+            .arg(QString::number(m_emResult.core.noLoadLoss_W, 'f', 0),
+                 QString::number(m_emResult.winding.loadLoss_W, 'f', 0),
+                 QString::number(m_emResult.impedance.impedance_pct, 'f', 2),
+                 QString::number(m_emResult.thermal.oilRise_K, 'f', 1),
+                 QString::number(m_emResult.mass.totalWeight_kg, 'f', 0),
+                 QString::number(m_emResult.cost.materialCost, 'f', 0)));
+}
+
+void EnterCalcPage::onSelfTest()
+{
+    const QString report = ElectromagneticEngine::selfTestReport();
+    QMessageBox box(this);
+    box.setWindowTitle(QStringLiteral("对拍自检（SB20-M-630-10 计算单缓存值）"));
+    box.setText(report);
+    box.setTextFormat(Qt::PlainText);
+    box.setIcon(QMessageBox::Information);
+    box.setFont(QFont(QStringLiteral("Consolas")));
+    box.exec();
+    m_statusBar->setText(QStringLiteral("对拍自检已执行，详见弹窗报告"));
+}
+
+void EnterCalcPage::onSaveCalcSheet()
+{
+    if (!m_hasResult) {
+        // 未计算过时先执行一次默认输入的全链路计算
+        onRunEmCalc();
+        if (!m_hasResult) {
+            return;
+        }
+    }
+    const QString path = QFileDialog::getSaveFileName(
+        this, QStringLiteral("保存计算单"),
+        QStringLiteral("SB20-M-630-10计算单.txt"),
+        QStringLiteral("文本文件 (*.txt)"));
+    if (path.isEmpty()) {
+        return;
+    }
+    QFile file(path);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        QMessageBox::warning(this, QStringLiteral("保存计算单"),
+                             QStringLiteral("无法写入文件: %1").arg(path));
+        return;
+    }
+    QTextStream ts(&file);
+    ts.setEncoding(QStringConverter::Utf8);
+    ts << EmResultPanel::resultText(m_emResult) << "\n";
+    file.close();
+    m_statusBar->setText(QStringLiteral("计算单已保存: %1").arg(path));
+}
+
+void EnterCalcPage::appendScheme(const CalcInput &input, const CalcResult &result)
+{
+    OptimizationResult scheme;
+    scheme.schemeIdx = m_schemeTable->rowCount() + 1;
+    scheme.costCuFeOil = result.cost.materialCost;
+    scheme.costCuFe = result.cost.steelCost + result.cost.hvWireCost
+                      + result.cost.lvWireCost;
+    scheme.coreD = input.coreDiameter_mm;
+    scheme.coreL = result.core.minorAxis_mm;
+    scheme.lvTurns = input.lvTurns;
+    scheme.lvRuleT = input.lvFoilThick_mm;
+    scheme.lvRuleW = input.lvFoilWidth_mm;
+    scheme.hvRuleT = input.hvBareThick_mm;
+    scheme.hvRuleW = input.hvBareWidth_mm;
+    scheme.hvLayers = result.winding.layerCount;
+    scheme.lvOilDucts = 5;
+    scheme.hvOilDucts = 5;
+    scheme.lvToYoke = input.lvEndInsul_mm;
+    scheme.mainDuct = result.winding.mainDuct_mm;
+    m_schemeTable->addResult(scheme);
 }
