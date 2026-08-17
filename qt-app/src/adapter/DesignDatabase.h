@@ -52,6 +52,12 @@ public:
     bool steelIndexOfB(const QString &grade, double bT, int &index) const;
     const QVector<SteelCurve> &steelCurves() const { return m_steelCurves; }
 
+    // ---- 硅钢性能曲线（线性插值：对应计算单 J16/I26 的两点内插）----
+    // 磁密 → 单位铁损 W/kg（插值）
+    bool steelLossPerKgInterp(const QString &grade, double bT, double &wPerKg) const;
+    // 磁密 → 磁化容量 VA/kg（插值）
+    bool steelMagnetizationPerKgInterp(const QString &grade, double bT, double &vaPerKg) const;
+
     // ---- 性能标准值 ----
     // 容量 → 空载电流标准 %
     bool noLoadCurrentStd(double capacityKVA, double &pct) const;

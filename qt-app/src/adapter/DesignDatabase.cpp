@@ -213,6 +213,63 @@ bool DesignDatabase::steelIndexOfB(const QString &grade, double bT, int &index) 
     return true;
 }
 
+bool DesignDatabase::steelLossPerKgInterp(const QString &grade, double bT, double &wPerKg) const
+{
+    const SteelCurve *curve = findSteel(grade);
+    if (!curve || curve->points.isEmpty()) {
+        return false;
+    }
+    const auto &pts = curve->points;
+    if (bT <= pts.first().b) {
+        wPerKg = pts.first().wPerKg;
+        return true;
+    }
+    if (bT >= pts.last().b) {
+        wPerKg = pts.last().wPerKg;
+        return true;
+    }
+    for (int i = 1; i < pts.size(); ++i) {
+        if (bT <= pts[i].b) {
+            const auto &p0 = pts[i - 1];
+            const auto &p1 = pts[i];
+            const double t = (bT - p0.b) / (p1.b - p0.b);
+            wPerKg = p0.wPerKg + t * (p1.wPerKg - p0.wPerKg);
+            return true;
+        }
+    }
+    wPerKg = pts.last().wPerKg;
+    return true;
+}
+
+bool DesignDatabase::steelMagnetizationPerKgInterp(const QString &grade, double bT,
+                                                   double &vaPerKg) const
+{
+    const SteelCurve *curve = findSteel(grade);
+    if (!curve || curve->points.isEmpty()) {
+        return false;
+    }
+    const auto &pts = curve->points;
+    if (bT <= pts.first().b) {
+        vaPerKg = pts.first().vaPerKg;
+        return true;
+    }
+    if (bT >= pts.last().b) {
+        vaPerKg = pts.last().vaPerKg;
+        return true;
+    }
+    for (int i = 1; i < pts.size(); ++i) {
+        if (bT <= pts[i].b) {
+            const auto &p0 = pts[i - 1];
+            const auto &p1 = pts[i];
+            const double t = (bT - p0.b) / (p1.b - p0.b);
+            vaPerKg = p0.vaPerKg + t * (p1.vaPerKg - p0.vaPerKg);
+            return true;
+        }
+    }
+    vaPerKg = pts.last().vaPerKg;
+    return true;
+}
+
 bool DesignDatabase::noLoadCurrentStd(double capacityKVA, double &pct) const
 {
     QVector<double> keys;
