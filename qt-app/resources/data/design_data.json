@@ -1,0 +1,6031 @@
+{
+  "meta": {
+    "source": "计算用数据表.xls",
+    "note": "由 docs/gen_design_data.py 生成，列映射与 SB20 计算单公式对齐"
+  },
+  "siliconSteel": {
+    "grades": [
+      {
+        "grade": "18SQGD065",
+        "points": [
+          {
+            "b": 0.4,
+            "wPerKg": 0.035,
+            "vaPerKg": 0.136,
+            "index": 1
+          },
+          {
+            "b": 0.45,
+            "wPerKg": 0.043,
+            "vaPerKg": 0.183,
+            "index": 2
+          },
+          {
+            "b": 0.5,
+            "wPerKg": 0.053,
+            "vaPerKg": 0.237,
+            "index": 3
+          },
+          {
+            "b": 0.55,
+            "wPerKg": 0.063,
+            "vaPerKg": 0.298,
+            "index": 4
+          },
+          {
+            "b": 0.6,
+            "wPerKg": 0.074,
+            "vaPerKg": 0.365,
+            "index": 5
+          },
+          {
+            "b": 0.65,
+            "wPerKg": 0.085,
+            "vaPerKg": 0.44,
+            "index": 6
+          },
+          {
+            "b": 0.7,
+            "wPerKg": 0.098,
+            "vaPerKg": 0.516,
+            "index": 7
+          },
+          {
+            "b": 0.75,
+            "wPerKg": 0.111,
+            "vaPerKg": 0.615,
+            "index": 8
+          },
+          {
+            "b": 0.8,
+            "wPerKg": 0.126,
+            "vaPerKg": 0.734,
+            "index": 9
+          },
+          {
+            "b": 0.85,
+            "wPerKg": 0.141,
+            "vaPerKg": 0.886,
+            "index": 10
+          },
+          {
+            "b": 0.9,
+            "wPerKg": 0.158,
+            "vaPerKg": 1.09,
+            "index": 11
+          },
+          {
+            "b": 0.95,
+            "wPerKg": 0.175,
+            "vaPerKg": 1.139,
+            "index": 12
+          },
+          {
+            "b": 1.0,
+            "wPerKg": 0.194,
+            "vaPerKg": 1.168,
+            "index": 13
+          },
+          {
+            "b": 1.05,
+            "wPerKg": 0.214,
+            "vaPerKg": 1.198,
+            "index": 14
+          },
+          {
+            "b": 1.1,
+            "wPerKg": 0.235,
+            "vaPerKg": 1.232,
+            "index": 15
+          },
+          {
+            "b": 1.15,
+            "wPerKg": 0.257,
+            "vaPerKg": 1.266,
+            "index": 16
+          },
+          {
+            "b": 1.2,
+            "wPerKg": 0.28,
+            "vaPerKg": 1.296,
+            "index": 17
+          },
+          {
+            "b": 1.25,
+            "wPerKg": 0.305,
+            "vaPerKg": 1.335,
+            "index": 18
+          },
+          {
+            "b": 1.3,
+            "wPerKg": 0.331,
+            "vaPerKg": 1.377,
+            "index": 19
+          },
+          {
+            "b": 1.35,
+            "wPerKg": 0.358,
+            "vaPerKg": 1.422,
+            "index": 20
+          },
+          {
+            "b": 1.4,
+            "wPerKg": 0.387,
+            "vaPerKg": 1.471,
+            "index": 21
+          },
+          {
+            "b": 1.45,
+            "wPerKg": 0.418,
+            "vaPerKg": 1.517,
+            "index": 22
+          },
+          {
+            "b": 1.5,
+            "wPerKg": 0.452,
+            "vaPerKg": 1.572,
+            "index": 23
+          },
+          {
+            "b": 1.525,
+            "wPerKg": 0.47,
+            "vaPerKg": 1.636,
+            "index": 24
+          },
+          {
+            "b": 1.55,
+            "wPerKg": 0.489,
+            "vaPerKg": 1.708,
+            "index": 25
+          },
+          {
+            "b": 1.575,
+            "wPerKg": 0.51,
+            "vaPerKg": 1.784,
+            "index": 26
+          },
+          {
+            "b": 1.6,
+            "wPerKg": 0.531,
+            "vaPerKg": 1.853,
+            "index": 27
+          },
+          {
+            "b": 1.625,
+            "wPerKg": 0.555,
+            "vaPerKg": 1.95,
+            "index": 28
+          },
+          {
+            "b": 1.65,
+            "wPerKg": 0.583,
+            "vaPerKg": 2.051,
+            "index": 29
+          },
+          {
+            "b": 1.675,
+            "wPerKg": 0.613,
+            "vaPerKg": 2.165,
+            "index": 30
+          },
+          {
+            "b": 1.7,
+            "wPerKg": 0.646,
+            "vaPerKg": 2.299,
+            "index": 31
+          },
+          {
+            "b": 1.725,
+            "wPerKg": 0.686,
+            "vaPerKg": 2.424,
+            "index": 32
+          },
+          {
+            "b": 1.75,
+            "wPerKg": 0.731,
+            "vaPerKg": 2.593,
+            "index": 33
+          },
+          {
+            "b": 1.8,
+            "wPerKg": 0.847,
+            "vaPerKg": 2.787,
+            "index": 34
+          },
+          {
+            "b": 1.85,
+            "wPerKg": 1.013,
+            "vaPerKg": 3.008,
+            "index": 35
+          },
+          {
+            "b": 1.9,
+            "wPerKg": 1.259,
+            "vaPerKg": 3.27,
+            "index": 36
+          },
+          {
+            "b": 1.92,
+            "wPerKg": 1.375,
+            "vaPerKg": 3.516,
+            "index": 37
+          }
+        ]
+      },
+      {
+        "grade": "20R070",
+        "points": [
+          {
+            "b": 0.4,
+            "wPerKg": 0.034,
+            "vaPerKg": 0.136,
+            "index": 1
+          },
+          {
+            "b": 0.45,
+            "wPerKg": 0.043,
+            "vaPerKg": 0.183,
+            "index": 2
+          },
+          {
+            "b": 0.5,
+            "wPerKg": 0.053,
+            "vaPerKg": 0.237,
+            "index": 3
+          },
+          {
+            "b": 0.55,
+            "wPerKg": 0.062803464,
+            "vaPerKg": 0.298,
+            "index": 4
+          },
+          {
+            "b": 0.6,
+            "wPerKg": 0.0737677043,
+            "vaPerKg": 0.365,
+            "index": 5
+          },
+          {
+            "b": 0.65,
+            "wPerKg": 0.087,
+            "vaPerKg": 0.44,
+            "index": 6
+          },
+          {
+            "b": 0.7,
+            "wPerKg": 0.101,
+            "vaPerKg": 0.516,
+            "index": 7
+          },
+          {
+            "b": 0.75,
+            "wPerKg": 0.115,
+            "vaPerKg": 0.615,
+            "index": 8
+          },
+          {
+            "b": 0.8,
+            "wPerKg": 0.131,
+            "vaPerKg": 0.734,
+            "index": 9
+          },
+          {
+            "b": 0.85,
+            "wPerKg": 0.148,
+            "vaPerKg": 0.886,
+            "index": 10
+          },
+          {
+            "b": 0.9,
+            "wPerKg": 0.166,
+            "vaPerKg": 1.09,
+            "index": 11
+          },
+          {
+            "b": 0.95,
+            "wPerKg": 0.185,
+            "vaPerKg": 1.139,
+            "index": 12
+          },
+          {
+            "b": 0.998,
+            "wPerKg": 0.205,
+            "vaPerKg": 1.168,
+            "index": 13
+          },
+          {
+            "b": 1.049,
+            "wPerKg": 0.227,
+            "vaPerKg": 1.198,
+            "index": 14
+          },
+          {
+            "b": 1.1,
+            "wPerKg": 0.249,
+            "vaPerKg": 1.232,
+            "index": 15
+          },
+          {
+            "b": 1.149,
+            "wPerKg": 0.273,
+            "vaPerKg": 1.266,
+            "index": 16
+          },
+          {
+            "b": 1.199,
+            "wPerKg": 0.297,
+            "vaPerKg": 1.296,
+            "index": 17
+          },
+          {
+            "b": 1.249,
+            "wPerKg": 0.324,
+            "vaPerKg": 1.335,
+            "index": 18
+          },
+          {
+            "b": 1.299,
+            "wPerKg": 0.352,
+            "vaPerKg": 1.377,
+            "index": 19
+          },
+          {
+            "b": 1.349,
+            "wPerKg": 0.381,
+            "vaPerKg": 1.422,
+            "index": 20
+          },
+          {
+            "b": 1.399,
+            "wPerKg": 0.412,
+            "vaPerKg": 1.471,
+            "index": 21
+          },
+          {
+            "b": 1.448,
+            "wPerKg": 0.444,
+            "vaPerKg": 1.517,
+            "index": 22
+          },
+          {
+            "b": 1.498,
+            "wPerKg": 0.479,
+            "vaPerKg": 1.572,
+            "index": 23
+          },
+          {
+            "b": 1.549,
+            "wPerKg": 0.518,
+            "vaPerKg": 1.636,
+            "index": 24
+          },
+          {
+            "b": 1.598,
+            "wPerKg": 0.562,
+            "vaPerKg": 1.708,
+            "index": 25
+          },
+          {
+            "b": 1.608,
+            "wPerKg": 0.572,
+            "vaPerKg": 1.784,
+            "index": 26
+          },
+          {
+            "b": 1.618,
+            "wPerKg": 0.582,
+            "vaPerKg": 1.853,
+            "index": 27
+          },
+          {
+            "b": 1.628,
+            "wPerKg": 0.592,
+            "vaPerKg": 1.95,
+            "index": 28
+          },
+          {
+            "b": 1.637,
+            "wPerKg": 0.603,
+            "vaPerKg": 2.051,
+            "index": 29
+          },
+          {
+            "b": 1.648,
+            "wPerKg": 0.614,
+            "vaPerKg": 2.165,
+            "index": 30
+          },
+          {
+            "b": 1.658,
+            "wPerKg": 0.626,
+            "vaPerKg": 2.299,
+            "index": 31
+          },
+          {
+            "b": 1.668,
+            "wPerKg": 0.638,
+            "vaPerKg": 2.424,
+            "index": 32
+          },
+          {
+            "b": 1.678,
+            "wPerKg": 0.65,
+            "vaPerKg": 2.593,
+            "index": 33
+          },
+          {
+            "b": 1.688,
+            "wPerKg": 0.664,
+            "vaPerKg": 2.787,
+            "index": 34
+          },
+          {
+            "b": 1.698,
+            "wPerKg": 0.678,
+            "vaPerKg": 3.008,
+            "index": 35
+          },
+          {
+            "b": 1.708,
+            "wPerKg": 0.693,
+            "vaPerKg": 3.27,
+            "index": 36
+          },
+          {
+            "b": 1.718,
+            "wPerKg": 0.708,
+            "vaPerKg": 3.516,
+            "index": 37
+          },
+          {
+            "b": 1.728,
+            "wPerKg": 0.726,
+            "vaPerKg": 3.85,
+            "index": 38
+          },
+          {
+            "b": 1.738,
+            "wPerKg": 0.743,
+            "vaPerKg": 4.231,
+            "index": 39
+          },
+          {
+            "b": 1.748,
+            "wPerKg": 0.761,
+            "vaPerKg": 4.704,
+            "index": 40
+          },
+          {
+            "b": 1.757,
+            "wPerKg": 0.781,
+            "vaPerKg": 5.263,
+            "index": 41
+          },
+          {
+            "b": 1.767,
+            "wPerKg": 0.803,
+            "vaPerKg": 5.816,
+            "index": 42
+          },
+          {
+            "b": 1.778,
+            "wPerKg": 0.825,
+            "vaPerKg": 6.582,
+            "index": 43
+          },
+          {
+            "b": 1.788,
+            "wPerKg": 0.847,
+            "vaPerKg": 7.534,
+            "index": 44
+          },
+          {
+            "b": 1.797,
+            "wPerKg": 0.873,
+            "vaPerKg": 8.668,
+            "index": 45
+          },
+          {
+            "b": 1.818,
+            "wPerKg": 0.932,
+            "vaPerKg": 10.086,
+            "index": 46
+          },
+          {
+            "b": 1.847,
+            "wPerKg": 1.034,
+            "vaPerKg": 11.58,
+            "index": 47
+          },
+          {
+            "b": 1.866,
+            "wPerKg": 1.121,
+            "vaPerKg": 13.807,
+            "index": 48
+          },
+          {
+            "b": 1.897,
+            "wPerKg": 1.287,
+            "vaPerKg": 16.644,
+            "index": 49
+          },
+          {
+            "b": 1.916,
+            "wPerKg": 1.404,
+            "vaPerKg": 20.261,
+            "index": 50
+          }
+        ]
+      },
+      {
+        "grade": "23R080",
+        "points": [
+          {
+            "b": 0.4,
+            "wPerKg": 0.042,
+            "vaPerKg": 0.136,
+            "index": 1
+          },
+          {
+            "b": 0.45,
+            "wPerKg": 0.052,
+            "vaPerKg": 0.183,
+            "index": 2
+          },
+          {
+            "b": 0.5,
+            "wPerKg": 0.064,
+            "vaPerKg": 0.237,
+            "index": 3
+          },
+          {
+            "b": 0.55,
+            "wPerKg": 0.077,
+            "vaPerKg": 0.298,
+            "index": 4
+          },
+          {
+            "b": 0.6,
+            "wPerKg": 0.091,
+            "vaPerKg": 0.365,
+            "index": 5
+          },
+          {
+            "b": 0.65,
+            "wPerKg": 0.106,
+            "vaPerKg": 0.44,
+            "index": 6
+          },
+          {
+            "b": 0.7,
+            "wPerKg": 0.123,
+            "vaPerKg": 0.516,
+            "index": 7
+          },
+          {
+            "b": 0.75,
+            "wPerKg": 0.141,
+            "vaPerKg": 0.615,
+            "index": 8
+          },
+          {
+            "b": 0.8,
+            "wPerKg": 0.16,
+            "vaPerKg": 0.734,
+            "index": 9
+          },
+          {
+            "b": 0.85,
+            "wPerKg": 0.18,
+            "vaPerKg": 0.886,
+            "index": 10
+          },
+          {
+            "b": 0.9,
+            "wPerKg": 0.202,
+            "vaPerKg": 1.09,
+            "index": 11
+          },
+          {
+            "b": 0.95,
+            "wPerKg": 0.226,
+            "vaPerKg": 1.139,
+            "index": 12
+          },
+          {
+            "b": 1.0,
+            "wPerKg": 0.25,
+            "vaPerKg": 1.168,
+            "index": 13
+          },
+          {
+            "b": 1.05,
+            "wPerKg": 0.276,
+            "vaPerKg": 1.198,
+            "index": 14
+          },
+          {
+            "b": 1.1,
+            "wPerKg": 0.303,
+            "vaPerKg": 1.232,
+            "index": 15
+          },
+          {
+            "b": 1.15,
+            "wPerKg": 0.331,
+            "vaPerKg": 1.266,
+            "index": 16
+          },
+          {
+            "b": 1.2,
+            "wPerKg": 0.361,
+            "vaPerKg": 1.296,
+            "index": 17
+          },
+          {
+            "b": 1.25,
+            "wPerKg": 0.392,
+            "vaPerKg": 1.335,
+            "index": 18
+          },
+          {
+            "b": 1.3,
+            "wPerKg": 0.425,
+            "vaPerKg": 1.377,
+            "index": 19
+          },
+          {
+            "b": 1.35,
+            "wPerKg": 0.459,
+            "vaPerKg": 1.422,
+            "index": 20
+          },
+          {
+            "b": 1.4,
+            "wPerKg": 0.494,
+            "vaPerKg": 1.471,
+            "index": 21
+          },
+          {
+            "b": 1.45,
+            "wPerKg": 0.533,
+            "vaPerKg": 1.517,
+            "index": 22
+          },
+          {
+            "b": 1.5,
+            "wPerKg": 0.573,
+            "vaPerKg": 1.572,
+            "index": 23
+          },
+          {
+            "b": 1.55,
+            "wPerKg": 0.617,
+            "vaPerKg": 1.636,
+            "index": 24
+          },
+          {
+            "b": 1.6,
+            "wPerKg": 0.665,
+            "vaPerKg": 1.708,
+            "index": 25
+          },
+          {
+            "b": 1.61,
+            "wPerKg": 0.675,
+            "vaPerKg": 1.784,
+            "index": 26
+          },
+          {
+            "b": 1.62,
+            "wPerKg": 0.686,
+            "vaPerKg": 1.853,
+            "index": 27
+          },
+          {
+            "b": 1.63,
+            "wPerKg": 0.696,
+            "vaPerKg": 1.95,
+            "index": 28
+          },
+          {
+            "b": 1.64,
+            "wPerKg": 0.707,
+            "vaPerKg": 2.051,
+            "index": 29
+          },
+          {
+            "b": 1.65,
+            "wPerKg": 0.719,
+            "vaPerKg": 2.165,
+            "index": 30
+          },
+          {
+            "b": 1.66,
+            "wPerKg": 0.731,
+            "vaPerKg": 2.299,
+            "index": 31
+          },
+          {
+            "b": 1.67,
+            "wPerKg": 0.743,
+            "vaPerKg": 2.424,
+            "index": 32
+          },
+          {
+            "b": 1.68,
+            "wPerKg": 0.756,
+            "vaPerKg": 2.593,
+            "index": 33
+          },
+          {
+            "b": 1.69,
+            "wPerKg": 0.767,
+            "vaPerKg": 2.787,
+            "index": 34
+          },
+          {
+            "b": 1.7,
+            "wPerKg": 0.783,
+            "vaPerKg": 3.008,
+            "index": 35
+          },
+          {
+            "b": 1.71,
+            "wPerKg": 0.798,
+            "vaPerKg": 3.27,
+            "index": 36
+          },
+          {
+            "b": 1.72,
+            "wPerKg": 0.813,
+            "vaPerKg": 3.516,
+            "index": 37
+          },
+          {
+            "b": 1.73,
+            "wPerKg": 0.829,
+            "vaPerKg": 3.85,
+            "index": 38
+          },
+          {
+            "b": 1.74,
+            "wPerKg": 0.846,
+            "vaPerKg": 4.231,
+            "index": 39
+          },
+          {
+            "b": 1.75,
+            "wPerKg": 0.863,
+            "vaPerKg": 4.704,
+            "index": 40
+          },
+          {
+            "b": 1.76,
+            "wPerKg": 0.881,
+            "vaPerKg": 5.263,
+            "index": 41
+          },
+          {
+            "b": 1.77,
+            "wPerKg": 0.901,
+            "vaPerKg": 5.816,
+            "index": 42
+          },
+          {
+            "b": 1.78,
+            "wPerKg": 0.921,
+            "vaPerKg": 6.582,
+            "index": 43
+          },
+          {
+            "b": 1.79,
+            "wPerKg": 0.943,
+            "vaPerKg": 7.534,
+            "index": 44
+          },
+          {
+            "b": 1.8,
+            "wPerKg": 0.965,
+            "vaPerKg": 8.668,
+            "index": 45
+          },
+          {
+            "b": 1.82,
+            "wPerKg": 1.016,
+            "vaPerKg": 10.086,
+            "index": 46
+          },
+          {
+            "b": 1.85,
+            "wPerKg": 1.107,
+            "vaPerKg": 11.58,
+            "index": 47
+          },
+          {
+            "b": 1.87,
+            "wPerKg": 1.177,
+            "vaPerKg": 13.807,
+            "index": 48
+          },
+          {
+            "b": 1.9,
+            "wPerKg": 1.313,
+            "vaPerKg": 16.644,
+            "index": 49
+          }
+        ]
+      },
+      {
+        "grade": "23RK085",
+        "points": [
+          {
+            "b": 0.499,
+            "wPerKg": 0.07,
+            "vaPerKg": 0.136,
+            "index": 1
+          },
+          {
+            "b": 0.599,
+            "wPerKg": 0.099,
+            "vaPerKg": 0.183,
+            "index": 2
+          },
+          {
+            "b": 0.698,
+            "wPerKg": 0.133,
+            "vaPerKg": 0.237,
+            "index": 3
+          },
+          {
+            "b": 0.799,
+            "wPerKg": 0.172,
+            "vaPerKg": 0.298,
+            "index": 4
+          },
+          {
+            "b": 0.898,
+            "wPerKg": 0.217,
+            "vaPerKg": 0.365,
+            "index": 5
+          },
+          {
+            "b": 0.999,
+            "wPerKg": 0.267,
+            "vaPerKg": 0.44,
+            "index": 6
+          },
+          {
+            "b": 1.097,
+            "wPerKg": 0.307,
+            "vaPerKg": 0.516,
+            "index": 7
+          },
+          {
+            "b": 1.197,
+            "wPerKg": 0.366,
+            "vaPerKg": 0.615,
+            "index": 8
+          },
+          {
+            "b": 1.297,
+            "wPerKg": 0.43,
+            "vaPerKg": 0.734,
+            "index": 9
+          },
+          {
+            "b": 1.398,
+            "wPerKg": 0.504,
+            "vaPerKg": 0.886,
+            "index": 10
+          },
+          {
+            "b": 1.497,
+            "wPerKg": 0.585,
+            "vaPerKg": 1.09,
+            "index": 11
+          },
+          {
+            "b": 1.516,
+            "wPerKg": 0.602,
+            "vaPerKg": 1.139,
+            "index": 12
+          },
+          {
+            "b": 1.526,
+            "wPerKg": 0.611,
+            "vaPerKg": 1.168,
+            "index": 13
+          },
+          {
+            "b": 1.537,
+            "wPerKg": 0.621,
+            "vaPerKg": 1.198,
+            "index": 14
+          },
+          {
+            "b": 1.547,
+            "wPerKg": 0.631,
+            "vaPerKg": 1.232,
+            "index": 15
+          },
+          {
+            "b": 1.558,
+            "wPerKg": 0.64,
+            "vaPerKg": 1.266,
+            "index": 16
+          },
+          {
+            "b": 1.566,
+            "wPerKg": 0.649,
+            "vaPerKg": 1.296,
+            "index": 17
+          },
+          {
+            "b": 1.577,
+            "wPerKg": 0.66,
+            "vaPerKg": 1.335,
+            "index": 18
+          },
+          {
+            "b": 1.587,
+            "wPerKg": 0.671,
+            "vaPerKg": 1.377,
+            "index": 19
+          },
+          {
+            "b": 1.597,
+            "wPerKg": 0.682,
+            "vaPerKg": 1.422,
+            "index": 20
+          },
+          {
+            "b": 1.608,
+            "wPerKg": 0.695,
+            "vaPerKg": 1.471,
+            "index": 21
+          },
+          {
+            "b": 1.616,
+            "wPerKg": 0.706,
+            "vaPerKg": 1.517,
+            "index": 22
+          },
+          {
+            "b": 1.626,
+            "wPerKg": 0.718,
+            "vaPerKg": 1.572,
+            "index": 23
+          },
+          {
+            "b": 1.637,
+            "wPerKg": 0.733,
+            "vaPerKg": 1.636,
+            "index": 24
+          },
+          {
+            "b": 1.647,
+            "wPerKg": 0.747,
+            "vaPerKg": 1.708,
+            "index": 25
+          },
+          {
+            "b": 1.657,
+            "wPerKg": 0.76,
+            "vaPerKg": 1.784,
+            "index": 26
+          },
+          {
+            "b": 1.666,
+            "wPerKg": 0.774,
+            "vaPerKg": 1.853,
+            "index": 27
+          },
+          {
+            "b": 1.677,
+            "wPerKg": 0.79,
+            "vaPerKg": 1.95,
+            "index": 28
+          },
+          {
+            "b": 1.687,
+            "wPerKg": 0.805,
+            "vaPerKg": 2.051,
+            "index": 29
+          },
+          {
+            "b": 1.696,
+            "wPerKg": 0.824,
+            "vaPerKg": 2.165,
+            "index": 30
+          },
+          {
+            "b": 1.707,
+            "wPerKg": 0.842,
+            "vaPerKg": 2.299,
+            "index": 31
+          },
+          {
+            "b": 1.716,
+            "wPerKg": 0.858,
+            "vaPerKg": 2.424,
+            "index": 32
+          },
+          {
+            "b": 1.726,
+            "wPerKg": 0.878,
+            "vaPerKg": 2.593,
+            "index": 33
+          },
+          {
+            "b": 1.736,
+            "wPerKg": 0.899,
+            "vaPerKg": 2.787,
+            "index": 34
+          },
+          {
+            "b": 1.747,
+            "wPerKg": 0.922,
+            "vaPerKg": 3.008,
+            "index": 35
+          },
+          {
+            "b": 1.757,
+            "wPerKg": 0.947,
+            "vaPerKg": 3.27,
+            "index": 36
+          },
+          {
+            "b": 1.766,
+            "wPerKg": 0.967,
+            "vaPerKg": 3.516,
+            "index": 37
+          },
+          {
+            "b": 1.776,
+            "wPerKg": 0.993,
+            "vaPerKg": 3.85,
+            "index": 38
+          },
+          {
+            "b": 1.786,
+            "wPerKg": 1.021,
+            "vaPerKg": 4.231,
+            "index": 39
+          },
+          {
+            "b": 1.796,
+            "wPerKg": 1.052,
+            "vaPerKg": 4.704,
+            "index": 40
+          },
+          {
+            "b": 1.806,
+            "wPerKg": 1.083,
+            "vaPerKg": 5.263,
+            "index": 41
+          },
+          {
+            "b": 1.815,
+            "wPerKg": 1.113,
+            "vaPerKg": 5.816,
+            "index": 42
+          },
+          {
+            "b": 1.826,
+            "wPerKg": 1.15,
+            "vaPerKg": 6.582,
+            "index": 43
+          },
+          {
+            "b": 1.836,
+            "wPerKg": 1.189,
+            "vaPerKg": 7.534,
+            "index": 44
+          },
+          {
+            "b": 1.846,
+            "wPerKg": 1.23,
+            "vaPerKg": 8.668,
+            "index": 45
+          },
+          {
+            "b": 1.857,
+            "wPerKg": 1.272,
+            "vaPerKg": 10.086,
+            "index": 46
+          },
+          {
+            "b": 1.865,
+            "wPerKg": 1.307,
+            "vaPerKg": 11.58,
+            "index": 47
+          },
+          {
+            "b": 1.875,
+            "wPerKg": 1.357,
+            "vaPerKg": 13.807,
+            "index": 48
+          },
+          {
+            "b": 1.886,
+            "wPerKg": 1.41,
+            "vaPerKg": 16.644,
+            "index": 49
+          },
+          {
+            "b": 1.896,
+            "wPerKg": 1.459,
+            "vaPerKg": 20.261,
+            "index": 50
+          }
+        ]
+      },
+      {
+        "grade": "27RK090",
+        "points": [
+          {
+            "b": 0.5,
+            "wPerKg": 0.077,
+            "vaPerKg": 0.113,
+            "index": 1
+          },
+          {
+            "b": 0.6,
+            "wPerKg": 0.108,
+            "vaPerKg": 0.154,
+            "index": 2
+          },
+          {
+            "b": 0.699,
+            "wPerKg": 0.144,
+            "vaPerKg": 0.199,
+            "index": 3
+          },
+          {
+            "b": 0.799,
+            "wPerKg": 0.185,
+            "vaPerKg": 0.251,
+            "index": 4
+          },
+          {
+            "b": 0.899,
+            "wPerKg": 0.232,
+            "vaPerKg": 0.309,
+            "index": 5
+          },
+          {
+            "b": 0.999,
+            "wPerKg": 0.285,
+            "vaPerKg": 0.374,
+            "index": 6
+          },
+          {
+            "b": 1.099,
+            "wPerKg": 0.344,
+            "vaPerKg": 0.448,
+            "index": 7
+          },
+          {
+            "b": 1.199,
+            "wPerKg": 0.408,
+            "vaPerKg": 0.533,
+            "index": 8
+          },
+          {
+            "b": 1.298,
+            "wPerKg": 0.48,
+            "vaPerKg": 0.634,
+            "index": 9
+          },
+          {
+            "b": 1.397,
+            "wPerKg": 0.557,
+            "vaPerKg": 0.758,
+            "index": 10
+          },
+          {
+            "b": 1.496,
+            "wPerKg": 0.644,
+            "vaPerKg": 0.913,
+            "index": 11
+          },
+          {
+            "b": 1.537,
+            "wPerKg": 0.681,
+            "vaPerKg": 0.993,
+            "index": 12
+          },
+          {
+            "b": 1.546,
+            "wPerKg": 0.691,
+            "vaPerKg": 1.015,
+            "index": 13
+          },
+          {
+            "b": 1.557,
+            "wPerKg": 0.702,
+            "vaPerKg": 1.04,
+            "index": 14
+          },
+          {
+            "b": 1.565,
+            "wPerKg": 0.713,
+            "vaPerKg": 1.066,
+            "index": 15
+          },
+          {
+            "b": 1.577,
+            "wPerKg": 0.722,
+            "vaPerKg": 1.089,
+            "index": 16
+          },
+          {
+            "b": 1.586,
+            "wPerKg": 0.733,
+            "vaPerKg": 1.118,
+            "index": 17
+          },
+          {
+            "b": 1.597,
+            "wPerKg": 0.745,
+            "vaPerKg": 1.149,
+            "index": 18
+          },
+          {
+            "b": 1.607,
+            "wPerKg": 0.757,
+            "vaPerKg": 1.179,
+            "index": 19
+          },
+          {
+            "b": 1.616,
+            "wPerKg": 0.767,
+            "vaPerKg": 1.209,
+            "index": 20
+          },
+          {
+            "b": 1.627,
+            "wPerKg": 0.78,
+            "vaPerKg": 1.25,
+            "index": 21
+          },
+          {
+            "b": 1.636,
+            "wPerKg": 0.792,
+            "vaPerKg": 1.289,
+            "index": 22
+          },
+          {
+            "b": 1.647,
+            "wPerKg": 0.802,
+            "vaPerKg": 1.321,
+            "index": 23
+          },
+          {
+            "b": 1.657,
+            "wPerKg": 0.818,
+            "vaPerKg": 1.373,
+            "index": 24
+          },
+          {
+            "b": 1.667,
+            "wPerKg": 0.829,
+            "vaPerKg": 1.419,
+            "index": 25
+          },
+          {
+            "b": 1.676,
+            "wPerKg": 0.843,
+            "vaPerKg": 1.472,
+            "index": 26
+          },
+          {
+            "b": 1.686,
+            "wPerKg": 0.858,
+            "vaPerKg": 1.531,
+            "index": 27
+          },
+          {
+            "b": 1.696,
+            "wPerKg": 0.872,
+            "vaPerKg": 1.599,
+            "index": 28
+          },
+          {
+            "b": 1.707,
+            "wPerKg": 0.889,
+            "vaPerKg": 1.676,
+            "index": 29
+          },
+          {
+            "b": 1.716,
+            "wPerKg": 0.903,
+            "vaPerKg": 1.749,
+            "index": 30
+          },
+          {
+            "b": 1.727,
+            "wPerKg": 0.919,
+            "vaPerKg": 1.836,
+            "index": 31
+          },
+          {
+            "b": 1.737,
+            "wPerKg": 0.937,
+            "vaPerKg": 1.943,
+            "index": 32
+          },
+          {
+            "b": 1.746,
+            "wPerKg": 0.954,
+            "vaPerKg": 2.055,
+            "index": 33
+          },
+          {
+            "b": 1.758,
+            "wPerKg": 0.974,
+            "vaPerKg": 2.204,
+            "index": 34
+          },
+          {
+            "b": 1.768,
+            "wPerKg": 0.995,
+            "vaPerKg": 2.358,
+            "index": 35
+          },
+          {
+            "b": 1.778,
+            "wPerKg": 1.016,
+            "vaPerKg": 2.534,
+            "index": 36
+          },
+          {
+            "b": 1.788,
+            "wPerKg": 1.039,
+            "vaPerKg": 2.74,
+            "index": 37
+          },
+          {
+            "b": 1.798,
+            "wPerKg": 1.062,
+            "vaPerKg": 2.982,
+            "index": 38
+          },
+          {
+            "b": 1.808,
+            "wPerKg": 1.088,
+            "vaPerKg": 3.268,
+            "index": 39
+          },
+          {
+            "b": 1.818,
+            "wPerKg": 1.115,
+            "vaPerKg": 3.605,
+            "index": 40
+          },
+          {
+            "b": 1.827,
+            "wPerKg": 1.142,
+            "vaPerKg": 4.005,
+            "index": 41
+          },
+          {
+            "b": 1.838,
+            "wPerKg": 1.175,
+            "vaPerKg": 4.494,
+            "index": 42
+          },
+          {
+            "b": 1.848,
+            "wPerKg": 1.208,
+            "vaPerKg": 5.066,
+            "index": 43
+          },
+          {
+            "b": 1.858,
+            "wPerKg": 1.24,
+            "vaPerKg": 5.742,
+            "index": 44
+          },
+          {
+            "b": 1.867,
+            "wPerKg": 1.28,
+            "vaPerKg": 6.584,
+            "index": 45
+          },
+          {
+            "b": 1.878,
+            "wPerKg": 1.319,
+            "vaPerKg": 7.611,
+            "index": 46
+          },
+          {
+            "b": 1.887,
+            "wPerKg": 1.361,
+            "vaPerKg": 8.871,
+            "index": 47
+          },
+          {
+            "b": 1.897,
+            "wPerKg": 1.407,
+            "vaPerKg": 10.428,
+            "index": 48
+          },
+          {
+            "b": 1.907,
+            "wPerKg": 1.453,
+            "vaPerKg": 12.292,
+            "index": 49
+          },
+          {
+            "b": 1.917,
+            "wPerKg": 1.506,
+            "vaPerKg": 14.75,
+            "index": 50
+          }
+        ]
+      },
+      {
+        "grade": "27ZH100",
+        "points": [
+          {
+            "b": 1.05,
+            "wPerKg": 0.338,
+            "vaPerKg": 0.4,
+            "index": 1
+          },
+          {
+            "b": 1.06,
+            "wPerKg": 0.344,
+            "vaPerKg": 0.407,
+            "index": 2
+          },
+          {
+            "b": 1.07,
+            "wPerKg": 0.35,
+            "vaPerKg": 0.414,
+            "index": 3
+          },
+          {
+            "b": 1.08,
+            "wPerKg": 0.356,
+            "vaPerKg": 0.421,
+            "index": 4
+          },
+          {
+            "b": 1.09,
+            "wPerKg": 0.363,
+            "vaPerKg": 0.428,
+            "index": 5
+          },
+          {
+            "b": 1.1,
+            "wPerKg": 0.37,
+            "vaPerKg": 0.435,
+            "index": 6
+          },
+          {
+            "b": 1.11,
+            "wPerKg": 0.377,
+            "vaPerKg": 0.442,
+            "index": 7
+          },
+          {
+            "b": 1.12,
+            "wPerKg": 0.384,
+            "vaPerKg": 0.449,
+            "index": 8
+          },
+          {
+            "b": 1.13,
+            "wPerKg": 0.391,
+            "vaPerKg": 0.456,
+            "index": 9
+          },
+          {
+            "b": 1.14,
+            "wPerKg": 0.398,
+            "vaPerKg": 0.463,
+            "index": 10
+          },
+          {
+            "b": 1.15,
+            "wPerKg": 0.405,
+            "vaPerKg": 0.47,
+            "index": 11
+          },
+          {
+            "b": 1.16,
+            "wPerKg": 0.412,
+            "vaPerKg": 0.477,
+            "index": 12
+          },
+          {
+            "b": 1.17,
+            "wPerKg": 0.419,
+            "vaPerKg": 0.484,
+            "index": 13
+          },
+          {
+            "b": 1.18,
+            "wPerKg": 0.426,
+            "vaPerKg": 0.491,
+            "index": 14
+          },
+          {
+            "b": 1.19,
+            "wPerKg": 0.433,
+            "vaPerKg": 0.498,
+            "index": 15
+          },
+          {
+            "b": 1.2,
+            "wPerKg": 0.44,
+            "vaPerKg": 0.505,
+            "index": 16
+          },
+          {
+            "b": 1.21,
+            "wPerKg": 0.447,
+            "vaPerKg": 0.513,
+            "index": 17
+          },
+          {
+            "b": 1.22,
+            "wPerKg": 0.454,
+            "vaPerKg": 0.521,
+            "index": 18
+          },
+          {
+            "b": 1.23,
+            "wPerKg": 0.461,
+            "vaPerKg": 0.53,
+            "index": 19
+          },
+          {
+            "b": 1.24,
+            "wPerKg": 0.468,
+            "vaPerKg": 0.539,
+            "index": 20
+          },
+          {
+            "b": 1.25,
+            "wPerKg": 0.475,
+            "vaPerKg": 0.548,
+            "index": 21
+          },
+          {
+            "b": 1.26,
+            "wPerKg": 0.483,
+            "vaPerKg": 0.557,
+            "index": 22
+          },
+          {
+            "b": 1.27,
+            "wPerKg": 0.491,
+            "vaPerKg": 0.566,
+            "index": 23
+          },
+          {
+            "b": 1.28,
+            "wPerKg": 0.499,
+            "vaPerKg": 0.575,
+            "index": 24
+          },
+          {
+            "b": 1.29,
+            "wPerKg": 0.507,
+            "vaPerKg": 0.584,
+            "index": 25
+          },
+          {
+            "b": 1.3,
+            "wPerKg": 0.515,
+            "vaPerKg": 0.593,
+            "index": 26
+          },
+          {
+            "b": 1.31,
+            "wPerKg": 0.523,
+            "vaPerKg": 0.603,
+            "index": 27
+          },
+          {
+            "b": 1.32,
+            "wPerKg": 0.531,
+            "vaPerKg": 0.613,
+            "index": 28
+          },
+          {
+            "b": 1.33,
+            "wPerKg": 0.539,
+            "vaPerKg": 0.623,
+            "index": 29
+          },
+          {
+            "b": 1.34,
+            "wPerKg": 0.547,
+            "vaPerKg": 0.633,
+            "index": 30
+          },
+          {
+            "b": 1.35,
+            "wPerKg": 0.555,
+            "vaPerKg": 0.643,
+            "index": 31
+          },
+          {
+            "b": 1.36,
+            "wPerKg": 0.564,
+            "vaPerKg": 0.653,
+            "index": 32
+          },
+          {
+            "b": 1.37,
+            "wPerKg": 0.573,
+            "vaPerKg": 0.663,
+            "index": 33
+          },
+          {
+            "b": 1.38,
+            "wPerKg": 0.582,
+            "vaPerKg": 0.673,
+            "index": 34
+          },
+          {
+            "b": 1.39,
+            "wPerKg": 0.591,
+            "vaPerKg": 0.684,
+            "index": 35
+          },
+          {
+            "b": 1.4,
+            "wPerKg": 0.6,
+            "vaPerKg": 0.695,
+            "index": 36
+          },
+          {
+            "b": 1.41,
+            "wPerKg": 0.61,
+            "vaPerKg": 0.706,
+            "index": 37
+          },
+          {
+            "b": 1.42,
+            "wPerKg": 0.62,
+            "vaPerKg": 0.717,
+            "index": 38
+          },
+          {
+            "b": 1.43,
+            "wPerKg": 0.63,
+            "vaPerKg": 0.728,
+            "index": 39
+          },
+          {
+            "b": 1.44,
+            "wPerKg": 0.64,
+            "vaPerKg": 0.739,
+            "index": 40
+          },
+          {
+            "b": 1.45,
+            "wPerKg": 0.65,
+            "vaPerKg": 0.75,
+            "index": 41
+          },
+          {
+            "b": 1.46,
+            "wPerKg": 0.66,
+            "vaPerKg": 0.762,
+            "index": 42
+          },
+          {
+            "b": 1.47,
+            "wPerKg": 0.67,
+            "vaPerKg": 0.774,
+            "index": 43
+          },
+          {
+            "b": 1.48,
+            "wPerKg": 0.68,
+            "vaPerKg": 0.786,
+            "index": 44
+          },
+          {
+            "b": 1.49,
+            "wPerKg": 0.69,
+            "vaPerKg": 0.798,
+            "index": 45
+          },
+          {
+            "b": 1.5,
+            "wPerKg": 0.7,
+            "vaPerKg": 0.81,
+            "index": 46
+          },
+          {
+            "b": 1.51,
+            "wPerKg": 0.71,
+            "vaPerKg": 0.822,
+            "index": 47
+          },
+          {
+            "b": 1.52,
+            "wPerKg": 0.72,
+            "vaPerKg": 0.836,
+            "index": 48
+          },
+          {
+            "b": 1.53,
+            "wPerKg": 0.73,
+            "vaPerKg": 0.852,
+            "index": 49
+          },
+          {
+            "b": 1.54,
+            "wPerKg": 0.74,
+            "vaPerKg": 0.87,
+            "index": 50
+          },
+          {
+            "b": 1.55,
+            "wPerKg": 0.75,
+            "vaPerKg": 0.89,
+            "index": 51
+          },
+          {
+            "b": 1.56,
+            "wPerKg": 0.761,
+            "vaPerKg": 0.91,
+            "index": 52
+          },
+          {
+            "b": 1.57,
+            "wPerKg": 0.772,
+            "vaPerKg": 0.93,
+            "index": 53
+          },
+          {
+            "b": 1.58,
+            "wPerKg": 0.784,
+            "vaPerKg": 0.952,
+            "index": 54
+          },
+          {
+            "b": 1.59,
+            "wPerKg": 0.797,
+            "vaPerKg": 0.976,
+            "index": 55
+          },
+          {
+            "b": 1.6,
+            "wPerKg": 0.81,
+            "vaPerKg": 1.0,
+            "index": 56
+          },
+          {
+            "b": 1.61,
+            "wPerKg": 0.824,
+            "vaPerKg": 1.024,
+            "index": 57
+          },
+          {
+            "b": 1.62,
+            "wPerKg": 0.838,
+            "vaPerKg": 1.05,
+            "index": 58
+          },
+          {
+            "b": 1.63,
+            "wPerKg": 0.852,
+            "vaPerKg": 1.078,
+            "index": 59
+          },
+          {
+            "b": 1.64,
+            "wPerKg": 0.866,
+            "vaPerKg": 1.108,
+            "index": 60
+          },
+          {
+            "b": 1.65,
+            "wPerKg": 0.88,
+            "vaPerKg": 1.14,
+            "index": 61
+          },
+          {
+            "b": 1.66,
+            "wPerKg": 0.896,
+            "vaPerKg": 1.174,
+            "index": 62
+          },
+          {
+            "b": 1.67,
+            "wPerKg": 0.912,
+            "vaPerKg": 1.21,
+            "index": 63
+          },
+          {
+            "b": 1.68,
+            "wPerKg": 0.928,
+            "vaPerKg": 1.25,
+            "index": 64
+          },
+          {
+            "b": 1.69,
+            "wPerKg": 0.944,
+            "vaPerKg": 1.29,
+            "index": 65
+          },
+          {
+            "b": 1.7,
+            "wPerKg": 0.96,
+            "vaPerKg": 1.35,
+            "index": 66
+          },
+          {
+            "b": 1.71,
+            "wPerKg": 0.978,
+            "vaPerKg": 1.4,
+            "index": 67
+          },
+          {
+            "b": 1.72,
+            "wPerKg": 0.998,
+            "vaPerKg": 1.46,
+            "index": 68
+          },
+          {
+            "b": 1.73,
+            "wPerKg": 1.02,
+            "vaPerKg": 1.53,
+            "index": 69
+          },
+          {
+            "b": 1.74,
+            "wPerKg": 1.044,
+            "vaPerKg": 1.61,
+            "index": 70
+          },
+          {
+            "b": 1.75,
+            "wPerKg": 1.07,
+            "vaPerKg": 1.72,
+            "index": 71
+          },
+          {
+            "b": 1.76,
+            "wPerKg": 1.094,
+            "vaPerKg": 1.82,
+            "index": 72
+          },
+          {
+            "b": 1.77,
+            "wPerKg": 1.12,
+            "vaPerKg": 1.95,
+            "index": 73
+          },
+          {
+            "b": 1.78,
+            "wPerKg": 1.146,
+            "vaPerKg": 2.1,
+            "index": 74
+          },
+          {
+            "b": 1.79,
+            "wPerKg": 1.174,
+            "vaPerKg": 2.28,
+            "index": 75
+          },
+          {
+            "b": 1.8,
+            "wPerKg": 1.202,
+            "vaPerKg": 2.5,
+            "index": 76
+          },
+          {
+            "b": 1.81,
+            "wPerKg": 1.232,
+            "vaPerKg": 2.73,
+            "index": 77
+          },
+          {
+            "b": 1.82,
+            "wPerKg": 1.262,
+            "vaPerKg": 3.0,
+            "index": 78
+          },
+          {
+            "b": 1.83,
+            "wPerKg": 1.294,
+            "vaPerKg": 3.4,
+            "index": 79
+          },
+          {
+            "b": 1.84,
+            "wPerKg": 1.326,
+            "vaPerKg": 3.9,
+            "index": 80
+          },
+          {
+            "b": 1.85,
+            "wPerKg": 1.36,
+            "vaPerKg": 4.5,
+            "index": 81
+          },
+          {
+            "b": 1.86,
+            "wPerKg": 1.396,
+            "vaPerKg": 5.2,
+            "index": 82
+          },
+          {
+            "b": 1.87,
+            "wPerKg": 1.434,
+            "vaPerKg": 6.1,
+            "index": 83
+          },
+          {
+            "b": 1.88,
+            "wPerKg": 1.474,
+            "vaPerKg": 7.3,
+            "index": 84
+          },
+          {
+            "b": 1.89,
+            "wPerKg": 1.516,
+            "vaPerKg": 8.8,
+            "index": 85
+          },
+          {
+            "b": 1.9,
+            "wPerKg": 1.56,
+            "vaPerKg": 10.6,
+            "index": 86
+          }
+        ]
+      },
+      {
+        "grade": "30Q120",
+        "points": [
+          {
+            "b": 1.35,
+            "wPerKg": 0.673,
+            "vaPerKg": 0.767,
+            "index": 31
+          },
+          {
+            "b": 1.36,
+            "wPerKg": 0.684,
+            "vaPerKg": 0.779,
+            "index": 32
+          },
+          {
+            "b": 1.37,
+            "wPerKg": 0.695,
+            "vaPerKg": 0.791,
+            "index": 33
+          },
+          {
+            "b": 1.38,
+            "wPerKg": 0.706,
+            "vaPerKg": 0.804,
+            "index": 34
+          },
+          {
+            "b": 1.39,
+            "wPerKg": 0.718,
+            "vaPerKg": 0.817,
+            "index": 35
+          },
+          {
+            "b": 1.4,
+            "wPerKg": 0.73,
+            "vaPerKg": 0.83,
+            "index": 36
+          },
+          {
+            "b": 1.41,
+            "wPerKg": 0.743,
+            "vaPerKg": 0.844,
+            "index": 37
+          },
+          {
+            "b": 1.42,
+            "wPerKg": 0.756,
+            "vaPerKg": 0.858,
+            "index": 38
+          },
+          {
+            "b": 1.43,
+            "wPerKg": 0.769,
+            "vaPerKg": 0.872,
+            "index": 39
+          },
+          {
+            "b": 1.44,
+            "wPerKg": 0.783,
+            "vaPerKg": 0.887,
+            "index": 40
+          },
+          {
+            "b": 1.45,
+            "wPerKg": 0.797,
+            "vaPerKg": 0.902,
+            "index": 41
+          },
+          {
+            "b": 1.46,
+            "wPerKg": 0.811,
+            "vaPerKg": 0.917,
+            "index": 42
+          },
+          {
+            "b": 1.47,
+            "wPerKg": 0.825,
+            "vaPerKg": 0.932,
+            "index": 43
+          },
+          {
+            "b": 1.48,
+            "wPerKg": 0.84,
+            "vaPerKg": 0.948,
+            "index": 44
+          },
+          {
+            "b": 1.49,
+            "wPerKg": 0.855,
+            "vaPerKg": 0.964,
+            "index": 45
+          },
+          {
+            "b": 1.5,
+            "wPerKg": 0.87,
+            "vaPerKg": 0.98,
+            "index": 46
+          },
+          {
+            "b": 1.51,
+            "wPerKg": 0.886,
+            "vaPerKg": 0.996,
+            "index": 47
+          },
+          {
+            "b": 1.52,
+            "wPerKg": 0.902,
+            "vaPerKg": 1.012,
+            "index": 48
+          },
+          {
+            "b": 1.53,
+            "wPerKg": 0.918,
+            "vaPerKg": 1.029,
+            "index": 49
+          },
+          {
+            "b": 1.54,
+            "wPerKg": 0.935,
+            "vaPerKg": 1.046,
+            "index": 50
+          },
+          {
+            "b": 1.55,
+            "wPerKg": 0.952,
+            "vaPerKg": 1.064,
+            "index": 51
+          },
+          {
+            "b": 1.56,
+            "wPerKg": 0.969,
+            "vaPerKg": 1.082,
+            "index": 52
+          },
+          {
+            "b": 1.57,
+            "wPerKg": 0.986,
+            "vaPerKg": 1.101,
+            "index": 53
+          },
+          {
+            "b": 1.58,
+            "wPerKg": 1.004,
+            "vaPerKg": 1.12,
+            "index": 54
+          },
+          {
+            "b": 1.59,
+            "wPerKg": 1.022,
+            "vaPerKg": 1.14,
+            "index": 55
+          },
+          {
+            "b": 1.6,
+            "wPerKg": 1.04,
+            "vaPerKg": 1.16,
+            "index": 56
+          },
+          {
+            "b": 1.61,
+            "wPerKg": 1.059,
+            "vaPerKg": 1.182,
+            "index": 57
+          },
+          {
+            "b": 1.62,
+            "wPerKg": 1.078,
+            "vaPerKg": 1.206,
+            "index": 58
+          },
+          {
+            "b": 1.63,
+            "wPerKg": 1.098,
+            "vaPerKg": 1.232,
+            "index": 59
+          },
+          {
+            "b": 1.64,
+            "wPerKg": 1.118,
+            "vaPerKg": 1.26,
+            "index": 60
+          },
+          {
+            "b": 1.65,
+            "wPerKg": 1.139,
+            "vaPerKg": 1.291,
+            "index": 61
+          },
+          {
+            "b": 1.66,
+            "wPerKg": 1.16,
+            "vaPerKg": 1.325,
+            "index": 62
+          },
+          {
+            "b": 1.67,
+            "wPerKg": 1.182,
+            "vaPerKg": 1.362,
+            "index": 63
+          },
+          {
+            "b": 1.68,
+            "wPerKg": 1.204,
+            "vaPerKg": 1.402,
+            "index": 64
+          },
+          {
+            "b": 1.69,
+            "wPerKg": 1.227,
+            "vaPerKg": 1.445,
+            "index": 65
+          },
+          {
+            "b": 1.7,
+            "wPerKg": 1.25,
+            "vaPerKg": 1.491,
+            "index": 66
+          },
+          {
+            "b": 1.71,
+            "wPerKg": 1.274,
+            "vaPerKg": 1.54,
+            "index": 67
+          },
+          {
+            "b": 1.72,
+            "wPerKg": 1.298,
+            "vaPerKg": 1.6,
+            "index": 68
+          },
+          {
+            "b": 1.73,
+            "wPerKg": 1.323,
+            "vaPerKg": 1.67,
+            "index": 69
+          },
+          {
+            "b": 1.74,
+            "wPerKg": 1.348,
+            "vaPerKg": 1.75,
+            "index": 70
+          },
+          {
+            "b": 1.75,
+            "wPerKg": 1.373,
+            "vaPerKg": 1.84,
+            "index": 71
+          },
+          {
+            "b": 1.76,
+            "wPerKg": 1.398,
+            "vaPerKg": 1.94,
+            "index": 72
+          },
+          {
+            "b": 1.77,
+            "wPerKg": 1.423,
+            "vaPerKg": 2.06,
+            "index": 73
+          },
+          {
+            "b": 1.78,
+            "wPerKg": 1.448,
+            "vaPerKg": 2.2,
+            "index": 74
+          },
+          {
+            "b": 1.79,
+            "wPerKg": 1.474,
+            "vaPerKg": 2.36,
+            "index": 75
+          },
+          {
+            "b": 1.8,
+            "wPerKg": 1.5,
+            "vaPerKg": 2.55,
+            "index": 76
+          }
+        ]
+      }
+    ],
+    "seamMagnetization": [
+      {
+        "index": 1,
+        "vaPerCm2": 0.175
+      },
+      {
+        "index": 2,
+        "vaPerCm2": 0.187
+      },
+      {
+        "index": 3,
+        "vaPerCm2": 0.2
+      },
+      {
+        "index": 4,
+        "vaPerCm2": 0.214
+      },
+      {
+        "index": 5,
+        "vaPerCm2": 0.229
+      },
+      {
+        "index": 6,
+        "vaPerCm2": 0.245
+      },
+      {
+        "index": 7,
+        "vaPerCm2": 0.261
+      },
+      {
+        "index": 8,
+        "vaPerCm2": 0.278
+      },
+      {
+        "index": 9,
+        "vaPerCm2": 0.296
+      },
+      {
+        "index": 10,
+        "vaPerCm2": 0.315
+      },
+      {
+        "index": 11,
+        "vaPerCm2": 0.335
+      },
+      {
+        "index": 12,
+        "vaPerCm2": 0.357
+      },
+      {
+        "index": 13,
+        "vaPerCm2": 0.381
+      },
+      {
+        "index": 14,
+        "vaPerCm2": 0.407
+      },
+      {
+        "index": 15,
+        "vaPerCm2": 0.435
+      },
+      {
+        "index": 16,
+        "vaPerCm2": 0.465
+      },
+      {
+        "index": 17,
+        "vaPerCm2": 0.496
+      },
+      {
+        "index": 18,
+        "vaPerCm2": 0.528
+      },
+      {
+        "index": 19,
+        "vaPerCm2": 0.561
+      },
+      {
+        "index": 20,
+        "vaPerCm2": 0.595
+      },
+      {
+        "index": 21,
+        "vaPerCm2": 0.63
+      },
+      {
+        "index": 22,
+        "vaPerCm2": 0.67
+      },
+      {
+        "index": 23,
+        "vaPerCm2": 0.71
+      },
+      {
+        "index": 24,
+        "vaPerCm2": 0.755
+      },
+      {
+        "index": 25,
+        "vaPerCm2": 0.8
+      },
+      {
+        "index": 26,
+        "vaPerCm2": 0.85
+      },
+      {
+        "index": 27,
+        "vaPerCm2": 0.9
+      },
+      {
+        "index": 28,
+        "vaPerCm2": 0.95
+      },
+      {
+        "index": 29,
+        "vaPerCm2": 1.0
+      },
+      {
+        "index": 30,
+        "vaPerCm2": 1.05
+      },
+      {
+        "index": 31,
+        "vaPerCm2": 1.1
+      },
+      {
+        "index": 32,
+        "vaPerCm2": 1.15
+      },
+      {
+        "index": 33,
+        "vaPerCm2": 1.2
+      },
+      {
+        "index": 34,
+        "vaPerCm2": 1.25
+      },
+      {
+        "index": 35,
+        "vaPerCm2": 1.3
+      },
+      {
+        "index": 36,
+        "vaPerCm2": 1.36
+      },
+      {
+        "index": 37,
+        "vaPerCm2": 1.42
+      },
+      {
+        "index": 38,
+        "vaPerCm2": 1.48
+      },
+      {
+        "index": 39,
+        "vaPerCm2": 1.54
+      },
+      {
+        "index": 40,
+        "vaPerCm2": 1.6
+      },
+      {
+        "index": 41,
+        "vaPerCm2": 1.66
+      },
+      {
+        "index": 42,
+        "vaPerCm2": 1.72
+      },
+      {
+        "index": 43,
+        "vaPerCm2": 1.79
+      },
+      {
+        "index": 44,
+        "vaPerCm2": 1.86
+      },
+      {
+        "index": 45,
+        "vaPerCm2": 1.93
+      },
+      {
+        "index": 46,
+        "vaPerCm2": 2.0
+      },
+      {
+        "index": 47,
+        "vaPerCm2": 2.07
+      },
+      {
+        "index": 48,
+        "vaPerCm2": 2.14
+      },
+      {
+        "index": 49,
+        "vaPerCm2": 2.21
+      },
+      {
+        "index": 50,
+        "vaPerCm2": 2.28
+      },
+      {
+        "index": 51,
+        "vaPerCm2": 2.35
+      },
+      {
+        "index": 52,
+        "vaPerCm2": 2.42
+      },
+      {
+        "index": 53,
+        "vaPerCm2": 2.5
+      },
+      {
+        "index": 54,
+        "vaPerCm2": 2.58
+      },
+      {
+        "index": 55,
+        "vaPerCm2": 2.66
+      },
+      {
+        "index": 56,
+        "vaPerCm2": 2.74
+      },
+      {
+        "index": 57,
+        "vaPerCm2": 2.83
+      },
+      {
+        "index": 58,
+        "vaPerCm2": 2.92
+      },
+      {
+        "index": 59,
+        "vaPerCm2": 3.01
+      },
+      {
+        "index": 60,
+        "vaPerCm2": 3.1
+      },
+      {
+        "index": 61,
+        "vaPerCm2": 3.19
+      },
+      {
+        "index": 62,
+        "vaPerCm2": 3.28
+      },
+      {
+        "index": 63,
+        "vaPerCm2": 3.38
+      },
+      {
+        "index": 64,
+        "vaPerCm2": 3.49
+      },
+      {
+        "index": 65,
+        "vaPerCm2": 3.6
+      },
+      {
+        "index": 66,
+        "vaPerCm2": 3.71
+      },
+      {
+        "index": 67,
+        "vaPerCm2": 3.83
+      },
+      {
+        "index": 68,
+        "vaPerCm2": 3.96
+      },
+      {
+        "index": 69,
+        "vaPerCm2": 4.09
+      },
+      {
+        "index": 70,
+        "vaPerCm2": 4.23
+      },
+      {
+        "index": 71,
+        "vaPerCm2": 4.37
+      },
+      {
+        "index": 72,
+        "vaPerCm2": 4.52
+      },
+      {
+        "index": 73,
+        "vaPerCm2": 4.67
+      },
+      {
+        "index": 74,
+        "vaPerCm2": 4.83
+      },
+      {
+        "index": 75,
+        "vaPerCm2": 5.0
+      },
+      {
+        "index": 76,
+        "vaPerCm2": 5.17
+      },
+      {
+        "index": 77,
+        "vaPerCm2": 5.35
+      },
+      {
+        "index": 78,
+        "vaPerCm2": 5.55
+      },
+      {
+        "index": 79,
+        "vaPerCm2": 5.75
+      },
+      {
+        "index": 80,
+        "vaPerCm2": 5.95
+      },
+      {
+        "index": 81,
+        "vaPerCm2": 6.15
+      },
+      {
+        "index": 82,
+        "vaPerCm2": 6.35
+      },
+      {
+        "index": 83,
+        "vaPerCm2": 6.57
+      },
+      {
+        "index": 84,
+        "vaPerCm2": 6.8
+      },
+      {
+        "index": 85,
+        "vaPerCm2": 7.05
+      },
+      {
+        "index": 86,
+        "vaPerCm2": 7.3
+      }
+    ]
+  },
+  "performanceStandards": [
+    {
+      "capacityKVA": 30.0,
+      "noLoadCurrentPct": 2.1
+    },
+    {
+      "capacityKVA": 50.0,
+      "noLoadCurrentPct": 2.0
+    },
+    {
+      "capacityKVA": 63.0,
+      "noLoadCurrentPct": 1.8
+    },
+    {
+      "capacityKVA": 80.0,
+      "noLoadCurrentPct": 1.8
+    },
+    {
+      "capacityKVA": 100.0,
+      "noLoadCurrentPct": 1.6
+    },
+    {
+      "capacityKVA": 125.0,
+      "noLoadCurrentPct": 1.5
+    },
+    {
+      "capacityKVA": 160.0,
+      "noLoadCurrentPct": 1.4
+    },
+    {
+      "capacityKVA": 200.0,
+      "noLoadCurrentPct": 1.3
+    },
+    {
+      "capacityKVA": 250.0,
+      "noLoadCurrentPct": 1.2
+    },
+    {
+      "capacityKVA": 315.0,
+      "noLoadCurrentPct": 1.1
+    },
+    {
+      "capacityKVA": 400.0,
+      "noLoadCurrentPct": 1.0
+    },
+    {
+      "capacityKVA": 500.0,
+      "noLoadCurrentPct": 1.0
+    },
+    {
+      "capacityKVA": 630.0,
+      "noLoadCurrentPct": 0.9
+    },
+    {
+      "capacityKVA": 800.0,
+      "noLoadCurrentPct": 0.8
+    },
+    {
+      "capacityKVA": 1000.0,
+      "noLoadCurrentPct": 0.7
+    },
+    {
+      "capacityKVA": 1250.0,
+      "noLoadCurrentPct": 0.6
+    },
+    {
+      "capacityKVA": 1600.0,
+      "noLoadCurrentPct": 0.5
+    },
+    {
+      "capacityKVA": 2000.0,
+      "noLoadCurrentPct": 0.5
+    },
+    {
+      "capacityKVA": 2500.0,
+      "noLoadCurrentPct": 0.4
+    },
+    {
+      "capacityKVA": 3150.0,
+      "noLoadCurrentPct": 0.4
+    }
+  ],
+  "coreLaminations": [
+    {
+      "ref": 70.0,
+      "widths": [
+        65.0,
+        55.0,
+        50.0,
+        40.0,
+        25.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "yokeBase": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "ref": 75.0,
+      "widths": [
+        70.0,
+        60.0,
+        50.0,
+        40.0,
+        30.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "yokeBase": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "ref": 80.0,
+      "widths": [
+        75.0,
+        65.0,
+        55.0,
+        40.0,
+        30.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "yokeBase": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "ref": 85.0,
+      "widths": [
+        80.0,
+        75.0,
+        65.0,
+        55.0,
+        35.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "yokeBase": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "ref": 90.0,
+      "widths": [
+        85.0,
+        75.0,
+        60.0,
+        50.0,
+        35.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "yokeBase": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "ref": 95.0,
+      "widths": [
+        90.0,
+        85.0,
+        75.0,
+        65.0,
+        55.0,
+        35.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "yokeBase": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "ref": 100.0,
+      "widths": [
+        95.0,
+        85.0,
+        75.0,
+        65.0,
+        55.0,
+        35.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "yokeBase": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "ref": 105.0,
+      "widths": [
+        100.0,
+        90.0,
+        80.0,
+        70.0,
+        55.0,
+        40.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "yokeBase": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "ref": 110.0,
+      "widths": [
+        105.0,
+        95.0,
+        85.0,
+        70.0,
+        55.0,
+        40.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "yokeBase": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "ref": 115.0,
+      "widths": [
+        110.0,
+        100.0,
+        90.0,
+        80.0,
+        65.0,
+        40.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "yokeBase": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "ref": 120.0,
+      "widths": [
+        115.0,
+        105.0,
+        95.0,
+        80.0,
+        65.0,
+        40.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "yokeBase": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "ref": 125.0,
+      "widths": [
+        120.0,
+        110.0,
+        100.0,
+        90.0,
+        75.0,
+        60.0,
+        40.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "yokeBase": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "ref": 130.0,
+      "widths": [
+        125.0,
+        115.0,
+        105.0,
+        90.0,
+        75.0,
+        60.0,
+        40.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "yokeBase": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "ref": 135.0,
+      "widths": [
+        130.0,
+        120.0,
+        110.0,
+        100.0,
+        85.0,
+        60.0,
+        40.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "yokeBase": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "ref": 140.0,
+      "widths": [
+        135.0,
+        125.0,
+        110.0,
+        95.0,
+        80.0,
+        60.0,
+        40.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "yokeBase": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "ref": 145.0,
+      "widths": [
+        140.0,
+        130.0,
+        120.0,
+        110.0,
+        90.0,
+        70.0,
+        45.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "yokeBase": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "ref": 150.0,
+      "widths": [
+        145.0,
+        135.0,
+        120.0,
+        105.0,
+        85.0,
+        65.0,
+        45.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "yokeBase": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "ref": 155.0,
+      "widths": [
+        150.0,
+        140.0,
+        125.0,
+        110.0,
+        90.0,
+        70.0,
+        45.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "yokeBase": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "ref": 160.0,
+      "widths": [
+        155.0,
+        145.0,
+        130.0,
+        115.0,
+        100.0,
+        75.0,
+        45.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "yokeBase": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "ref": 165.0,
+      "widths": [
+        160.0,
+        150.0,
+        135.0,
+        120.0,
+        100.0,
+        75.0,
+        45.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "yokeBase": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "ref": 170.0,
+      "widths": [
+        165.0,
+        155.0,
+        140.0,
+        125.0,
+        105.0,
+        85.0,
+        50.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "yokeBase": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "ref": 175.0,
+      "widths": [
+        170.0,
+        160.0,
+        150.0,
+        130.0,
+        110.0,
+        85.0,
+        50.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "yokeBase": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "ref": 180.0,
+      "widths": [
+        175.0,
+        160.0,
+        145.0,
+        125.0,
+        100.0,
+        80.0,
+        50.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "yokeBase": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "ref": 185.0,
+      "widths": [
+        180.0,
+        170.0,
+        155.0,
+        140.0,
+        115.0,
+        90.0,
+        50.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "yokeBase": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "ref": 190.0,
+      "widths": [
+        185.0,
+        175.0,
+        160.0,
+        145.0,
+        120.0,
+        90.0,
+        50.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "yokeBase": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "ref": 195.0,
+      "widths": [
+        190.0,
+        175.0,
+        155.0,
+        135.0,
+        110.0,
+        85.0,
+        55.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "yokeBase": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "ref": 200.0,
+      "widths": [
+        190.0,
+        180.0,
+        165.0,
+        145.0,
+        130.0,
+        110.0,
+        85.0,
+        50.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "yokeBase": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "ref": 205.0,
+      "widths": [
+        195.0,
+        180.0,
+        165.0,
+        145.0,
+        120.0,
+        100.0,
+        75.0,
+        50.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "yokeBase": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "ref": 210.0,
+      "widths": [
+        200.0,
+        185.0,
+        170.0,
+        150.0,
+        130.0,
+        110.0,
+        80.0,
+        50.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "yokeBase": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "ref": 215.0,
+      "widths": [
+        205.0,
+        190.0,
+        175.0,
+        155.0,
+        135.0,
+        115.0,
+        90.0,
+        55.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "yokeBase": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "ref": 220.0,
+      "widths": [
+        210.0,
+        195.0,
+        180.0,
+        160.0,
+        140.0,
+        115.0,
+        85.0,
+        55.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "yokeBase": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "ref": 225.0,
+      "widths": [
+        215.0,
+        205.0,
+        190.0,
+        170.0,
+        150.0,
+        125.0,
+        95.0,
+        55.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "yokeBase": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "ref": 230.0,
+      "widths": [
+        220.0,
+        210.0,
+        195.0,
+        180.0,
+        160.0,
+        135.0,
+        115.0,
+        90.0,
+        60.0,
+        0.0,
+        0.0
+      ],
+      "yokeBase": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "ref": 235.0,
+      "widths": [
+        225.0,
+        215.0,
+        200.0,
+        185.0,
+        165.0,
+        145.0,
+        125.0,
+        95.0,
+        60.0,
+        0.0,
+        0.0
+      ],
+      "yokeBase": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "ref": 240.0,
+      "widths": [
+        230.0,
+        220.0,
+        205.0,
+        190.0,
+        170.0,
+        150.0,
+        125.0,
+        95.0,
+        60.0,
+        0.0,
+        0.0
+      ],
+      "yokeBase": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "ref": 245.0,
+      "widths": [
+        235.0,
+        225.0,
+        210.0,
+        190.0,
+        175.0,
+        160.0,
+        140.0,
+        115.0,
+        85.0,
+        60.0,
+        0.0
+      ],
+      "yokeBase": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "ref": 250.0,
+      "widths": [
+        240.0,
+        230.0,
+        220.0,
+        205.0,
+        190.0,
+        170.0,
+        145.0,
+        120.0,
+        90.0,
+        60.0,
+        0.0
+      ],
+      "yokeBase": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "ref": 255.0,
+      "widths": [
+        245.0,
+        230.0,
+        215.0,
+        200.0,
+        180.0,
+        160.0,
+        140.0,
+        120.0,
+        90.0,
+        60.0,
+        0.0
+      ],
+      "yokeBase": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "ref": 260.0,
+      "widths": [
+        250.0,
+        240.0,
+        225.0,
+        210.0,
+        190.0,
+        170.0,
+        155.0,
+        130.0,
+        100.0,
+        70.0,
+        0.0
+      ],
+      "yokeBase": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "ref": 265.0,
+      "widths": [
+        255.0,
+        245.0,
+        230.0,
+        215.0,
+        195.0,
+        175.0,
+        155.0,
+        130.0,
+        100.0,
+        70.0,
+        0.0
+      ],
+      "yokeBase": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "ref": 270.0,
+      "widths": [
+        260.0,
+        250.0,
+        235.0,
+        220.0,
+        200.0,
+        180.0,
+        160.0,
+        140.0,
+        120.0,
+        95.0,
+        70.0
+      ],
+      "yokeBase": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "ref": 275.0,
+      "widths": [
+        265.0,
+        255.0,
+        245.0,
+        230.0,
+        215.0,
+        200.0,
+        180.0,
+        155.0,
+        125.0,
+        95.0,
+        70.0
+      ],
+      "yokeBase": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "ref": 280.0,
+      "widths": [
+        270.0,
+        260.0,
+        250.0,
+        235.0,
+        215.0,
+        195.0,
+        175.0,
+        155.0,
+        135.0,
+        105.0,
+        70.0
+      ],
+      "yokeBase": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "ref": 285.0,
+      "widths": [
+        275.0,
+        265.0,
+        250.0,
+        235.0,
+        220.0,
+        200.0,
+        180.0,
+        155.0,
+        135.0,
+        105.0,
+        70.0
+      ],
+      "yokeBase": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "ref": 290.0,
+      "widths": [
+        280.0,
+        270.0,
+        255.0,
+        240.0,
+        220.0,
+        195.0,
+        175.0,
+        155.0,
+        130.0,
+        100.0,
+        70.0
+      ],
+      "yokeBase": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "ref": 295.0,
+      "widths": [
+        285.0,
+        275.0,
+        260.0,
+        245.0,
+        230.0,
+        210.0,
+        190.0,
+        170.0,
+        145.0,
+        110.0,
+        75.0
+      ],
+      "yokeBase": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "ref": 300.0,
+      "widths": [
+        290.0,
+        280.0,
+        265.0,
+        250.0,
+        235.0,
+        215.0,
+        195.0,
+        170.0,
+        140.0,
+        115.0,
+        85.0
+      ],
+      "yokeBase": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "ref": 305.0,
+      "widths": [
+        295.0,
+        285.0,
+        270.0,
+        250.0,
+        230.0,
+        210.0,
+        190.0,
+        170.0,
+        150.0,
+        125.0,
+        95.0
+      ],
+      "yokeBase": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "ref": 310.0,
+      "widths": [
+        300.0,
+        290.0,
+        275.0,
+        260.0,
+        245.0,
+        225.0,
+        200.0,
+        185.0,
+        160.0,
+        135.0,
+        100.0
+      ],
+      "yokeBase": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "ref": 315.0,
+      "widths": [
+        305.0,
+        295.0,
+        280.0,
+        265.0,
+        250.0,
+        230.0,
+        210.0,
+        185.0,
+        160.0,
+        130.0,
+        110.0
+      ],
+      "yokeBase": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "ref": 320.0,
+      "widths": [
+        310.0,
+        300.0,
+        285.0,
+        270.0,
+        255.0,
+        235.0,
+        215.0,
+        190.0,
+        170.0,
+        145.0,
+        110.0
+      ],
+      "yokeBase": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "ref": 325.0,
+      "widths": [
+        315.0,
+        305.0,
+        290.0,
+        275.0,
+        260.0,
+        240.0,
+        220.0,
+        195.0,
+        170.0,
+        140.0,
+        110.0
+      ],
+      "yokeBase": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "ref": 330.0,
+      "widths": [
+        320.0,
+        310.0,
+        295.0,
+        280.0,
+        265.0,
+        245.0,
+        220.0,
+        195.0,
+        170.0,
+        135.0,
+        110.0
+      ],
+      "yokeBase": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "ref": 335.0,
+      "widths": [
+        325.0,
+        315.0,
+        300.0,
+        285.0,
+        270.0,
+        250.0,
+        230.0,
+        210.0,
+        185.0,
+        155.0,
+        110.0
+      ],
+      "yokeBase": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "ref": 340.0,
+      "widths": [
+        330.0,
+        315.0,
+        300.0,
+        280.0,
+        260.0,
+        240.0,
+        220.0,
+        200.0,
+        175.0,
+        145.0,
+        110.0
+      ],
+      "yokeBase": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "ref": 345.0,
+      "widths": [
+        335.0,
+        320.0,
+        305.0,
+        285.0,
+        265.0,
+        245.0,
+        225.0,
+        200.0,
+        175.0,
+        145.0,
+        120.0
+      ],
+      "yokeBase": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "ref": 350.0,
+      "widths": [
+        340.0,
+        325.0,
+        310.0,
+        295.0,
+        275.0,
+        255.0,
+        235.0,
+        210.0,
+        185.0,
+        155.0,
+        120.0
+      ],
+      "yokeBase": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "ref": 355.0,
+      "widths": [
+        345.0,
+        335.0,
+        320.0,
+        305.0,
+        290.0,
+        270.0,
+        245.0,
+        215.0,
+        185.0,
+        155.0,
+        120.0
+      ],
+      "yokeBase": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "ref": 360.0,
+      "widths": [
+        350.0,
+        335.0,
+        320.0,
+        300.0,
+        280.0,
+        260.0,
+        235.0,
+        215.0,
+        185.0,
+        155.0,
+        120.0
+      ],
+      "yokeBase": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "ref": 365.0,
+      "widths": [
+        355.0,
+        345.0,
+        330.0,
+        310.0,
+        290.0,
+        265.0,
+        240.0,
+        215.0,
+        180.0,
+        145.0,
+        120.0
+      ],
+      "yokeBase": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "ref": 370.0,
+      "widths": [
+        360.0,
+        345.0,
+        330.0,
+        315.0,
+        295.0,
+        270.0,
+        245.0,
+        215.0,
+        190.0,
+        160.0,
+        120.0
+      ],
+      "yokeBase": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "ref": 375.0,
+      "widths": [
+        365.0,
+        350.0,
+        335.0,
+        315.0,
+        295.0,
+        275.0,
+        250.0,
+        220.0,
+        190.0,
+        160.0,
+        130.0
+      ],
+      "yokeBase": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "ref": 380.0,
+      "widths": [
+        370.0,
+        355.0,
+        340.0,
+        325.0,
+        305.0,
+        280.0,
+        255.0,
+        225.0,
+        200.0,
+        170.0,
+        130.0
+      ],
+      "yokeBase": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "ref": 385.0,
+      "widths": [
+        375.0,
+        360.0,
+        345.0,
+        330.0,
+        310.0,
+        285.0,
+        260.0,
+        230.0,
+        200.0,
+        170.0,
+        130.0
+      ],
+      "yokeBase": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "ref": 390.0,
+      "widths": [
+        380.0,
+        365.0,
+        350.0,
+        330.0,
+        310.0,
+        290.0,
+        260.0,
+        230.0,
+        205.0,
+        170.0,
+        130.0
+      ],
+      "yokeBase": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "ref": 395.0,
+      "widths": [
+        385.0,
+        370.0,
+        350.0,
+        330.0,
+        305.0,
+        280.0,
+        255.0,
+        230.0,
+        195.0,
+        165.0,
+        130.0
+      ],
+      "yokeBase": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "ref": 400.0,
+      "widths": [
+        390.0,
+        375.0,
+        355.0,
+        335.0,
+        310.0,
+        285.0,
+        260.0,
+        230.0,
+        195.0,
+        165.0,
+        130.0
+      ],
+      "yokeBase": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "ref": 410.0,
+      "widths": [
+        400.0,
+        380.0,
+        360.0,
+        340.0,
+        320.0,
+        300.0,
+        280.0,
+        260.0,
+        230.0,
+        200.0,
+        160.0
+      ],
+      "yokeBase": [
+        0.0,
+        0.0,
+        0,
+        0
+      ]
+    },
+    {
+      "ref": 420.0,
+      "widths": [
+        410.0,
+        400.0,
+        390.0,
+        380.0,
+        360.0,
+        340.0,
+        320.0,
+        300.0,
+        280.0,
+        250.0,
+        220.0
+      ],
+      "yokeBase": [
+        190.0,
+        160.0,
+        0,
+        0
+      ]
+    },
+    {
+      "ref": 430.0,
+      "widths": [
+        420.0,
+        410.0,
+        400.0,
+        390.0,
+        370.0,
+        350.0,
+        330.0,
+        310.0,
+        290.0,
+        260.0,
+        230.0
+      ],
+      "yokeBase": [
+        200.0,
+        160.0,
+        0,
+        0
+      ]
+    },
+    {
+      "ref": 440.0,
+      "widths": [
+        430.0,
+        420.0,
+        410.0,
+        400.0,
+        380.0,
+        360.0,
+        340.0,
+        320.0,
+        290.0,
+        260.0,
+        230.0
+      ],
+      "yokeBase": [
+        200.0,
+        160.0,
+        0,
+        0
+      ]
+    },
+    {
+      "ref": 450.0,
+      "widths": [
+        440.0,
+        430.0,
+        420.0,
+        410.0,
+        390.0,
+        370.0,
+        350.0,
+        330.0,
+        300.0,
+        270.0,
+        240.0
+      ],
+      "yokeBase": [
+        210.0,
+        170.0,
+        0,
+        0
+      ]
+    },
+    {
+      "ref": 460.0,
+      "widths": [
+        450.0,
+        440.0,
+        420.0,
+        400.0,
+        380.0,
+        360.0,
+        340.0,
+        320.0,
+        300.0,
+        280.0,
+        250.0
+      ],
+      "yokeBase": [
+        220.0,
+        190.0,
+        0,
+        0
+      ]
+    },
+    {
+      "ref": 470.0,
+      "widths": [
+        460.0,
+        450.0,
+        440.0,
+        420.0,
+        400.0,
+        380.0,
+        360.0,
+        340.0,
+        310.0,
+        280.0,
+        250.0
+      ],
+      "yokeBase": [
+        220.0,
+        190.0,
+        0,
+        0
+      ]
+    },
+    {
+      "ref": 480.0,
+      "widths": [
+        470.0,
+        460.0,
+        450.0,
+        430.0,
+        410.0,
+        390.0,
+        370.0,
+        340.0,
+        310.0,
+        280.0,
+        250.0
+      ],
+      "yokeBase": [
+        220.0,
+        190.0,
+        0,
+        0
+      ]
+    },
+    {
+      "ref": 490.0,
+      "widths": [
+        480.0,
+        470.0,
+        450.0,
+        430.0,
+        410.0,
+        390.0,
+        370.0,
+        340.0,
+        310.0,
+        280.0,
+        250.0
+      ],
+      "yokeBase": [
+        220.0,
+        190.0,
+        0,
+        0
+      ]
+    },
+    {
+      "ref": 500.0,
+      "widths": [
+        490.0,
+        480.0,
+        460.0,
+        440.0,
+        420.0,
+        400.0,
+        380.0,
+        360.0,
+        330.0,
+        310.0,
+        280.0
+      ],
+      "yokeBase": [
+        240.0,
+        200.0,
+        0,
+        0
+      ]
+    },
+    {
+      "ref": 510.0,
+      "widths": [
+        500.0,
+        490.0,
+        470.0,
+        450.0,
+        430.0,
+        410.0,
+        390.0,
+        360.0,
+        330.0,
+        300.0,
+        270.0
+      ],
+      "yokeBase": [
+        240.0,
+        200.0,
+        0,
+        0
+      ]
+    },
+    {
+      "ref": 520.0,
+      "widths": [
+        510.0,
+        490.0,
+        470.0,
+        450.0,
+        430.0,
+        400.0,
+        370.0,
+        340.0,
+        310.0,
+        290.0,
+        260.0
+      ],
+      "yokeBase": [
+        230.0,
+        200.0,
+        0,
+        0
+      ]
+    },
+    {
+      "ref": 540.0,
+      "widths": [
+        530.0,
+        510.0,
+        490.0,
+        470.0,
+        440.0,
+        410.0,
+        390.0,
+        360.0,
+        330.0,
+        300.0,
+        270.0
+      ],
+      "yokeBase": [
+        240.0,
+        200.0,
+        0,
+        0
+      ]
+    },
+    {
+      "ref": 560.0,
+      "widths": [
+        550.0,
+        530.0,
+        500.0,
+        480.0,
+        460.0,
+        430.0,
+        400.0,
+        370.0,
+        340.0,
+        310.0,
+        290.0
+      ],
+      "yokeBase": [
+        250.0,
+        210.0,
+        0,
+        0
+      ]
+    },
+    {
+      "ref": 580.0,
+      "widths": [
+        570.0,
+        550.0,
+        520.0,
+        500.0,
+        480.0,
+        440.0,
+        410.0,
+        390.0,
+        360.0,
+        330.0,
+        290.0
+      ],
+      "yokeBase": [
+        250.0,
+        210.0,
+        0,
+        0
+      ]
+    },
+    {
+      "ref": 600.0,
+      "widths": [
+        580.0,
+        560.0,
+        530.0,
+        510.0,
+        490.0,
+        460.0,
+        430.0,
+        400.0,
+        360.0,
+        330.0,
+        290.0
+      ],
+      "yokeBase": [
+        250.0,
+        210.0,
+        0,
+        0
+      ]
+    },
+    {
+      "ref": 620.0,
+      "widths": [
+        600.0,
+        580.0,
+        550.0,
+        520.0,
+        500.0,
+        480.0,
+        440.0,
+        400.0,
+        360.0,
+        330.0,
+        290.0
+      ],
+      "yokeBase": [
+        250.0,
+        210.0,
+        0,
+        0
+      ]
+    },
+    {
+      "ref": 640.0,
+      "widths": [
+        620.0,
+        600.0,
+        570.0,
+        540.0,
+        520.0,
+        490.0,
+        450.0,
+        410.0,
+        370.0,
+        340.0,
+        300.0
+      ],
+      "yokeBase": [
+        260.0,
+        220.0,
+        0,
+        0
+      ]
+    }
+  ],
+  "corrugatedTankCoefficients": [
+    {
+      "depthMm": 80.0,
+      "ks": 0.736,
+      "kp": 0.28
+    },
+    {
+      "depthMm": 90.0,
+      "ks": 0.714,
+      "kp": 0.29
+    },
+    {
+      "depthMm": 100.0,
+      "ks": 0.694,
+      "kp": 0.3
+    },
+    {
+      "depthMm": 110.0,
+      "ks": 0.677,
+      "kp": 0.31
+    },
+    {
+      "depthMm": 120.0,
+      "ks": 0.662,
+      "kp": 0.32
+    },
+    {
+      "depthMm": 130.0,
+      "ks": 0.649,
+      "kp": 0.33
+    },
+    {
+      "depthMm": 140.0,
+      "ks": 0.638,
+      "kp": 0.34
+    },
+    {
+      "depthMm": 150.0,
+      "ks": 0.628,
+      "kp": 0.35
+    },
+    {
+      "depthMm": 160.0,
+      "ks": 0.619,
+      "kp": 0.36
+    },
+    {
+      "depthMm": 170.0,
+      "ks": 0.612,
+      "kp": 0.37
+    },
+    {
+      "depthMm": 180.0,
+      "ks": 0.605,
+      "kp": 0.38
+    },
+    {
+      "depthMm": 190.0,
+      "ks": 0.6,
+      "kp": 0.39
+    },
+    {
+      "depthMm": 200.0,
+      "ks": 0.595,
+      "kp": 0.4
+    },
+    {
+      "depthMm": 210.0,
+      "ks": 0.591,
+      "kp": 0.41
+    },
+    {
+      "depthMm": 220.0,
+      "ks": 0.587,
+      "kp": 0.42
+    },
+    {
+      "depthMm": 230.0,
+      "ks": 0.583,
+      "kp": 0.43
+    },
+    {
+      "depthMm": 240.0,
+      "ks": 0.58,
+      "kp": 0.44
+    },
+    {
+      "depthMm": 250.0,
+      "ks": 0.577,
+      "kp": 0.45
+    },
+    {
+      "depthMm": 260.0,
+      "ks": 0.574,
+      "kp": 0.46
+    },
+    {
+      "depthMm": 270.0,
+      "ks": 0.572,
+      "kp": 0.47
+    },
+    {
+      "depthMm": 280.0,
+      "ks": 0.569,
+      "kp": 0.48
+    },
+    {
+      "depthMm": 290.0,
+      "ks": 0.566,
+      "kp": 0.49
+    },
+    {
+      "depthMm": 300.0,
+      "ks": 0.563,
+      "kp": 0.5
+    },
+    {
+      "depthMm": 310.0,
+      "ks": 0.56,
+      "kp": 0.51
+    },
+    {
+      "depthMm": 320.0,
+      "ks": 0.557,
+      "kp": 0.52
+    },
+    {
+      "depthMm": 330.0,
+      "ks": 0.554,
+      "kp": 0.53
+    }
+  ],
+  "wireSpecs": [
+    {
+      "index": 1,
+      "bareWidthMm": 0.45,
+      "insulatedWidthMm": 0.51,
+      "weightAddPct": 3.36
+    },
+    {
+      "index": 2,
+      "bareWidthMm": 0.5,
+      "insulatedWidthMm": 0.56,
+      "weightAddPct": 2.81
+    },
+    {
+      "index": 3,
+      "bareWidthMm": 0.6,
+      "insulatedWidthMm": 0.67,
+      "weightAddPct": 2.71
+    },
+    {
+      "index": 4,
+      "bareWidthMm": 0.62,
+      "insulatedWidthMm": 0.69,
+      "weightAddPct": 2.71
+    },
+    {
+      "index": 5,
+      "bareWidthMm": 0.63,
+      "insulatedWidthMm": 0.7,
+      "weightAddPct": 2.85
+    },
+    {
+      "index": 6,
+      "bareWidthMm": 0.64,
+      "insulatedWidthMm": 0.72,
+      "weightAddPct": 2.85
+    },
+    {
+      "index": 7,
+      "bareWidthMm": 0.67,
+      "insulatedWidthMm": 0.75,
+      "weightAddPct": 2.75
+    },
+    {
+      "index": 8,
+      "bareWidthMm": 0.69,
+      "insulatedWidthMm": 0.77,
+      "weightAddPct": 2.66
+    },
+    {
+      "index": 9,
+      "bareWidthMm": 0.71,
+      "insulatedWidthMm": 0.79,
+      "weightAddPct": 2.78
+    },
+    {
+      "index": 10,
+      "bareWidthMm": 0.72,
+      "insulatedWidthMm": 0.8,
+      "weightAddPct": 2.78
+    },
+    {
+      "index": 11,
+      "bareWidthMm": 0.74,
+      "insulatedWidthMm": 0.83,
+      "weightAddPct": 2.9
+    },
+    {
+      "index": 12,
+      "bareWidthMm": 0.75,
+      "insulatedWidthMm": 0.84,
+      "weightAddPct": 2.9
+    },
+    {
+      "index": 13,
+      "bareWidthMm": 0.77,
+      "insulatedWidthMm": 0.86,
+      "weightAddPct": 2.78
+    },
+    {
+      "index": 14,
+      "bareWidthMm": 0.8,
+      "insulatedWidthMm": 0.89,
+      "weightAddPct": 2.67
+    },
+    {
+      "index": 15,
+      "bareWidthMm": 0.83,
+      "insulatedWidthMm": 0.92,
+      "weightAddPct": 2.59
+    },
+    {
+      "index": 16,
+      "bareWidthMm": 0.85,
+      "insulatedWidthMm": 0.94,
+      "weightAddPct": 2.48
+    },
+    {
+      "index": 17,
+      "bareWidthMm": 0.86,
+      "insulatedWidthMm": 0.95,
+      "weightAddPct": 2.48
+    },
+    {
+      "index": 18,
+      "bareWidthMm": 0.9,
+      "insulatedWidthMm": 0.99,
+      "weightAddPct": 2.36
+    },
+    {
+      "index": 19,
+      "bareWidthMm": 0.93,
+      "insulatedWidthMm": 1.02,
+      "weightAddPct": 2.29
+    },
+    {
+      "index": 20,
+      "bareWidthMm": 0.95,
+      "insulatedWidthMm": 1.04,
+      "weightAddPct": 2.21
+    },
+    {
+      "index": 21,
+      "bareWidthMm": 0.96,
+      "insulatedWidthMm": 1.05,
+      "weightAddPct": 2.21
+    },
+    {
+      "index": 22,
+      "bareWidthMm": 1.0,
+      "insulatedWidthMm": 1.11,
+      "weightAddPct": 2.63
+    },
+    {
+      "index": 23,
+      "bareWidthMm": 1.04,
+      "insulatedWidthMm": 1.15,
+      "weightAddPct": 2.52
+    },
+    {
+      "index": 24,
+      "bareWidthMm": 1.06,
+      "insulatedWidthMm": 1.17,
+      "weightAddPct": 2.44
+    },
+    {
+      "index": 25,
+      "bareWidthMm": 1.08,
+      "insulatedWidthMm": 1.19,
+      "weightAddPct": 2.44
+    },
+    {
+      "index": 26,
+      "bareWidthMm": 1.12,
+      "insulatedWidthMm": 1.23,
+      "weightAddPct": 2.33
+    },
+    {
+      "index": 27,
+      "bareWidthMm": 1.16,
+      "insulatedWidthMm": 1.27,
+      "weightAddPct": 2.24
+    },
+    {
+      "index": 28,
+      "bareWidthMm": 1.18,
+      "insulatedWidthMm": 1.29,
+      "weightAddPct": 2.2
+    },
+    {
+      "index": 29,
+      "bareWidthMm": 1.2,
+      "insulatedWidthMm": 1.31,
+      "weightAddPct": 2.2
+    },
+    {
+      "index": 30,
+      "bareWidthMm": 1.25,
+      "insulatedWidthMm": 1.36,
+      "weightAddPct": 2.08
+    },
+    {
+      "index": 31,
+      "bareWidthMm": 1.3,
+      "insulatedWidthMm": 1.41,
+      "weightAddPct": 2.0
+    },
+    {
+      "index": 32,
+      "bareWidthMm": 1.35,
+      "insulatedWidthMm": 1.46,
+      "weightAddPct": 1.93
+    },
+    {
+      "index": 33,
+      "bareWidthMm": 1.4,
+      "insulatedWidthMm": 1.51,
+      "weightAddPct": 1.77
+    },
+    {
+      "index": 34,
+      "bareWidthMm": 1.45,
+      "insulatedWidthMm": 1.56,
+      "weightAddPct": 1.83
+    },
+    {
+      "index": 35,
+      "bareWidthMm": 1.5,
+      "insulatedWidthMm": 1.61,
+      "weightAddPct": 1.77
+    },
+    {
+      "index": 36,
+      "bareWidthMm": 1.56,
+      "insulatedWidthMm": 1.67,
+      "weightAddPct": 1.7
+    },
+    {
+      "index": 37,
+      "bareWidthMm": 1.6,
+      "insulatedWidthMm": 1.72,
+      "weightAddPct": 1.64
+    },
+    {
+      "index": 38,
+      "bareWidthMm": 1.62,
+      "insulatedWidthMm": 1.73,
+      "weightAddPct": 1.64
+    },
+    {
+      "index": 39,
+      "bareWidthMm": 1.68,
+      "insulatedWidthMm": 1.79,
+      "weightAddPct": 1.51
+    },
+    {
+      "index": 40,
+      "bareWidthMm": 1.7,
+      "insulatedWidthMm": 1.82,
+      "weightAddPct": 1.51
+    },
+    {
+      "index": 41,
+      "bareWidthMm": 1.74,
+      "insulatedWidthMm": 1.85,
+      "weightAddPct": 1.51
+    },
+    {
+      "index": 42,
+      "bareWidthMm": 1.8,
+      "insulatedWidthMm": 1.92,
+      "weightAddPct": 1.51
+    },
+    {
+      "index": 43,
+      "bareWidthMm": 1.81,
+      "insulatedWidthMm": 1.93,
+      "weightAddPct": 1.51
+    },
+    {
+      "index": 44,
+      "bareWidthMm": 1.88,
+      "insulatedWidthMm": 2.0,
+      "weightAddPct": 1.47
+    },
+    {
+      "index": 45,
+      "bareWidthMm": 1.9,
+      "insulatedWidthMm": 2.02,
+      "weightAddPct": 1.47
+    },
+    {
+      "index": 46,
+      "bareWidthMm": 1.95,
+      "insulatedWidthMm": 2.07,
+      "weightAddPct": 1.48
+    },
+    {
+      "index": 47,
+      "bareWidthMm": 2.0,
+      "insulatedWidthMm": 2.12,
+      "weightAddPct": 1.44
+    },
+    {
+      "index": 48,
+      "bareWidthMm": 2.02,
+      "insulatedWidthMm": 2.14,
+      "weightAddPct": 1.44
+    },
+    {
+      "index": 49,
+      "bareWidthMm": 2.1,
+      "insulatedWidthMm": 2.23,
+      "weightAddPct": 1.43
+    },
+    {
+      "index": 50,
+      "bareWidthMm": 2.12,
+      "insulatedWidthMm": 2.24,
+      "weightAddPct": 1.43
+    },
+    {
+      "index": 51,
+      "bareWidthMm": 2.24,
+      "insulatedWidthMm": 2.36,
+      "weightAddPct": 1.32
+    },
+    {
+      "index": 52,
+      "bareWidthMm": 2.26,
+      "insulatedWidthMm": 2.39,
+      "weightAddPct": 1.32
+    },
+    {
+      "index": 53,
+      "bareWidthMm": 2.36,
+      "insulatedWidthMm": 2.49,
+      "weightAddPct": 1.23
+    },
+    {
+      "index": 54,
+      "bareWidthMm": 2.44,
+      "insulatedWidthMm": 2.57,
+      "weightAddPct": 1.23
+    },
+    {
+      "index": 55,
+      "bareWidthMm": 2.5,
+      "insulatedWidthMm": 2.63,
+      "weightAddPct": 1.23
+    },
+    {
+      "index": 56,
+      "bareWidthMm": 2.63,
+      "insulatedWidthMm": 2.79,
+      "weightAddPct": 1.23
+    },
+    {
+      "index": 57,
+      "bareWidthMm": 2.75,
+      "insulatedWidthMm": 2.88,
+      "weightAddPct": 1.24
+    }
+  ],
+  "conservators": [
+    {
+      "no": 1.0,
+      "diameter": "φ180",
+      "height": 400.0,
+      "oilWeightKg": 69.0,
+      "colE": 5.0,
+      "colF": 14.0
+    },
+    {
+      "no": 2.0,
+      "diameter": "φ180",
+      "height": 500.0,
+      "oilWeightKg": 86.0,
+      "colE": 6.0,
+      "colF": 15.0
+    },
+    {
+      "no": 3.0,
+      "diameter": "φ180",
+      "height": 600.0,
+      "oilWeightKg": 104.0,
+      "colE": 7.0,
+      "colF": 16.0
+    },
+    {
+      "no": 4.0,
+      "diameter": "φ250",
+      "height": 500.0,
+      "oilWeightKg": 207.0,
+      "colE": 10.0,
+      "colF": 17.0
+    },
+    {
+      "no": 5.0,
+      "diameter": "φ250",
+      "height": 600.0,
+      "oilWeightKg": 248.0,
+      "colE": 12.0,
+      "colF": 18.0
+    },
+    {
+      "no": 6.0,
+      "diameter": "φ250",
+      "height": 700.0,
+      "oilWeightKg": 290.0,
+      "colE": 14.0,
+      "colF": 19.0
+    },
+    {
+      "no": 7.0,
+      "diameter": "φ250",
+      "height": 800.0,
+      "oilWeightKg": 331.0,
+      "colE": 16.0,
+      "colF": 20.0
+    },
+    {
+      "no": 8.0,
+      "diameter": "φ250",
+      "height": 900.0,
+      "oilWeightKg": 373.0,
+      "colE": 18.0,
+      "colF": 21.0
+    },
+    {
+      "no": 9.0,
+      "diameter": "φ310",
+      "height": 700.0,
+      "oilWeightKg": 375.0,
+      "colE": 22.0,
+      "colF": 21.0
+    },
+    {
+      "no": 10.0,
+      "diameter": "φ310",
+      "height": 800.0,
+      "oilWeightKg": 423.0,
+      "colE": 25.0,
+      "colF": 22.0
+    },
+    {
+      "no": 11.0,
+      "diameter": "φ310",
+      "height": 900.0,
+      "oilWeightKg": 475.0,
+      "colE": 28.0,
+      "colF": 23.0
+    },
+    {
+      "no": 12.0,
+      "diameter": "φ310",
+      "height": 1000.0,
+      "oilWeightKg": 529.0,
+      "colE": 31.0,
+      "colF": 24.0
+    },
+    {
+      "no": 13.0,
+      "diameter": "φ310",
+      "height": 1100.0,
+      "oilWeightKg": 582.0,
+      "colE": 34.0,
+      "colF": 25.0
+    },
+    {
+      "no": 14.0,
+      "diameter": "φ310",
+      "height": 1200.0,
+      "oilWeightKg": 634.0,
+      "colE": 37.0,
+      "colF": 26.0
+    },
+    {
+      "no": 15.0,
+      "diameter": "φ440",
+      "height": 800.0,
+      "oilWeightKg": 1022.0,
+      "colE": 50.0,
+      "colF": 55.0
+    },
+    {
+      "no": 16.0,
+      "diameter": "φ440",
+      "height": 900.0,
+      "oilWeightKg": 1150.0,
+      "colE": 60.0,
+      "colF": 57.0
+    },
+    {
+      "no": 17.0,
+      "diameter": "φ440",
+      "height": 1000.0,
+      "oilWeightKg": 1278.0,
+      "colE": 65.0,
+      "colF": 59.0
+    },
+    {
+      "no": 18.0,
+      "diameter": "φ440",
+      "height": 1100.0,
+      "oilWeightKg": 1405.0,
+      "colE": 70.0,
+      "colF": 61.0
+    },
+    {
+      "no": 19.0,
+      "diameter": "φ440",
+      "height": 1200.0,
+      "oilWeightKg": 1532.0,
+      "colE": 75.0,
+      "colF": 63.0
+    },
+    {
+      "no": 20.0,
+      "diameter": "φ440",
+      "height": 1400.0,
+      "oilWeightKg": 1790.0,
+      "colE": 90.0,
+      "colF": 68.0
+    },
+    {
+      "no": 21.0,
+      "diameter": "φ440",
+      "height": 1600.0,
+      "oilWeightKg": 2045.0,
+      "colE": 100.0,
+      "colF": 73.0
+    },
+    {
+      "no": 22.0,
+      "diameter": "φ610",
+      "height": 900.0,
+      "oilWeightKg": 2490.0,
+      "colE": 110.0,
+      "colF": 55.0
+    },
+    {
+      "no": 23.0,
+      "diameter": "φ610",
+      "height": 1000.0,
+      "oilWeightKg": 2760.0,
+      "colE": 120.0,
+      "colF": 60.0
+    },
+    {
+      "no": 24.0,
+      "diameter": "φ610",
+      "height": 1200.0,
+      "oilWeightKg": 3320.0,
+      "colE": 150.0,
+      "colF": 65.0
+    },
+    {
+      "no": 25.0,
+      "diameter": "φ610",
+      "height": 1400.0,
+      "oilWeightKg": 3870.0,
+      "colE": 170.0,
+      "colF": 75.0
+    },
+    {
+      "no": 26.0,
+      "diameter": "φ610",
+      "height": 1600.0,
+      "oilWeightKg": 4420.0,
+      "colE": 190.0,
+      "colF": 85.0
+    },
+    {
+      "no": 27.0,
+      "diameter": "φ610",
+      "height": 1800.0,
+      "oilWeightKg": 4980.0,
+      "colE": 220.0,
+      "colF": 95.0
+    },
+    {
+      "no": 28.0,
+      "diameter": "φ610",
+      "height": 2000.0,
+      "oilWeightKg": 5530.0,
+      "colE": 240.0,
+      "colF": 105.0
+    },
+    {
+      "no": 29.0,
+      "diameter": "φ610",
+      "height": 2200.0,
+      "oilWeightKg": 6090.0,
+      "colE": 260.0,
+      "colF": 115.0
+    },
+    {
+      "no": 30.0,
+      "diameter": "φ610",
+      "height": 2500.0,
+      "oilWeightKg": 6910.0,
+      "colE": 300.0,
+      "colF": 130.0
+    },
+    {
+      "no": 31.0,
+      "diameter": "φ610",
+      "height": 3000.0,
+      "oilWeightKg": 8300.0,
+      "colE": 360.0,
+      "colF": 150.0
+    },
+    {
+      "no": 32.0,
+      "diameter": "φ750",
+      "height": 2000.0,
+      "oilWeightKg": 8780.0,
+      "colE": 360.0,
+      "colF": 240.0
+    },
+    {
+      "no": 33.0,
+      "diameter": "φ750",
+      "height": 2500.0,
+      "oilWeightKg": 10960.0,
+      "colE": 450.0,
+      "colF": 270.0
+    },
+    {
+      "no": 34.0,
+      "diameter": "φ750",
+      "height": 3000.0,
+      "oilWeightKg": 13150.0,
+      "colE": 540.0,
+      "colF": 300.0
+    },
+    {
+      "no": 35.0,
+      "diameter": "φ920",
+      "height": 2500.0,
+      "oilWeightKg": 16700.0,
+      "colE": 650.0,
+      "colF": 420.0
+    },
+    {
+      "no": 36.0,
+      "diameter": "φ920",
+      "height": 3000.0,
+      "oilWeightKg": 20000.0,
+      "colE": 790.0,
+      "colF": 470.0
+    },
+    {
+      "no": 37.0,
+      "diameter": "φ920",
+      "height": 3500.0,
+      "oilWeightKg": 23400.0,
+      "colE": 920.0,
+      "colF": 520.0
+    }
+  ],
+  "radiators": {
+    "widthsMm": [
+      0.0,
+      6.0,
+      8.0,
+      10.0,
+      12.0,
+      14.0,
+      16.0,
+      18.0,
+      20.0,
+      22.0,
+      24.0,
+      26.0,
+      28.0,
+      30.0
+    ],
+    "rows": [
+      {
+        "centerDistMm": 1001.0,
+        "type": "SZ",
+        "areasM2": [
+          3.59,
+          4.56,
+          5.62,
+          6.67,
+          7.64,
+          8.68,
+          9.68,
+          10.63,
+          11.54,
+          12.45,
+          13.34,
+          14.18,
+          15.02
+        ]
+      },
+      {
+        "centerDistMm": 1002.0,
+        "type": "SF",
+        "areasM2": [
+          4.11,
+          5.25,
+          6.49,
+          7.71,
+          8.86,
+          10.05,
+          11.24,
+          12.35,
+          13.42,
+          14.48,
+          15.49,
+          16.5,
+          17.48
+        ]
+      },
+      {
+        "centerDistMm": 1003.0,
+        "type": "WQ",
+        "areasM2": [
+          57.92,
+          75.12,
+          92.69,
+          110.19,
+          126.84,
+          143.97,
+          161.18,
+          178.69,
+          195.62,
+          213.17,
+          230.57,
+          247.68,
+          264.92
+        ]
+      },
+      {
+        "centerDistMm": 1004.0,
+        "type": "WY",
+        "areasM2": [
+          14.4,
+          19.0,
+          23.7,
+          28.3,
+          32.9,
+          37.6,
+          42.2,
+          46.8,
+          51.4,
+          56.1,
+          60.7,
+          65.3,
+          70.0
+        ]
+      },
+      {
+        "centerDistMm": 1201.0,
+        "type": "SZ",
+        "areasM2": [
+          4.28,
+          5.45,
+          6.71,
+          7.95,
+          9.13,
+          10.36,
+          11.55,
+          12.68,
+          13.77,
+          14.86,
+          15.9,
+          16.92,
+          17.92
+        ]
+      },
+      {
+        "centerDistMm": 1202.0,
+        "type": "SF",
+        "areasM2": [
+          4.91,
+          6.29,
+          7.76,
+          9.2,
+          10.34,
+          12.02,
+          13.43,
+          14.76,
+          16.04,
+          17.31,
+          18.52,
+          19.72,
+          20.89
+        ]
+      },
+      {
+        "centerDistMm": 1203.0,
+        "type": "WQ",
+        "areasM2": [
+          67.26,
+          87.56,
+          108.39,
+          128.82,
+          148.58,
+          168.81,
+          189.24,
+          209.73,
+          229.78,
+          250.33,
+          270.93,
+          291.15,
+          311.49
+        ]
+      },
+      {
+        "centerDistMm": 1204.0,
+        "type": "WY",
+        "areasM2": [
+          17.2,
+          22.8,
+          28.3,
+          33.9,
+          39.4,
+          45.0,
+          50.5,
+          56.1,
+          61.6,
+          67.2,
+          72.7,
+          78.3,
+          83.8
+        ]
+      },
+      {
+        "centerDistMm": 1251.0,
+        "type": "SZ",
+        "areasM2": [
+          4.47,
+          5.68,
+          6.98,
+          8.26,
+          9.51,
+          10.76,
+          12.02,
+          13.2,
+          14.34,
+          15.46,
+          16.54,
+          17.62,
+          18.64
+        ]
+      },
+      {
+        "centerDistMm": 1252.0,
+        "type": "SF",
+        "areasM2": [
+          5.12,
+          6.55,
+          8.08,
+          9.58,
+          11.11,
+          12.42,
+          14.03,
+          15.37,
+          16.71,
+          18.02,
+          19.29,
+          20.51,
+          21.79
+        ]
+      },
+      {
+        "centerDistMm": 1253.0,
+        "type": "WQ",
+        "areasM2": [
+          69.65,
+          90.72,
+          112.06,
+          133.74,
+          155.12,
+          176.46,
+          197.85,
+          219.18,
+          240.55,
+          261.92,
+          283.26,
+          304.62,
+          325.98
+        ]
+      },
+      {
+        "centerDistMm": 1254.0,
+        "type": "WY",
+        "areasM2": [
+          17.9,
+          23.7,
+          29.4,
+          35.2,
+          40.9,
+          46.7,
+          52.4,
+          58.2,
+          63.9,
+          69.7,
+          75.4,
+          81.2,
+          86.9
+        ]
+      },
+      {
+        "centerDistMm": 1401.0,
+        "type": "SZ",
+        "areasM2": [
+          4.98,
+          6.34,
+          7.78,
+          9.23,
+          10.61,
+          12.03,
+          13.42,
+          14.73,
+          16.01,
+          17.27,
+          18.47,
+          19.67,
+          20.82
+        ]
+      },
+      {
+        "centerDistMm": 1402.0,
+        "type": "SF",
+        "areasM2": [
+          5.71,
+          7.32,
+          9.03,
+          10.71,
+          12.6,
+          13.99,
+          15.62,
+          17.18,
+          18.66,
+          20.14,
+          21.55,
+          22.94,
+          24.31
+        ]
+      },
+      {
+        "centerDistMm": 1403.0,
+        "type": "WQ",
+        "areasM2": [
+          76.71,
+          100.14,
+          123.73,
+          147.89,
+          170.32,
+          193.67,
+          217.16,
+          240.77,
+          263.99,
+          287.49,
+          311.3,
+          334.62,
+          358.06
+        ]
+      },
+      {
+        "centerDistMm": 1404.0,
+        "type": "WY",
+        "areasM2": [
+          19.9,
+          26.4,
+          32.8,
+          39.3,
+          45.7,
+          52.2,
+          58.7,
+          65.1,
+          71.6,
+          78.0,
+          84.5,
+          91.0,
+          97.4
+        ]
+      },
+      {
+        "centerDistMm": 1501.0,
+        "type": "SZ",
+        "areasM2": [
+          5.33,
+          6.79,
+          8.33,
+          9.87,
+          11.36,
+          12.87,
+          14.36,
+          15.76,
+          17.13,
+          18.47,
+          19.76,
+          21.04,
+          22.27
+        ]
+      },
+      {
+        "centerDistMm": 1502.0,
+        "type": "SF",
+        "areasM2": [
+          6.12,
+          7.84,
+          9.67,
+          11.47,
+          13.2,
+          14.98,
+          16.71,
+          18.39,
+          19.98,
+          21.56,
+          23.07,
+          24.55,
+          26.02
+        ]
+      },
+      {
+        "centerDistMm": 1503.0,
+        "type": "WQ",
+        "areasM2": [
+          81.29,
+          106.27,
+          131.49,
+          156.98,
+          182.21,
+          207.44,
+          232.67,
+          257.9,
+          283.114,
+          308.39,
+          333.61,
+          358.82,
+          384.04
+        ]
+      },
+      {
+        "centerDistMm": 1504.0,
+        "type": "WY",
+        "areasM2": [
+          21.3,
+          28.3,
+          35.2,
+          42.2,
+          49.1,
+          56.1,
+          63.0,
+          70.0,
+          76.9,
+          83.9,
+          90.8,
+          97.8,
+          104.7
+        ]
+      },
+      {
+        "centerDistMm": 1601.0,
+        "type": "SZ",
+        "areasM2": [
+          5.68,
+          7.24,
+          8.87,
+          10.51,
+          12.1,
+          13.71,
+          15.3,
+          16.78,
+          18.24,
+          19.67,
+          21.05,
+          22.41,
+          23.71
+        ]
+      },
+      {
+        "centerDistMm": 1602.0,
+        "type": "SF",
+        "areasM2": [
+          6.52,
+          8.36,
+          10.31,
+          12.22,
+          13.79,
+          15.96,
+          17.8,
+          19.59,
+          21.29,
+          22.98,
+          24.59,
+          26.16,
+          27.73
+        ]
+      },
+      {
+        "centerDistMm": 1603.0,
+        "type": "WQ",
+        "areasM2": [
+          85.86,
+          112.4,
+          139.25,
+          166.07,
+          192.12,
+          218.51,
+          245.1,
+          271.89,
+          298.14,
+          324.66,
+          351.65,
+          378.1,
+          404.63
+        ]
+      },
+      {
+        "centerDistMm": 1604.0,
+        "type": "WY",
+        "areasM2": [
+          22.7,
+          30.1,
+          37.5,
+          44.8,
+          52.2,
+          60.0,
+          67.0,
+          74.4,
+          81.7,
+          89.1,
+          96.5,
+          103.9,
+          111.3
+        ]
+      },
+      {
+        "centerDistMm": 1801.0,
+        "type": "SZ",
+        "areasM2": [
+          6.35,
+          8.3,
+          9.95,
+          11.78,
+          13.58,
+          15.4,
+          17.17,
+          18.84,
+          20.47,
+          22.08,
+          23.62,
+          25.15,
+          26.61
+        ]
+      },
+      {
+        "centerDistMm": 180.0,
+        "type": "SF",
+        "areasM2": [
+          7.32,
+          9.39,
+          11.58,
+          13.7,
+          15.53,
+          17.92,
+          19.99,
+          22.0,
+          23.91,
+          25.81,
+          27.62,
+          29.37,
+          31.15
+        ]
+      },
+      {
+        "centerDistMm": 1803.0,
+        "type": "WQ",
+        "areasM2": [
+          95.27,
+          124.96,
+          154.81,
+          184.72,
+          213.81,
+          243.31,
+          272.98,
+          302.91,
+          332.29,
+          361.82,
+          392.0,
+          421.57,
+          451.19
+        ]
+      },
+      {
+        "centerDistMm": 1804.0,
+        "type": "WY",
+        "areasM2": [
+          25.5,
+          33.8,
+          42.1,
+          50.4,
+          58.7,
+          67.0,
+          75.3,
+          83.6,
+          91.9,
+          100.2,
+          108.5,
+          116.8,
+          125.1
+        ]
+      },
+      {
+        "centerDistMm": 2001.0,
+        "type": "SZ",
+        "areasM2": [
+          7.03,
+          9.01,
+          11.02,
+          13.06,
+          15.05,
+          17.08,
+          19.03,
+          20.88,
+          22.7,
+          24.5,
+          26.19,
+          27.89,
+          29.5
+        ]
+      },
+      {
+        "centerDistMm": 2002.0,
+        "type": "SF",
+        "areasM2": [
+          8.11,
+          10.41,
+          12.84,
+          15.21,
+          17.26,
+          19.9,
+          22.19,
+          24.37,
+          26.53,
+          28.64,
+          30.64,
+          32.59,
+          34.56
+        ]
+      },
+      {
+        "centerDistMm": 2003.0,
+        "type": "WQ",
+        "areasM2": [
+          104.54,
+          137.46,
+          170.41,
+          203.38,
+          235.61,
+          268.17,
+          300.91,
+          333.99,
+          366.42,
+          398.97,
+          432.39,
+          465.03,
+          417.76
+        ]
+      },
+      {
+        "centerDistMm": 2004.0,
+        "type": "WY",
+        "areasM2": [
+          28.3,
+          37.5,
+          46.7,
+          56.0,
+          65.2,
+          74.4,
+          83.6,
+          92.8,
+          102.1,
+          111.3,
+          120.5,
+          129.7,
+          138.9
+        ]
+      },
+      {
+        "centerDistMm": 2201.0,
+        "type": "SZ",
+        "areasM2": [
+          7.74,
+          9.91,
+          12.11,
+          14.36,
+          16.53,
+          18.77,
+          20.9,
+          22.93,
+          24.92,
+          26.92,
+          28.75,
+          30.62,
+          32.42
+        ]
+      },
+      {
+        "centerDistMm": 2202.0,
+        "type": "SF",
+        "areasM2": [
+          8.92,
+          11.44,
+          14.1,
+          16.71,
+          18.98,
+          21.85,
+          24.38,
+          26.81,
+          29.16,
+          31.46,
+          33.67,
+          35.82,
+          37.98
+        ]
+      },
+      {
+        "centerDistMm": 2203.0,
+        "type": "WQ",
+        "areasM2": [
+          113.97,
+          149.71,
+          185.92,
+          222.07,
+          257.32,
+          293.01,
+          328.89,
+          365.01,
+          400.61,
+          436.13,
+          472.74,
+          508.49,
+          544.33
+        ]
+      },
+      {
+        "centerDistMm": 2204.0,
+        "type": "WY",
+        "areasM2": [
+          31.0,
+          41.1,
+          52.3,
+          61.4,
+          71.6,
+          81.7,
+          91.8,
+          102.0,
+          112.1,
+          122.3,
+          132.4,
+          142.5,
+          152.7
+        ]
+      }
+    ]
+  }
+}
