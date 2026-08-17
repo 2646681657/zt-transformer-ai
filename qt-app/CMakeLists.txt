@@ -13,7 +13,7 @@ qt_standard_project_setup()
 
 file(GLOB_RECURSE CORE_SOURCES src/core/*.cpp src/core/*.h)
 file(GLOB_RECURSE ENGINE_SOURCES src/engine/*.cpp src/engine/*.h)
-file(GLOB_RECURSE ADAPTER_SOURCES src/adapter/*.h)
+file(GLOB_RECURSE ADAPTER_SOURCES src/adapter/*.cpp src/adapter/*.h)
 file(GLOB_RECURSE GUI_SOURCES src/gui/*.cpp src/gui/*.h)
 
 qt_add_executable(ztf-designer WIN32
