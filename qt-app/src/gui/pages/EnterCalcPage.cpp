@@ -245,13 +245,14 @@ void EnterCalcPage::buildSchemeRibbon()
     connect(sortCancelBtn, &QToolButton::clicked, this, &EnterCalcPage::onSortCancel);
     sortCol->addWidget(sortCancelBtn);
     g2->contentLayout()->addLayout(sortCol);
-    auto *filterCol = new QVBoxLayout();
-    filterCol->setSpacing(1);
+    // 筛选单独一列（图标在上、文字在下）
     auto *filterBtn = new RibbonButton(QStringLiteral("筛选"), ":/icons/filter.svg", g2);
-    compact(filterBtn);
     filterBtn->setCheckable(false);
     connect(filterBtn, &QToolButton::clicked, this, &EnterCalcPage::onFilterSchemes);
-    filterCol->addWidget(filterBtn);
+    g2->addButton(filterBtn);
+    // 高级列：高级/选择/取消
+    auto *filterCol = new QVBoxLayout();
+    filterCol->setSpacing(1);
     auto *advBtn = new RibbonButton(QStringLiteral("高级"), ":/icons/filter_adv.svg", g2);
     compact(advBtn);
     advBtn->setCheckable(false);
@@ -268,19 +269,15 @@ void EnterCalcPage::buildSchemeRibbon()
     connect(filterCancelBtn, &QToolButton::clicked, this, &EnterCalcPage::onFilterCancel);
     filterCol->addWidget(filterCancelBtn);
     g2->contentLayout()->addLayout(filterCol);
-    auto *switchCol = new QVBoxLayout();
-    switchCol->setSpacing(1);
+    // 切换、查找替换各自单独一列（图标在上、文字在下）
     auto *switchBtn = new RibbonButton(QStringLiteral("切换"), ":/icons/switch_az.svg", g2);
-    compact(switchBtn);
     switchBtn->setCheckable(false);
     connect(switchBtn, &QToolButton::clicked, this, &EnterCalcPage::onSwitchSortColumn);
-    switchCol->addWidget(switchBtn);
+    g2->addButton(switchBtn);
     auto *findBtn = new RibbonButton(QStringLiteral("查找替换"), ":/icons/find_replace.svg", g2);
-    compact(findBtn);
     findBtn->setCheckable(false);
     connect(findBtn, &QToolButton::clicked, this, &EnterCalcPage::onFindScheme);
-    switchCol->addWidget(findBtn);
-    g2->contentLayout()->addLayout(switchCol);
+    g2->addButton(findBtn);
     m_schemeRibbon->addSeparator();
 
     // ---- 组3 合并模式 ----
