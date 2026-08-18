@@ -216,18 +216,31 @@ void EnterCalcPage::buildSchemeRibbon()
     m_schemeRibbon->addSeparator();
 
     // ---- 组2 排序与筛选：左列排序（升/降/取消）+ 右列筛选（筛选/高级/选择/取消）----
+    // Ribbon 内容区高约86px，多行堆叠按钮需紧凑化（小图标+文字右置），避免重合
+    const auto compact = [](RibbonButton *b) {
+        b->setIconSize(QSize(16, 16));
+        b->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+        b->setMinimumSize(70, 20);
+        b->setMaximumHeight(20);
+        b->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
+        // 覆盖主题 4px 内边距，避免小高度下内容被裁切
+        b->setStyleSheet("QToolButton { padding: 0px 4px; }");
+    };
     auto *g2 = m_schemeRibbon->addGroup(QStringLiteral("排序与筛选"));
     auto *sortCol = new QVBoxLayout();
     sortCol->setSpacing(1);
     auto *ascBtn = new RibbonButton(QStringLiteral("升序"), ":/icons/sort_asc.svg", g2);
+    compact(ascBtn);
     ascBtn->setCheckable(false);
     connect(ascBtn, &QToolButton::clicked, this, [this]() { onSortSchemes(true); });
     sortCol->addWidget(ascBtn);
     auto *descBtn = new RibbonButton(QStringLiteral("降序"), ":/icons/sort_desc.svg", g2);
+    compact(descBtn);
     descBtn->setCheckable(false);
     connect(descBtn, &QToolButton::clicked, this, [this]() { onSortSchemes(false); });
     sortCol->addWidget(descBtn);
     auto *sortCancelBtn = new RibbonButton(QStringLiteral("取消"), ":/icons/sort_cancel.svg", g2);
+    compact(sortCancelBtn);
     sortCancelBtn->setCheckable(false);
     connect(sortCancelBtn, &QToolButton::clicked, this, &EnterCalcPage::onSortCancel);
     sortCol->addWidget(sortCancelBtn);
@@ -235,18 +248,22 @@ void EnterCalcPage::buildSchemeRibbon()
     auto *filterCol = new QVBoxLayout();
     filterCol->setSpacing(1);
     auto *filterBtn = new RibbonButton(QStringLiteral("筛选"), ":/icons/filter.svg", g2);
+    compact(filterBtn);
     filterBtn->setCheckable(false);
     connect(filterBtn, &QToolButton::clicked, this, &EnterCalcPage::onFilterSchemes);
     filterCol->addWidget(filterBtn);
     auto *advBtn = new RibbonButton(QStringLiteral("高级"), ":/icons/filter_adv.svg", g2);
+    compact(advBtn);
     advBtn->setCheckable(false);
     connect(advBtn, &QToolButton::clicked, this, &EnterCalcPage::onFilterAdvanced);
     filterCol->addWidget(advBtn);
     auto *pickBtn = new RibbonButton(QStringLiteral("选择"), ":/icons/filter_pick.svg", g2);
+    compact(pickBtn);
     pickBtn->setCheckable(false);
     connect(pickBtn, &QToolButton::clicked, this, &EnterCalcPage::onFilterPick);
     filterCol->addWidget(pickBtn);
     auto *filterCancelBtn = new RibbonButton(QStringLiteral("取消"), ":/icons/filter_clear.svg", g2);
+    compact(filterCancelBtn);
     filterCancelBtn->setCheckable(false);
     connect(filterCancelBtn, &QToolButton::clicked, this, &EnterCalcPage::onFilterCancel);
     filterCol->addWidget(filterCancelBtn);
@@ -254,10 +271,12 @@ void EnterCalcPage::buildSchemeRibbon()
     auto *switchCol = new QVBoxLayout();
     switchCol->setSpacing(1);
     auto *switchBtn = new RibbonButton(QStringLiteral("切换"), ":/icons/switch_az.svg", g2);
+    compact(switchBtn);
     switchBtn->setCheckable(false);
     connect(switchBtn, &QToolButton::clicked, this, &EnterCalcPage::onSwitchSortColumn);
     switchCol->addWidget(switchBtn);
     auto *findBtn = new RibbonButton(QStringLiteral("查找替换"), ":/icons/find_replace.svg", g2);
+    compact(findBtn);
     findBtn->setCheckable(false);
     connect(findBtn, &QToolButton::clicked, this, &EnterCalcPage::onFindScheme);
     switchCol->addWidget(findBtn);
