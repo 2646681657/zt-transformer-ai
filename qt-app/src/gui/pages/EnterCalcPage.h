@@ -36,6 +36,22 @@ private slots:
     void onSelfTest();
     // 保存当前电磁计算结果为计算单文本文件
     void onSaveCalcSheet();
+    // ---- 方案选择 Tab ----
+    // 按主材成本升序/降序排序方案表
+    void onSortSchemes(bool ascending);
+    // 按主材成本上限筛选（取消输入则清除筛选）
+    void onFilterSchemes();
+    // 弹出列显隐菜单
+    void onSchemeColumnMenu();
+    // 校验选中方案后跳转输出打印 Tab
+    void onConfirmScheme();
+    // ---- 输出打印 Tab ----
+    // 快速打印（默认打印机直接出纸）/ 打印（弹打印机对话框）/ 打印预览
+    void onQuickPrint();
+    void onPrint();
+    void onPrintPreview();
+    // 打印表导出为 CSV（Excel 可直接打开）
+    void onExportCsv();
 
 private:
     void setupOptimizeTab();
