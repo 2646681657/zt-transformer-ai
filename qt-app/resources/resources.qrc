@@ -41,7 +41,16 @@
         <file>icons/visibility.svg</file>
         <file>icons/sort_asc.svg</file>
         <file>icons/sort_desc.svg</file>
+        <file>icons/sort_cancel.svg</file>
         <file>icons/filter.svg</file>
+        <file>icons/filter_adv.svg</file>
+        <file>icons/filter_pick.svg</file>
+        <file>icons/filter_clear.svg</file>
+        <file>icons/switch_az.svg</file>
+        <file>icons/find_replace.svg</file>
+        <file>icons/merge_set.svg</file>
+        <file>icons/merge_toggle.svg</file>
+        <file>icons/compare.svg</file>
         <file>icons/confirm.svg</file>
         <file>icons/print.svg</file>
         <file>icons/print_fast.svg</file>
