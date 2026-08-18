@@ -18,11 +18,12 @@ public:
     // 结果文本化（保存计算单用）
     static QString resultText(const CalcResult &result);
 
+    // 按组组织结果行：{ 组名, { {参数名, 数值, 单位}, ... } }
+    static QVector<QPair<QString, QVector<QStringList>>> buildGroups(const CalcResult &result);
+
 private:
     QTableWidget *createPage(const QString &title);
     static void fillPage(QTableWidget *page, const QVector<QStringList> &rows);
-    // 按组组织结果行：{ 组名, { {参数名, 数值, 单位}, ... } }
-    static QVector<QPair<QString, QVector<QStringList>>> buildGroups(const CalcResult &result);
 
     QTableWidget *m_coreTab = nullptr;
     QTableWidget *m_windingTab = nullptr;

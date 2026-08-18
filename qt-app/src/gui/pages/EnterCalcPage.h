@@ -75,12 +75,29 @@ private slots:
     // 校验选中方案后跳转输出打印 Tab
     void onConfirmScheme();
     // ---- 输出打印 Tab ----
+    // 打印设置：选择默认打印机与页面方向
+    void onPrintSetup();
     // 快速打印（默认打印机直接出纸）/ 打印（弹打印机对话框）/ 打印预览
     void onQuickPrint();
     void onPrint();
     void onPrintPreview();
+    // 打开报价单：材料成本明细
+    void onOpenQuote();
+    // 打开计算单：完整计算结果文本
+    void onOpenCalcSheet();
+    // 打开三张参数表（绝缘半径/铁芯尺寸/性能比对）
+    void onOpenInsulRadiusTable();
+    void onOpenCoreSizeTable();
+    void onOpenPerfCompareTable();
     // 打印表导出为 CSV（Excel 可直接打开）
     void onExportCsv();
+    // 叠铁铁芯片下料表：铁芯叠积各级片宽/叠厚导出 CSV
+    void onExportStackTable();
+    // 计算单配置关联：展示输入与结果关键配置
+    void onCalcSheetConfig();
+    // 保存为软件计算单 / 自定义计算单
+    void onSaveSoftwareSheet();
+    void onSaveCustomSheet();
 
 private:
     void setupOptimizeTab();
@@ -117,7 +134,10 @@ private:
     StructureConfig m_config;
     ElectromagneticEngine m_engine;
     CalcResult m_emResult;
+    CalcInput m_lastInput;
     bool m_hasResult = false;
+    QString m_defaultPrinterName;   // 打印设置选定的打印机
+    bool m_landscape = false;       // 打印设置选定的横向
 };
 
 #endif // ENTERCALCPAGE_H
