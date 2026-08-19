@@ -1062,10 +1062,18 @@ PrintOutputData ElectromagneticEngine::calculate(const TransformerParams &params
     Q_UNUSED(params);
     Q_UNUSED(config);
     // 旧打印接口：以默认设计变量（SB20-M-630-10）执行电磁计算并输出关键结果
-    PrintOutputData data;
     CalcInput input;
     CalcResult result;
-    if (!calcElectromagnetic(input, result) || !result.valid) {
+    calcElectromagnetic(input, result);
+    return buildPrintOutput(input, result);
+}
+
+PrintOutputData ElectromagneticEngine::buildPrintOutput(const CalcInput &input,
+                                                        const CalcResult &result)
+{
+    Q_UNUSED(input);
+    PrintOutputData data;
+    if (!result.valid) {
         PrintOutputRow row;
         row.isSectionHeader = true;
         row.leftName = QStringLiteral("电磁计算失败");

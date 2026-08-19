@@ -10,23 +10,29 @@
 #include <QSpinBox>
 #include <QComboBox>
 #include <QCheckBox>
+#include <QHash>
 #include "TransformerParams.h"
 #include "StructureConfig.h"
 #include "CalcInput.h"
 #include "CalcResult.h"
 #include "ElectromagneticEngine.h"
+#include "IOptimizer.h"
 
 class RibbonBar;
+class RibbonButton;
 class SidebarPanel;
 class SchemeTableWidget;
 class PrintTableWidget;
 class EmResultPanel;
+class GridOptimizer;
 
 class EnterCalcPage : public QWidget {
     Q_OBJECT
 public:
     explicit EnterCalcPage(QWidget *parent = nullptr);
     void setParams(const TransformerParams &params) { m_params = params; }
+    // 设置设计变量（参数设置页编辑值，未设置时用 SB20-M-630-10 默认值）
+    void setCalcInput(const CalcInput &input) { m_calcInput = input; }
 
 signals:
     void navigateBack();
@@ -35,6 +41,16 @@ private slots:
     void onTabChanged(int index);
     // 执行电磁计算全链路并填充结果面板/打印表/方案表
     void onRunEmCalc();
+    // ---- 异步寻优（开始运行/暂停/停止 按钮驱动 GridOptimizer）----
+    void onOptimizeStart();
+    void onOptimizePause();
+    void onOptimizeStop();
+    void onOptimizeProgress(int percent);
+    // 候选方案入库（方案表）
+    void onOptimizeCandidate(const OptimizeCandidate &candidate);
+    // 寻优结束：最优方案加载到结果面板
+    void onOptimizeFinished(bool stopped, const OptimizeCandidate &best,
+                            int total, int valid);
     // 对拍自检：SB20 计算单缓存值逐项对照
     void onSelfTest();
     // 保存当前电磁计算结果为计算单文本文件
@@ -74,6 +90,13 @@ private slots:
     void onSchemeIndexChanged(int value);
     // 校验选中方案后跳转输出打印 Tab
     void onConfirmScheme();
+    // 行内「选择」按钮点击：仅标记该方案（按钮变亮），不跳转
+    void onSchemeSelected(int row);
+    // ---- 方案库存储 ----
+    // 批量保存当前方案表全部方案（设计变量 JSON 文件）
+    void onSaveSchemes();
+    // 打开方案库文件：重算结果后恢复方案表（可继续选择/确认/比较）
+    void onLoadSchemes();
     // ---- 输出打印 Tab ----
     // 打印设置：选择默认打印机与页面方向
     void onPrintSetup();
@@ -108,6 +131,8 @@ private:
     void buildPrintRibbon();
     // 当前计算结果映射为方案行，追加进方案表
     void appendScheme(const CalcInput &input, const CalcResult &result);
+    // 确认指定行方案：记录基准并跳转输出打印 Tab
+    void confirmSchemeAt(int row);
 
     QTabBar *m_tabBar;
     QStackedWidget *m_stack;
@@ -116,6 +141,9 @@ private:
     RibbonBar *m_printRibbon;
     QWidget *m_ribbonStack;
     QPushButton *m_navButton;
+    RibbonButton *m_pauseBtn = nullptr;   // 暂停/继续 切换按钮
+    GridOptimizer *m_optimizer = nullptr; // 网格寻优器（后台线程）
+    bool m_optRunning = false;            // 寻优运行中标志
     SchemeTableWidget *m_schemeTable;
     PrintTableWidget *m_printTable;
     EmResultPanel *m_emResultPanel = nullptr;
@@ -129,12 +157,15 @@ private:
     QSpinBox *m_schemeIndexSpin = nullptr;
     int m_sortCol = 2;          // 当前排序列（2=主材成本）
     bool m_mergeOn = false;     // 合并模式开关
-    int m_confirmedRow = -1;    // 已确认方案行（方案库比较基准）
+    int m_confirmedSchemeIdx = -1;   // 已确认方案序号（方案库比较基准，排序无关）
+    // 方案序号 → 完整候选（input+result+方案行）：确认方案时取回该方案全部数据
+    QHash<int, OptimizeCandidate> m_schemeData;
     TransformerParams m_params;
     StructureConfig m_config;
     ElectromagneticEngine m_engine;
     CalcResult m_emResult;
-    CalcInput m_lastInput;
+    CalcInput m_calcInput;       // 当前设计变量（参数设置页传入，默认 SB20）
+    CalcInput m_lastInput;       // 最近一次计算实际使用的输入
     bool m_hasResult = false;
     QString m_defaultPrinterName;   // 打印设置选定的打印机
     bool m_landscape = false;       // 打印设置选定的横向
