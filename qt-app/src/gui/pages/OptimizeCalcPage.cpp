@@ -201,9 +201,9 @@ void OptimizeCalcPage::setupMainArea()
     auto *enterBtn = m_sidebar->addButton(QStringLiteral("进入计算"), ":/icons/enter_calc.svg");
     connect(enterBtn, &QToolButton::clicked, this, &OptimizeCalcPage::onEnterCalcClicked);
 
-    // Param table
+    // Param table（设计变量初值取自 m_input，默认即 SB20-M-630-10）
     m_paramTable = new ParamTableWidget(this);
-    m_paramTable->loadParamsForConfig(m_params, m_config);
+    m_paramTable->loadParamsForConfig(m_params, m_config, m_input);
 
     // Help panel
     m_helpPanel = new QTextEdit(this);
@@ -229,6 +229,7 @@ void OptimizeCalcPage::onEnterCalcClicked()
         }
     }
     m_params = m_paramTable->getParams();
+    m_paramTable->saveToInput(m_input);   // 收集表格中编辑的设计变量
     updateConfigFromRibbon();
     emit navigateToEnterCalc();
 }
@@ -271,11 +272,12 @@ void OptimizeCalcPage::updateConfigFromRibbon()
     m_config.hvCoilStructure = (idx == 1) ? StructureConfig::TwoSegCylinder : StructureConfig::MultiLayerCylinder;
 }
 
-// 保存当前表格编辑内容后按新配置重新加载参数表
+// 保存当前表格编辑内容（含设计变量）后按新配置重新加载参数表
 void OptimizeCalcPage::refreshParamTable()
 {
     m_params = m_paramTable->getParams();
-    m_paramTable->loadParamsForConfig(m_params, m_config);
+    m_paramTable->saveToInput(m_input);   // 刷新前保留已编辑的设计变量
+    m_paramTable->loadParamsForConfig(m_params, m_config, m_input);
 }
 
 // 外部设置结构配置（由类型选择对话框调用），更新标题栏并刷新参数表
