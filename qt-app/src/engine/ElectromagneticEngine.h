@@ -8,9 +8,12 @@
 
 class ElectromagneticEngine : public ICalcEngine {
 public:
-    // 旧接口（打印输出）：暂返回未接线提示，待 GUI 打印页接入电磁结果后填充
+    // 旧接口（打印输出）：以默认设计变量（SB20）计算并组行
     PrintOutputData calculate(const TransformerParams &params,
                               const StructureConfig &config) override;
+
+    // 任意方案的计算结果 → 打印双栏行（确认方案后刷新打印表用）
+    static PrintOutputData buildPrintOutput(const CalcInput &input, const CalcResult &result);
 
     // 电磁计算全链路：CalcInput（默认即 SB20-M-630-10）→ CalcResult
     bool calcElectromagnetic(const CalcInput &input, CalcResult &result) override;

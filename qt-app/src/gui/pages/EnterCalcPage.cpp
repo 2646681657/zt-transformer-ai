@@ -6,6 +6,12 @@
 #include "SchemeTableWidget.h"
 #include "PrintTableWidget.h"
 #include "EmResultPanel.h"
+#include "GridOptimizer.h"
+#include "SchemeConstraints.h"
+#include "SchemeStore.h"
+#include <QDateTime>
+#include <QDir>
+#include <algorithm>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -115,6 +121,15 @@ EnterCalcPage::EnterCalcPage(QWidget *parent)
     m_statusBar->setStyleSheet("background: #22262e; padding-left: 8px; font-size: 11px;"
                                "color: #8a9bb0; border-top: 1px solid #3a4050;");
     mainLayout->addWidget(m_statusBar);
+
+    // 网格寻优器（后台线程执行，候选方案与进度经信号回主线程）
+    m_optimizer = new GridOptimizer(this);
+    connect(m_optimizer, &IOptimizer::progressUpdated,
+            this, &EnterCalcPage::onOptimizeProgress);
+    connect(m_optimizer, &IOptimizer::candidateReady,
+            this, &EnterCalcPage::onOptimizeCandidate);
+    connect(m_optimizer, &IOptimizer::finished,
+            this, &EnterCalcPage::onOptimizeFinished);
 }
 
 void EnterCalcPage::buildOptimizeRibbon()
@@ -148,13 +163,15 @@ void EnterCalcPage::buildOptimizeRibbon()
     auto *g2 = m_optimizeRibbon->addGroup(QStringLiteral("寻优计算"));
     auto *startBtn = new RibbonButton(QStringLiteral("开始运行计算"), ":/icons/play.svg", g2);
     startBtn->setCheckable(false);
-    connect(startBtn, &QToolButton::clicked, this, &EnterCalcPage::onRunEmCalc);
+    connect(startBtn, &QToolButton::clicked, this, &EnterCalcPage::onOptimizeStart);
     g2->addButton(startBtn);
-    auto *pauseBtn = new RibbonButton(QStringLiteral("暂停计算"), ":/icons/pause.svg", g2);
-    pauseBtn->setCheckable(false);
-    g2->addButton(pauseBtn);
+    m_pauseBtn = new RibbonButton(QStringLiteral("暂停计算"), ":/icons/pause.svg", g2);
+    m_pauseBtn->setCheckable(false);
+    connect(m_pauseBtn, &QToolButton::clicked, this, &EnterCalcPage::onOptimizePause);
+    g2->addButton(m_pauseBtn);
     auto *stopBtn = new RibbonButton(QStringLiteral("停止计算"), ":/icons/stop.svg", g2);
     stopBtn->setCheckable(false);
+    connect(stopBtn, &QToolButton::clicked, this, &EnterCalcPage::onOptimizeStop);
     g2->addButton(stopBtn);
     m_optimizeRibbon->addSeparator();
 
@@ -337,6 +354,17 @@ void EnterCalcPage::buildSchemeRibbon()
     confirmBtn->setCheckable(false);
     connect(confirmBtn, &QToolButton::clicked, this, &EnterCalcPage::onConfirmScheme);
     g5->addButton(confirmBtn);
+
+    // ---- 组6 方案存储：批量保存/打开方案库（JSON 文件持久化）----
+    auto *g6 = m_schemeRibbon->addGroup(QStringLiteral("方案存储"));
+    auto *saveLibBtn = new RibbonButton(QStringLiteral("保存方案库"), ":/icons/save_scheme.svg", g6);
+    saveLibBtn->setCheckable(false);
+    connect(saveLibBtn, &QToolButton::clicked, this, &EnterCalcPage::onSaveSchemes);
+    g6->addButton(saveLibBtn);
+    auto *openLibBtn = new RibbonButton(QStringLiteral("打开方案库"), ":/icons/library.svg", g6);
+    openLibBtn->setCheckable(false);
+    connect(openLibBtn, &QToolButton::clicked, this, &EnterCalcPage::onLoadSchemes);
+    g6->addButton(openLibBtn);
 }
 
 // 输出打印 Ribbon：与原型图两组布局一致
@@ -520,6 +548,9 @@ void EnterCalcPage::setupSchemeTab()
     auto *layout = new QVBoxLayout(tab);
     layout->setContentsMargins(0, 0, 0, 0);
     m_schemeTable = new SchemeTableWidget(tab);
+    // 行内「选择」按钮：标记待确认方案（按钮变亮，不跳转）
+    connect(m_schemeTable, &SchemeTableWidget::schemeSelected,
+            this, &EnterCalcPage::onSchemeSelected);
     layout->addWidget(m_schemeTable);
     m_stack->addWidget(tab);
 }
@@ -530,7 +561,12 @@ void EnterCalcPage::setupPrintTab()
     auto *layout = new QVBoxLayout(tab);
     layout->setContentsMargins(0, 0, 0, 0);
     m_printTable = new PrintTableWidget(tab);
-    m_printTable->loadData(m_engine.calculate(m_params, m_config));
+    // 初始显示当前设计变量（m_calcInput，默认 SB20-M-630-10）的计算结果
+    CalcResult initResult;
+    if (m_engine.calcElectromagnetic(m_calcInput, initResult) && initResult.valid) {
+        m_printTable->loadData(
+            ElectromagneticEngine::buildPrintOutput(m_calcInput, initResult));
+    }
     layout->addWidget(m_printTable);
     m_stack->addWidget(tab);
 }
@@ -545,7 +581,7 @@ void EnterCalcPage::onTabChanged(int index)
 
 void EnterCalcPage::onRunEmCalc()
 {
-    CalcInput input;   // 默认设计变量（SB20-M-630-10）
+    CalcInput input = m_calcInput;   // 参数设置页编辑的设计变量（默认 SB20-M-630-10）
     m_lastInput = input;
     if (!m_engine.calcElectromagnetic(input, m_emResult) || !m_emResult.valid) {
         m_statusBar->setText(QStringLiteral("电磁计算失败: %1").arg(m_emResult.error));
@@ -557,18 +593,123 @@ void EnterCalcPage::onRunEmCalc()
 
     // 结果面板 + 打印表 + 方案入库
     m_emResultPanel->loadResult(m_emResult);
-    m_printTable->loadData(m_engine.calculate(m_params, m_config));
+    m_printTable->loadData(ElectromagneticEngine::buildPrintOutput(input, m_emResult));
     appendScheme(input, m_emResult);
 
+    QString status = QStringLiteral(
+        "电磁计算完成：空载损耗 %1 W | 负载损耗 %2 W | 阻抗电压 %3% | "
+        "油面温升 %4 K | 总重 %5 kg | 材料成本 %6 元")
+        .arg(QString::number(m_emResult.core.noLoadLoss_W, 'f', 0),
+             QString::number(m_emResult.winding.loadLoss_W, 'f', 0),
+             QString::number(m_emResult.impedance.impedance_pct, 'f', 2),
+             QString::number(m_emResult.thermal.oilRise_K, 'f', 1),
+             QString::number(m_emResult.mass.totalWeight_kg, 'f', 0),
+             QString::number(m_emResult.cost.materialCost, 'f', 0));
+
+    // 约束校验：超差项追加提示（快速计算结果仍展示，仅提示不拦截）
+    const SchemeConstraintsResult check = checkSchemeConstraints(m_params, m_emResult);
+    if (!check.passed) {
+        status += QStringLiteral(" ｜ 注意：%1").arg(check.violations.join(QStringLiteral("，")));
+    }
+    m_statusBar->setText(status);
+}
+
+// ---- 异步寻优 ----
+
+void EnterCalcPage::onOptimizeStart()
+{
+    if (m_optRunning) {
+        m_statusBar->setText(QStringLiteral("寻优正在进行中"));
+        return;
+    }
+    // 新一轮寻优：清空方案表与方案数据缓存，从当前设计变量（参数设置页传入）出发网格搜索
+    m_schemeTable->clearResults();
+    m_schemeData.clear();
+    m_confirmedSchemeIdx = -1;
+    m_optRunning = true;
+    if (m_pauseBtn) {
+        m_pauseBtn->setText(QStringLiteral("暂停计算"));
+    }
+    OptimizationSettings settings;
+    m_optimizer->start(m_params, m_config, m_calcInput, settings);
     m_statusBar->setText(
-        QStringLiteral("电磁计算完成：空载损耗 %1 W | 负载损耗 %2 W | 阻抗电压 %3% | "
-                       "油面温升 %4 K | 总重 %5 kg | 材料成本 %6 元")
-            .arg(QString::number(m_emResult.core.noLoadLoss_W, 'f', 0),
-                 QString::number(m_emResult.winding.loadLoss_W, 'f', 0),
-                 QString::number(m_emResult.impedance.impedance_pct, 'f', 2),
-                 QString::number(m_emResult.thermal.oilRise_K, 'f', 1),
-                 QString::number(m_emResult.mass.totalWeight_kg, 'f', 0),
-                 QString::number(m_emResult.cost.materialCost, 'f', 0)));
+        QStringLiteral("寻优已启动：围绕当前设计变量网格搜索（直径/直线段/低压匝数/高压每层匝数），"
+                       "损耗/阻抗/温升超差方案自动剔除"));
+}
+
+void EnterCalcPage::onOptimizePause()
+{
+    if (!m_optRunning || !m_pauseBtn) {
+        return;
+    }
+    const bool paused = (m_pauseBtn->text() == QStringLiteral("暂停计算"));
+    if (paused) {
+        m_optimizer->pause();
+        m_pauseBtn->setText(QStringLiteral("继续计算"));
+        m_statusBar->setText(QStringLiteral("寻优已暂停，点击\"继续计算\"恢复"));
+    } else {
+        m_optimizer->resume();
+        m_pauseBtn->setText(QStringLiteral("暂停计算"));
+        m_statusBar->setText(QStringLiteral("寻优已恢复"));
+    }
+}
+
+void EnterCalcPage::onOptimizeStop()
+{
+    if (!m_optRunning) {
+        m_statusBar->setText(QStringLiteral("当前没有进行中的寻优"));
+        return;
+    }
+    m_optimizer->stop();
+    m_statusBar->setText(QStringLiteral("正在停止寻优…"));
+}
+
+void EnterCalcPage::onOptimizeProgress(int percent)
+{
+    m_statusBar->setText(QStringLiteral("寻优进行中：%1%").arg(percent));
+}
+
+void EnterCalcPage::onOptimizeCandidate(const OptimizeCandidate &candidate)
+{
+    OptimizationResult scheme = candidate.scheme;
+    scheme.schemeIdx = m_schemeTable->rowCount() + 1;   // 序号按入库顺序编排
+    m_schemeTable->addResult(scheme);
+    // 保存完整候选（input+result+方案行），供确认方案时取回
+    OptimizeCandidate saved = candidate;
+    saved.scheme = scheme;
+    m_schemeData.insert(scheme.schemeIdx, saved);
+}
+
+void EnterCalcPage::onOptimizeFinished(bool stopped, const OptimizeCandidate &best,
+                                       int total, int valid)
+{
+    m_optRunning = false;
+    if (m_pauseBtn) {
+        m_pauseBtn->setText(QStringLiteral("暂停计算"));
+    }
+    if (valid > 0) {
+        // 最优（材料成本最低）方案加载到结果面板与打印/保存链路
+        m_lastInput = best.input;
+        m_emResult = best.result;
+        m_hasResult = true;
+        m_emResultPanel->loadResult(m_emResult);
+        m_printTable->loadData(ElectromagneticEngine::buildPrintOutput(best.input, best.result));
+    }
+    const int rejected = total - valid;   // 计算失败或约束超差被剔除的组合数
+    if (stopped) {
+        m_statusBar->setText(QStringLiteral("寻优已停止：评估 %1 个组合，%2 个通过约束，"
+                                            "%3 个剔除").arg(total).arg(valid).arg(rejected));
+    } else if (valid > 0) {
+        m_statusBar->setText(
+            QStringLiteral("寻优完成：评估 %1 个组合，%2 个通过约束（剔除 %3 个），"
+                           "最优材料成本 %4 元")
+                .arg(total).arg(valid).arg(rejected)
+                .arg(QString::number(best.result.cost.materialCost, 'f', 0)));
+    } else {
+        m_statusBar->setText(QStringLiteral(
+            "寻优完成：评估 %1 个组合，全部被约束剔除——请在参数设置页核对"
+            "性能标准值与允许偏差").arg(total));
+    }
 }
 
 void EnterCalcPage::onSelfTest()
@@ -770,21 +911,138 @@ void EnterCalcPage::onSchemeColumnMenu()
 
 void EnterCalcPage::onConfirmScheme()
 {
-    const int row = m_schemeTable->currentRow();
+    // 优先确认行内「选择」按钮标记的方案；无标记时退回当前选中行
+    int row = m_schemeTable->markedRow();
+    if (row < 0) {
+        row = m_schemeTable->currentRow();
+    }
     if (row < 0 || m_schemeTable->rowCount() == 0) {
         QMessageBox::information(this, QStringLiteral("方案确认"),
-                                 QStringLiteral("请先在方案表中选择一个方案"));
+                                 QStringLiteral("请先在方案表中点击行内\"选择\"按钮标记一个方案"));
         return;
     }
-    m_confirmedRow = row;
+    confirmSchemeAt(row);
+}
+
+void EnterCalcPage::onSchemeSelected(int row)
+{
+    if (row < 0 || row >= m_schemeTable->rowCount()) {
+        return;
+    }
+    // 仅标记待确认方案（按钮高亮由表格内部处理），选中该行但不跳转
+    m_schemeTable->selectRow(row);
     const QString idx = m_schemeTable->item(row, 1)
                             ? m_schemeTable->item(row, 1)->text() : QString('?');
+    m_statusBar->setText(
+        QStringLiteral("已选择方案 %1，点击\"方案确认\"进入输出打印").arg(idx));
+}
+
+void EnterCalcPage::onSaveSchemes()
+{
+    if (m_schemeData.isEmpty()) {
+        QMessageBox::information(this, QStringLiteral("保存方案库"),
+                                 QStringLiteral("当前没有可保存的方案，请先执行快速计算或寻优计算"));
+        return;
+    }
+    // 按方案序号排序收集设计变量（序号即保存顺序）
+    QList<int> idxs = m_schemeData.keys();
+    std::sort(idxs.begin(), idxs.end());
+    QVector<CalcInput> inputs;
+    inputs.reserve(idxs.size());
+    for (int idx : idxs) {
+        inputs.append(m_schemeData.value(idx).input);
+    }
+
+    const QString defaultName = QStringLiteral("schemes_%1.json")
+        .arg(QDateTime::currentDateTime().toString(QStringLiteral("yyyyMMdd_HHmm")));
+    const QString path = QFileDialog::getSaveFileName(
+        this, QStringLiteral("保存方案库"), defaultName,
+        QStringLiteral("方案库文件 (*.json)"));
+    if (path.isEmpty()) {
+        return;
+    }
+    if (!SchemeStore::saveSchemes(
+            path, inputs,
+            QStringLiteral("容量 %1 kVA / 高压 %2 kV / 低压 %3 kV")
+                .arg(m_params.capacity_kVA)
+                .arg(m_params.hvRatedVoltage_kV)
+                .arg(m_params.lvRatedVoltage_kV))) {
+        QMessageBox::warning(this, QStringLiteral("保存方案库"),
+                             QStringLiteral("保存失败：无法写入文件 %1").arg(path));
+        return;
+    }
+    m_statusBar->setText(QStringLiteral("方案库已保存：%1（%2 个方案）")
+                             .arg(QDir::toNativeSeparators(path)).arg(inputs.size()));
+}
+
+void EnterCalcPage::onLoadSchemes()
+{
+    const QString path = QFileDialog::getOpenFileName(
+        this, QStringLiteral("打开方案库"), QString(),
+        QStringLiteral("方案库文件 (*.json)"));
+    if (path.isEmpty()) {
+        return;
+    }
+    bool ok = false;
+    const QVector<CalcInput> inputs = SchemeStore::loadSchemes(path, &ok);
+    if (!ok || inputs.isEmpty()) {
+        QMessageBox::warning(this, QStringLiteral("打开方案库"),
+                             QStringLiteral("加载失败：文件不存在或不是有效的方案库文件"));
+        return;
+    }
+    if (!m_schemeData.isEmpty()
+            && QMessageBox::question(
+                   this, QStringLiteral("打开方案库"),
+                   QStringLiteral("加载将清空当前方案表中的 %1 个方案，是否继续？")
+                       .arg(m_schemeData.size()))
+                   != QMessageBox::Yes) {
+        return;
+    }
+
+    // 清空当前方案，逐个重算恢复（引擎确定性，结果与保存时一致）
+    m_schemeTable->clearResults();
+    m_schemeData.clear();
+    m_confirmedSchemeIdx = -1;
+    int loaded = 0;
+    for (const CalcInput &in : inputs) {
+        CalcResult r;
+        if (m_engine.calcElectromagnetic(in, r) && r.valid) {
+            appendScheme(in, r);
+            ++loaded;
+        }
+    }
+    m_statusBar->setText(QStringLiteral("方案库已加载：%1（%2/%3 个方案重算成功）")
+                             .arg(QDir::toNativeSeparators(path))
+                             .arg(loaded).arg(inputs.size()));
+}
+
+void EnterCalcPage::confirmSchemeAt(int row)
+{
+    const int schemeIdx = m_schemeTable->item(row, 1)
+                              ? m_schemeTable->item(row, 1)->text().toInt() : -1;
+    m_confirmedSchemeIdx = schemeIdx;
+    m_schemeTable->selectRow(row);
+
+    // 把确认方案切换为"当前方案"：结果面板/打印表/报价单/计算单/
+    // CSV 导出等后续输出全部读 m_lastInput/m_emResult，随确认联动变化
+    const auto it = m_schemeData.constFind(schemeIdx);
+    if (it != m_schemeData.constEnd() && it->result.valid) {
+        m_lastInput = it->input;
+        m_emResult = it->result;
+        m_hasResult = true;
+        m_emResultPanel->loadResult(m_emResult);
+        m_printTable->loadData(ElectromagneticEngine::buildPrintOutput(it->input, it->result));
+    }
+
     if (m_schemeIndexSpin) {
         m_schemeIndexSpin->blockSignals(true);
-        m_schemeIndexSpin->setValue(idx.toInt());
+        m_schemeIndexSpin->setValue(schemeIdx > 0 ? schemeIdx : 1);
         m_schemeIndexSpin->blockSignals(false);
     }
-    m_statusBar->setText(QStringLiteral("已确认方案 %1，跳转输出打印").arg(idx));
+    m_statusBar->setText(
+        QStringLiteral("已确认方案 %1（主材成本 %2 元），输出打印已更新")
+            .arg(schemeIdx)
+            .arg(QString::number(m_emResult.cost.materialCost, 'f', 0)));
     m_tabBar->setCurrentIndex(2);
 }
 
@@ -921,7 +1179,7 @@ void EnterCalcPage::onFindScheme()
         if (m_schemeTable->item(r, 1)
             && m_schemeTable->item(r, 1)->text().toInt() == idx) {
             m_schemeTable->selectRow(r);
-            m_schemeTable->scrollToItem(m_schemeTable->item(r, 0));
+            m_schemeTable->scrollToItem(m_schemeTable->item(r, 1));
             m_statusBar->setText(QStringLiteral("已定位方案 %1（第 %2 行）").arg(idx).arg(r + 1));
             return;
         }
@@ -953,27 +1211,54 @@ void EnterCalcPage::onMergeToggle()
 
 void EnterCalcPage::onCompareLibrary()
 {
-    if (m_confirmedRow < 0 || m_schemeTable->rowCount() == 0) {
+    // 语义：把"当前选中方案"与"已确认方案"（方案库基准）逐参数对比。
+    // 基准按方案序号记录（排序/筛选后仍指向同一方案），从 m_schemeData 取完整数据
+    const auto itConf = m_schemeData.constFind(m_confirmedSchemeIdx);
+    if (m_confirmedSchemeIdx <= 0 || itConf == m_schemeData.constEnd()) {
         QMessageBox::information(this, QStringLiteral("方案库比较"),
-                                 QStringLiteral("尚无已确认方案，请先在方案表中选择并确认一个方案"));
+                                 QStringLiteral("尚无已确认方案，请先在方案表中点击行内\"选择\"按钮"
+                                                 "或选中方案后点\"方案确认\""));
         return;
     }
     const int cur = m_schemeTable->currentRow();
-    if (cur < 0 || cur == m_confirmedRow) {
+    const int curIdx = (cur >= 0 && m_schemeTable->item(cur, 1))
+                           ? m_schemeTable->item(cur, 1)->text().toInt() : -1;
+    const auto itCur = m_schemeData.constFind(curIdx);
+    if (cur < 0 || curIdx <= 0 || itCur == m_schemeData.constEnd()) {
         QMessageBox::information(this, QStringLiteral("方案库比较"),
-                                 QStringLiteral("请先在方案表中选中待比较的方案（当前选中即已确认方案）"));
+                                 QStringLiteral("请先在方案表中选中待比较的方案（不能与已确认方案相同）"));
         return;
     }
-    const QList<int> cols = {2, 3, 4, 6, 7, 8, 9, 10, 11};
-    QString text = QStringLiteral("参数\t当前方案\t已确认方案\n");
-    for (int c : cols) {
-        const auto *head = m_schemeTable->horizontalHeaderItem(c);
-        const QString name = head ? head->text().replace(QLatin1Char('\n'), QLatin1Char(' ')) : QString();
-        const QString a = m_schemeTable->item(cur, c) ? m_schemeTable->item(cur, c)->text() : QString();
-        const QString b = m_schemeTable->item(m_confirmedRow, c)
-                              ? m_schemeTable->item(m_confirmedRow, c)->text() : QString();
-        text += name + QLatin1Char('\t') + a + QLatin1Char('\t') + b + QLatin1Char('\n');
+    if (curIdx == m_confirmedSchemeIdx) {
+        QMessageBox::information(this, QStringLiteral("方案库比较"),
+                                 QStringLiteral("当前选中即为已确认方案 %1，请选择其他方案比较")
+                                     .arg(curIdx));
+        return;
     }
+
+    const OptimizationResult &a = itCur->scheme;    // 当前选中方案
+    const OptimizationResult &b = itConf->scheme;   // 已确认方案（基准）
+    const auto line = [](const QString &name, double va, double vb, const QString &unit,
+                         int prec = 2) {
+        return QStringLiteral("%1：%2 %4 ｜ 已确认：%3 %4\n")
+            .arg(name)
+            .arg(QString::number(va, 'f', prec), QString::number(vb, 'f', prec), unit);
+    };
+    QString text = QStringLiteral("【待比较】方案 %1  vs  【已确认】方案 %2\n\n")
+                       .arg(curIdx).arg(m_confirmedSchemeIdx);
+    text += line(QStringLiteral("主材成本（铜铁油）"), a.costCuFeOil, b.costCuFeOil,
+                 QStringLiteral("元"), 0);
+    text += line(QStringLiteral("铜铁成本"), a.costCuFe, b.costCuFe, QStringLiteral("元"), 0);
+    text += line(QStringLiteral("铁芯直径"), a.coreD, b.coreD, QStringLiteral("mm"));
+    text += line(QStringLiteral("铁芯长轴"), a.coreL, b.coreL, QStringLiteral("mm"));
+    text += line(QStringLiteral("低压匝数"), double(a.lvTurns), double(b.lvTurns), QString(), 0);
+    text += line(QStringLiteral("高压线圈层数"), double(a.hvLayers), double(b.hvLayers),
+                 QString(), 0);
+    text += line(QStringLiteral("主空道尺寸"), a.mainDuct, b.mainDuct, QStringLiteral("mm"));
+    const double diff = a.costCuFeOil - b.costCuFeOil;
+    text += QStringLiteral("\n结论：待比较方案主材成本比已确认方案%1 %2 元")
+                .arg(diff <= 0 ? QStringLiteral("低") : QStringLiteral("高"))
+                .arg(QString::number(qAbs(diff), 'f', 0));
     QMessageBox::information(this, QStringLiteral("方案库比较"), text);
 }
 
@@ -1028,7 +1313,7 @@ void EnterCalcPage::onSchemeIndexChanged(int value)
         return;
     }
     m_schemeTable->selectRow(row);
-    m_schemeTable->scrollToItem(m_schemeTable->item(row, 0));
+    m_schemeTable->scrollToItem(m_schemeTable->item(row, 1));
     m_statusBar->setText(QStringLiteral("已选中方案 %1").arg(value));
 }
 
@@ -1433,22 +1718,12 @@ void EnterCalcPage::onSaveCustomSheet()
 
 void EnterCalcPage::appendScheme(const CalcInput &input, const CalcResult &result)
 {
-    OptimizationResult scheme;
-    scheme.schemeIdx = m_schemeTable->rowCount() + 1;
-    scheme.costCuFeOil = result.cost.materialCost;
-    scheme.costCuFe = result.cost.steelCost + result.cost.hvWireCost
-                      + result.cost.lvWireCost;
-    scheme.coreD = input.coreDiameter_mm;
-    scheme.coreL = result.core.minorAxis_mm;
-    scheme.lvTurns = input.lvTurns;
-    scheme.lvRuleT = input.lvFoilThick_mm;
-    scheme.lvRuleW = input.lvFoilWidth_mm;
-    scheme.hvRuleT = input.hvBareThick_mm;
-    scheme.hvRuleW = input.hvBareWidth_mm;
-    scheme.hvLayers = result.winding.layerCount;
-    scheme.lvOilDucts = 5;
-    scheme.hvOilDucts = 5;
-    scheme.lvToYoke = input.lvEndInsul_mm;
-    scheme.mainDuct = result.winding.mainDuct_mm;
+    const OptimizationResult scheme = makeScheme(m_schemeTable->rowCount() + 1, input, result);
     m_schemeTable->addResult(scheme);
+    // 保存完整候选（input+result+方案行），供确认方案时取回
+    OptimizeCandidate saved;
+    saved.input = input;
+    saved.result = result;
+    saved.scheme = scheme;
+    m_schemeData.insert(scheme.schemeIdx, saved);
 }

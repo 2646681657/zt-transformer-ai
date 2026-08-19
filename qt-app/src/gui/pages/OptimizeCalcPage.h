@@ -6,6 +6,7 @@
 #include <QVector>
 #include "TransformerParams.h"
 #include "StructureConfig.h"
+#include "CalcInput.h"
 
 class RibbonBar;
 class RibbonGroup;
@@ -20,6 +21,8 @@ public:
     explicit OptimizeCalcPage(QWidget *parent = nullptr);
     TransformerParams currentParams() const { return m_params; }
     StructureConfig currentConfig() const { return m_config; }
+    // 参数表中编辑的设计变量（进入计算时传给 EnterCalcPage）
+    CalcInput currentInput() const { return m_input; }
     // 设置变压器大类和绕组工艺，刷新页面内容
     void setStructureConfig(const StructureConfig &config);
 
@@ -44,6 +47,7 @@ private:
     QPushButton *m_navButton;
     TransformerParams m_params;
     StructureConfig m_config;
+    CalcInput m_input;              // 设计变量（默认即 SB20-M-630-10）
     QVector<RibbonGroup *> m_selectGroups;
 };
 

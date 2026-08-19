@@ -79,5 +79,6 @@ void MainWindow::onOptimizeCalcRequested()
 void MainWindow::showEnterCalc()
 {
     m_enterCalcPage->setParams(m_optimizeCalcPage->currentParams());
+    m_enterCalcPage->setCalcInput(m_optimizeCalcPage->currentInput());
     m_stack->setCurrentWidget(m_enterCalcPage);
 }

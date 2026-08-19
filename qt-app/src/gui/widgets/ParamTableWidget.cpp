@@ -63,31 +63,20 @@ void ParamTableWidget::addParamRow(int row, const QString &name, const QString &
     setItem(row, 5, new QTableWidgetItem(""));
 }
 
-void ParamTableWidget::loadParams(const TransformerParams &params)
+void ParamTableWidget::bindInput(const QString &key, int row, int col)
 {
-    setRowCount(0);
+    if (!key.isEmpty()) {
+        m_inputRefs.insert(key, { row, col });
+    }
+}
 
-    addSectionRow(0, QStringLiteral("一 输入信息"),
-                  QStringLiteral("变压器效率计算方式"), params.efficiencyCalcMethod);
-    addParamRow(1, "容量(kVA)", QString::number(params.capacity_kVA), "产品型号", params.productModel);
-    addParamRow(2, "高压额定电压(kV)", QString::number(params.hvRatedVoltage_kV), "联结组别", params.connectionGroup);
-    addParamRow(3, "低压额定电压(kV)", QString::number(params.lvRatedVoltage_kV), "频率", QString::number(params.frequency_Hz));
-    addParamRow(4, "高压调压级数", QString::number(params.hvTapStages), "环境等级", params.environmentGrade);
-    addParamRow(5, "高压调压级电压±(%)", QString::number(params.hvTapVoltagePercent), "计算折算温度(℃)", QString::number(params.calcRefTemp_C));
-    addParamRow(6, "最高环境温度(℃)", QString::number(params.maxAmbientTemp_C), "铁心截面计算方式", params.coreSectionCalcMethod);
-    addParamRow(7, "最高海拔高度(m)", QString::number(params.maxAltitude_m), "负载损耗计算方式", params.loadLossCalcMethod);
-
-    addSectionRow(8, QStringLiteral("二 性能指标"),
-                  QStringLiteral("设计允许偏差:最小值(可选填)"), QStringLiteral("最大值(可选填)"));
-    addParamRow(9, "空载损耗标准值(W)", QString::number(params.noLoadLossStd_W), "", QString::number(params.noLoadLossMaxDev_pct));
-    addParamRow(10, "负载损耗标准值(W)", QString::number(params.loadLossStd_W), "", QString::number(params.loadLossMaxDev_pct));
-    addParamRow(11, "总损耗标准值(W)", QString::number(params.totalLossStd_W), "", QString::number(params.totalLossMaxDev_pct));
-    addParamRow(12, "阻抗电压标准值(%)", QString::number(params.impedanceVoltageStd_pct),
-                QString::number(params.impedanceVoltageMinDev_pct), QString::number(params.impedanceVoltageMaxDev_pct));
-    addParamRow(13, "空载电流标准值(%)", QString::number(params.noLoadCurrentStd_pct), "", QString::number(params.noLoadCurrentMaxDev_pct));
-    addParamRow(14, "油顶层温升限值(K)", QString::number(params.oilTopTempRise_K));
-    addParamRow(15, "高压线圈温升限值(K)", QString::number(params.hvCoilTempRise_K));
-    addParamRow(16, "低压线圈温升限值(K)", QString::number(params.lvCoilTempRise_K));
+void ParamTableWidget::addInputRow(int row, const QString &name, const QString &value,
+                                   const QString &optName, const QString &optValue,
+                                   const QString &key, const QString &optKey)
+{
+    addParamRow(row, name, value, optName, optValue);
+    bindInput(key, row, 2);
+    bindInput(optKey, row, 4);
 }
 
 TransformerParams ParamTableWidget::getParams() const
@@ -108,10 +97,13 @@ TransformerParams ParamTableWidget::getParams() const
     return params;
 }
 
-// 根据当前结构配置动态生成参数表：不同铁芯/绕组组合显示不同的参数行和分段
-void ParamTableWidget::loadParamsForConfig(const TransformerParams &params, const StructureConfig &config)
+// 根据当前结构配置动态生成参数表：不同铁芯/绕组组合显示不同的参数行和分段；
+// 四/五/六节为可编辑设计变量，与 CalcInput 双向同步（saveToInput 读回）
+void ParamTableWidget::loadParamsForConfig(const TransformerParams &params, const StructureConfig &config,
+                                           const CalcInput &input)
 {
     setRowCount(0);
+    m_inputRefs.clear();
     int row = 0;
 
     // 根据变压器结构类型显示不同产品型号前缀
@@ -163,40 +155,99 @@ void ParamTableWidget::loadParamsForConfig(const TransformerParams &params, cons
     addParamRow(row++, "高压线圈温升限值(K)", QString::number(params.hvCoilTempRise_K));
     addParamRow(row++, "低压线圈温升限值(K)", QString::number(params.lvCoilTempRise_K));
 
-    // 四 铁芯参数（根据结构不同显示不同参数）
+    // 四 铁芯参数（设计变量，初值取自 CalcInput）
     addSectionRow(row++, QStringLiteral("四 铁芯参数"));
-    switch (config.coreType) {
-    case StructureConfig::PlanarAmorphous:
-        addParamRow(row++, "非晶合金带材牌号", "", "叠片系数", "0.86");
-        addParamRow(row++, "铁芯柱截面形状", config.coreShape == StructureConfig::EllipseLike ?
-                    "类椭圆形" : "矩形", "铁芯重量修正系数", "1.0");
-        break;
-    case StructureConfig::StackedSilicon:
-        addParamRow(row++, "硅钢片牌号", "30QG105", "叠片系数", "0.97");
-        addParamRow(row++, "铁芯柱截面形状", config.coreShape == StructureConfig::Circle ?
-                    "圆形" : "椭圆形", "铁芯重量修正系数", "1.0");
-        addParamRow(row++, "磁通密度(T)", "1.70", "附加损耗系数", "1.0");
-        break;
-    case StructureConfig::StereoscopicRoll:
-        addParamRow(row++, "硅钢片牌号", "23QG090", "叠片系数", "0.97");
-        addParamRow(row++, "立体卷截面计算方式", "按叠片", "铁芯重量修正系数", "1.0");
-        addParamRow(row++, "磁通密度(T)", "1.65", "附加损耗系数", "1.0");
-        break;
+    addInputRow(row++, "铁芯直径(mm)", QString::number(input.coreDiameter_mm),
+                "叠片系数", QString::number(input.stackFactor),
+                "coreDiameter", "stackFactor");
+    addInputRow(row++, "直线段长(mm)", QString::number(input.coreStraight_mm),
+                "椭圆角(°)", QString::number(input.ellipseAngle_deg),
+                "coreStraight", "ellipseAngle");
+    addInputRow(row++, "硅钢片牌号", input.steelGrade,
+                "硅钢片厚(mm)", QString::number(input.steelThickness_mm),
+                "steelGrade", "steelThickness");
+    addInputRow(row++, "铁损工艺系数", QString::number(input.coreLossCraftCoef),
+                "接缝数", QString::number(input.seamCount),
+                "coreLossCraftCoef", "seamCount");
+
+    // 五 绕组参数（设计变量，初值取自 CalcInput）
+    addSectionRow(row++, QStringLiteral("五 绕组参数"));
+    addInputRow(row++, "低压匝数", QString::number(input.lvTurns),
+                "低压箔厚(mm)", QString::number(input.lvFoilThick_mm),
+                "lvTurns", "lvFoilThick");
+    addInputRow(row++, "低压箔宽(mm)", QString::number(input.lvFoilWidth_mm),
+                "低压端绝缘(mm)", QString::number(input.lvEndInsul_mm),
+                "lvFoilWidth", "lvEndInsul");
+    addInputRow(row++, "高压裸线宽(mm)", QString::number(input.hvBareWidth_mm),
+                "高压裸线厚(mm)", QString::number(input.hvBareThick_mm),
+                "hvBareWidth", "hvBareThick");
+    addInputRow(row++, "高压每层匝数", QString::number(input.hvTurnsPerLayer),
+                "层间绝缘厚(mm)", QString::number(input.hvLayerInsul_mm),
+                "hvTurnsPerLayer", "hvLayerInsul");
+    addInputRow(row++, "高压并绕根数", QString::number(input.hvParallelCount),
+                "高压叠绕根数", QString::number(input.hvStackCount),
+                "hvParallelCount", "hvStackCount");
+
+    // 六 主空道（设计变量，初值取自 CalcInput）
+    addSectionRow(row++, QStringLiteral("六 主空道"));
+    addInputRow(row++, "主空道宽(mm)", QString::number(input.mainDuctWidth_mm),
+                "纸板厚(mm)", QString::number(input.mainDuctInsul_mm),
+                "mainDuctWidth", "mainDuctInsul");
+}
+
+// 从表格设计变量节读回 CalcInput：空值/非法值保持原字段不变
+void ParamTableWidget::saveToInput(CalcInput &input) const
+{
+    const auto cellText = [this](const QString &key) -> QString {
+        const auto it = m_inputRefs.constFind(key);
+        if (it == m_inputRefs.constEnd() || !item(it->first, it->second)) {
+            return QString();
+        }
+        return item(it->first, it->second)->text().trimmed();
+    };
+    const auto setDouble = [&cellText](const QString &key, double &dst) {
+        bool ok = false;
+        const double v = cellText(key).toDouble(&ok);
+        if (ok) {
+            dst = v;
+        }
+    };
+    const auto setInt = [&cellText](const QString &key, int &dst) {
+        bool ok = false;
+        const int v = cellText(key).toInt(&ok);
+        if (ok) {
+            dst = v;
+        }
+    };
+
+    // 铁芯
+    setDouble("coreDiameter", input.coreDiameter_mm);
+    setDouble("stackFactor", input.stackFactor);
+    setDouble("coreStraight", input.coreStraight_mm);
+    setDouble("ellipseAngle", input.ellipseAngle_deg);
+    setDouble("steelThickness", input.steelThickness_mm);
+    setDouble("coreLossCraftCoef", input.coreLossCraftCoef);
+    setInt("seamCount", input.seamCount);
+    const QString grade = cellText("steelGrade");
+    if (!grade.isEmpty()) {
+        input.steelGrade = grade;
     }
 
-    // 五 绕组参数（根据绕组方式和线圈结构不同）
-    addSectionRow(row++, QStringLiteral("五 绕组参数"));
-    if (config.windingForm == StructureConfig::Dual) {
-        addParamRow(row++, "高压绕组匝数范围", "", "低压绕组匝数范围", "");
-    } else {
-        addParamRow(row++, "高压绕组匝数范围", "", "低压绕组(分裂1)匝数范围", "");
-        addParamRow(row++, "", "", "低压绕组(分裂2)匝数范围", "");
-    }
-    if (config.hvCoilStructure == StructureConfig::MultiLayerCylinder) {
-        addParamRow(row++, "高压线圈层数范围", "", "层间绝缘厚度(mm)", "");
-    } else {
-        addParamRow(row++, "高压线圈段数", "", "段间油道宽度(mm)", "");
-    }
-    addParamRow(row++, "高压导线截面(mm²)", "", "低压导线/箔材规格", "");
-    addParamRow(row++, "线圈高度(mm)", "", "主绝缘距离(mm)", "");
+    // 低压绕组
+    setInt("lvTurns", input.lvTurns);
+    setDouble("lvFoilThick", input.lvFoilThick_mm);
+    setDouble("lvFoilWidth", input.lvFoilWidth_mm);
+    setDouble("lvEndInsul", input.lvEndInsul_mm);
+
+    // 高压绕组
+    setDouble("hvBareWidth", input.hvBareWidth_mm);
+    setDouble("hvBareThick", input.hvBareThick_mm);
+    setInt("hvTurnsPerLayer", input.hvTurnsPerLayer);
+    setDouble("hvLayerInsul", input.hvLayerInsul_mm);
+    setInt("hvParallelCount", input.hvParallelCount);
+    setInt("hvStackCount", input.hvStackCount);
+
+    // 主空道
+    setDouble("mainDuctWidth", input.mainDuctWidth_mm);
+    setDouble("mainDuctInsul", input.mainDuctInsul_mm);
 }
