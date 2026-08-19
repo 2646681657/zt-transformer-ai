@@ -5,8 +5,7 @@
 #include "SidebarPanel.h"
 #include "SchemeTableWidget.h"
 #include "PrintTableWidget.h"
-#include "MockOptimizer.h"
-#include "MockCalcEngine.h"
+#include "EmResultPanel.h"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -17,6 +16,24 @@
 #include <QHeaderView>
 #include <QSizePolicy>
 #include <QToolButton>
+#include <QSplitter>
+#include <QMessageBox>
+#include <QFileDialog>
+#include <QFile>
+#include <QTextStream>
+#include <QInputDialog>
+#include <QDoubleSpinBox>
+#include <QDialogButtonBox>
+#include <QLineEdit>
+#include <QMenu>
+#include <QPrinter>
+#include <QPrinterInfo>
+#include <QPageLayout>
+#include <QPrintDialog>
+#include <QPrintPreviewDialog>
+#include <QPainter>
+#include <QFormLayout>
+#include <QPlainTextEdit>
 
 EnterCalcPage::EnterCalcPage(QWidget *parent)
     : QWidget(parent)
@@ -93,17 +110,24 @@ EnterCalcPage::EnterCalcPage(QWidget *parent)
     mainLayout->addWidget(m_stack, 1);
 
     // Status bar
-    auto *statusBar = new QLabel(QStringLiteral("就绪"), this);
-    statusBar->setFixedHeight(22);
-    statusBar->setStyleSheet("background: #22262e; padding-left: 8px; font-size: 11px;"
-                             "color: #8a9bb0; border-top: 1px solid #3a4050;");
-    mainLayout->addWidget(statusBar);
+    m_statusBar = new QLabel(QStringLiteral("就绪"), this);
+    m_statusBar->setFixedHeight(22);
+    m_statusBar->setStyleSheet("background: #22262e; padding-left: 8px; font-size: 11px;"
+                               "color: #8a9bb0; border-top: 1px solid #3a4050;");
+    mainLayout->addWidget(m_statusBar);
 }
 
 void EnterCalcPage::buildOptimizeRibbon()
 {
     auto *g0 = m_optimizeRibbon->addGroup(QString());
-    g0->addButton(new RibbonButton(QStringLiteral("快速计算"), ":/icons/fast_calc.svg", g0));
+    auto *quickBtn = new RibbonButton(QStringLiteral("快速计算"), ":/icons/fast_calc.svg", g0);
+    quickBtn->setCheckable(false);
+    connect(quickBtn, &QToolButton::clicked, this, &EnterCalcPage::onRunEmCalc);
+    g0->addButton(quickBtn);
+    auto *verifyBtn = new RibbonButton(QStringLiteral("对拍自检"), ":/icons/verify.svg", g0);
+    verifyBtn->setCheckable(false);
+    connect(verifyBtn, &QToolButton::clicked, this, &EnterCalcPage::onSelfTest);
+    g0->addButton(verifyBtn);
     m_optimizeRibbon->addSeparator();
 
     auto *g1 = m_optimizeRibbon->addGroup(QStringLiteral("初始化设置(从左到右顺序设置)"));
@@ -124,6 +148,7 @@ void EnterCalcPage::buildOptimizeRibbon()
     auto *g2 = m_optimizeRibbon->addGroup(QStringLiteral("寻优计算"));
     auto *startBtn = new RibbonButton(QStringLiteral("开始运行计算"), ":/icons/play.svg", g2);
     startBtn->setCheckable(false);
+    connect(startBtn, &QToolButton::clicked, this, &EnterCalcPage::onRunEmCalc);
     g2->addButton(startBtn);
     auto *pauseBtn = new RibbonButton(QStringLiteral("暂停计算"), ":/icons/pause.svg", g2);
     pauseBtn->setCheckable(false);
@@ -142,48 +167,258 @@ void EnterCalcPage::buildOptimizeRibbon()
     g3->addButton(schemeBtn);
 }
 
+// 方案选择 Ribbon：与原型图五组布局一致
+// 显示选项 | 排序与筛选 | 合并模式 | 方案库比较 | 方案选择
 void EnterCalcPage::buildSchemeRibbon()
 {
+    const QString chkStyle = QStringLiteral("QCheckBox { color: #e0e6ed; font-size: 11px; spacing: 4px; }");
+
+    // ---- 组1 显示选项：两行（勾选+标签+控件）----
     auto *g1 = m_schemeRibbon->addGroup(QStringLiteral("显示选项"));
-    g1->addButton(new RibbonButton(QStringLiteral("显示主要参数"), ":/icons/visibility.svg", g1));
-    m_schemeRibbon->addSeparator();
-
-    auto *g2 = m_schemeRibbon->addGroup(QStringLiteral("排序与筛选"));
-    g2->addButton(new RibbonButton(QStringLiteral("升序"), ":/icons/sort_asc.svg", g2));
-    g2->addButton(new RibbonButton(QStringLiteral("降序"), ":/icons/sort_desc.svg", g2));
-    g2->addButton(new RibbonButton(QStringLiteral("筛选"), ":/icons/filter.svg", g2));
-    m_schemeRibbon->addSeparator();
-
-    auto *g3 = m_schemeRibbon->addGroup(QStringLiteral("方案选择"));
-    auto *confirmBtn = new RibbonButton(QStringLiteral("方案确认"), ":/icons/confirm.svg", g3);
-    confirmBtn->setCheckable(false);
-    connect(confirmBtn, &QToolButton::clicked, this, [this]() {
-        m_tabBar->setCurrentIndex(2);
+    auto *rows = new QWidget(g1);
+    auto *rowLayout = new QVBoxLayout(rows);
+    rowLayout->setContentsMargins(0, 0, 0, 0);
+    rowLayout->setSpacing(4);
+    auto *row1 = new QHBoxLayout();
+    row1->setSpacing(4);
+    m_showMainChk = new QCheckBox(QStringLiteral("显示主要参数"), rows);
+    m_showMainChk->setStyleSheet(chkStyle);
+    connect(m_showMainChk, &QCheckBox::toggled, this, [this](bool on) {
+        // 勾选=仅显示主要参数列，其余隐藏
+        const QList<int> mainCols = {1, 2, 4, 6, 7, 8, 9, 10, 11};
+        for (int c = 1; c < m_schemeTable->columnCount(); ++c)
+            m_schemeTable->setColumnHidden(c, on && !mainCols.contains(c));
+        m_statusBar->setText(on ? QStringLiteral("已切换为主要参数显示")
+                                : QStringLiteral("已显示全部参数列"));
     });
-    g3->addButton(confirmBtn);
+    row1->addWidget(m_showMainChk);
+    row1->addWidget(new QLabel(QStringLiteral("显示数量:"), rows));
+    m_showCountSpin = new QSpinBox(rows);
+    m_showCountSpin->setRange(1, 5000);
+    m_showCountSpin->setValue(500);
+    m_showCountSpin->setFixedWidth(70);
+    connect(m_showCountSpin, QOverload<int>::of(&QSpinBox::valueChanged),
+            this, &EnterCalcPage::onShowCountChanged);
+    row1->addWidget(m_showCountSpin);
+    rowLayout->addLayout(row1);
+    auto *row2 = new QHBoxLayout();
+    row2->setSpacing(4);
+    m_observeChk = new QCheckBox(QStringLiteral("观察完整参数"), rows);
+    m_observeChk->setStyleSheet(chkStyle);
+    connect(m_observeChk, &QCheckBox::toggled, this, &EnterCalcPage::onObserveToggled);
+    row2->addWidget(m_observeChk);
+    row2->addWidget(new QLabel(QStringLiteral("显示方式:"), rows));
+    m_showModeCombo = new QComboBox(rows);
+    m_showModeCombo->addItems({QStringLiteral("主材成本"), QStringLiteral("铜铁"),
+                               QStringLiteral("铁芯直径"), QStringLiteral("低压匝数")});
+    m_showModeCombo->setFixedWidth(90);
+    connect(m_showModeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, &EnterCalcPage::onShowModeChanged);
+    row2->addWidget(m_showModeCombo);
+    rowLayout->addLayout(row2);
+    g1->addWidget(rows);
+    m_schemeRibbon->addSeparator();
+
+    // ---- 组2 排序与筛选：左列排序（升/降/取消）+ 右列筛选（筛选/高级/选择/取消）----
+    // Ribbon 内容区高约86px，多行堆叠按钮需紧凑化（小图标+文字右置），避免重合
+    const auto compact = [](RibbonButton *b) {
+        b->setIconSize(QSize(16, 16));
+        b->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+        b->setMinimumSize(70, 20);
+        b->setMaximumHeight(20);
+        b->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
+        // 覆盖主题 4px 内边距，避免小高度下内容被裁切
+        b->setStyleSheet("QToolButton { padding: 0px 4px; }");
+    };
+    auto *g2 = m_schemeRibbon->addGroup(QStringLiteral("排序与筛选"));
+    auto *sortCol = new QVBoxLayout();
+    sortCol->setSpacing(1);
+    auto *ascBtn = new RibbonButton(QStringLiteral("升序"), ":/icons/sort_asc.svg", g2);
+    compact(ascBtn);
+    ascBtn->setCheckable(false);
+    connect(ascBtn, &QToolButton::clicked, this, [this]() { onSortSchemes(true); });
+    sortCol->addWidget(ascBtn);
+    auto *descBtn = new RibbonButton(QStringLiteral("降序"), ":/icons/sort_desc.svg", g2);
+    compact(descBtn);
+    descBtn->setCheckable(false);
+    connect(descBtn, &QToolButton::clicked, this, [this]() { onSortSchemes(false); });
+    sortCol->addWidget(descBtn);
+    auto *sortCancelBtn = new RibbonButton(QStringLiteral("取消"), ":/icons/sort_cancel.svg", g2);
+    compact(sortCancelBtn);
+    sortCancelBtn->setCheckable(false);
+    connect(sortCancelBtn, &QToolButton::clicked, this, &EnterCalcPage::onSortCancel);
+    sortCol->addWidget(sortCancelBtn);
+    g2->contentLayout()->addLayout(sortCol);
+    // 筛选单独一列（图标在上、文字在下）
+    auto *filterBtn = new RibbonButton(QStringLiteral("筛选"), ":/icons/filter.svg", g2);
+    filterBtn->setCheckable(false);
+    connect(filterBtn, &QToolButton::clicked, this, &EnterCalcPage::onFilterSchemes);
+    g2->addButton(filterBtn);
+    // 高级列：高级/选择/取消
+    auto *filterCol = new QVBoxLayout();
+    filterCol->setSpacing(1);
+    auto *advBtn = new RibbonButton(QStringLiteral("高级"), ":/icons/filter_adv.svg", g2);
+    compact(advBtn);
+    advBtn->setCheckable(false);
+    connect(advBtn, &QToolButton::clicked, this, &EnterCalcPage::onFilterAdvanced);
+    filterCol->addWidget(advBtn);
+    auto *pickBtn = new RibbonButton(QStringLiteral("选择"), ":/icons/filter_pick.svg", g2);
+    compact(pickBtn);
+    pickBtn->setCheckable(false);
+    connect(pickBtn, &QToolButton::clicked, this, &EnterCalcPage::onFilterPick);
+    filterCol->addWidget(pickBtn);
+    auto *filterCancelBtn = new RibbonButton(QStringLiteral("取消"), ":/icons/filter_clear.svg", g2);
+    compact(filterCancelBtn);
+    filterCancelBtn->setCheckable(false);
+    connect(filterCancelBtn, &QToolButton::clicked, this, &EnterCalcPage::onFilterCancel);
+    filterCol->addWidget(filterCancelBtn);
+    g2->contentLayout()->addLayout(filterCol);
+    // 切换、查找替换各自单独一列（图标在上、文字在下）
+    auto *switchBtn = new RibbonButton(QStringLiteral("切换"), ":/icons/switch_az.svg", g2);
+    switchBtn->setCheckable(false);
+    connect(switchBtn, &QToolButton::clicked, this, &EnterCalcPage::onSwitchSortColumn);
+    g2->addButton(switchBtn);
+    auto *findBtn = new RibbonButton(QStringLiteral("查找替换"), ":/icons/find_replace.svg", g2);
+    findBtn->setCheckable(false);
+    connect(findBtn, &QToolButton::clicked, this, &EnterCalcPage::onFindScheme);
+    g2->addButton(findBtn);
+    m_schemeRibbon->addSeparator();
+
+    // ---- 组3 合并模式 ----
+    auto *g3 = m_schemeRibbon->addGroup(QStringLiteral("合并模式"));
+    auto *mergeSetBtn = new RibbonButton(QStringLiteral("设置合并模式"), ":/icons/merge_set.svg", g3);
+    mergeSetBtn->setCheckable(false);
+    connect(mergeSetBtn, &QToolButton::clicked, this, &EnterCalcPage::onMergeSet);
+    g3->addButton(mergeSetBtn);
+    auto *mergeToggleBtn = new RibbonButton(QStringLiteral("切换合并模式"), ":/icons/merge_toggle.svg", g3);
+    mergeToggleBtn->setCheckable(false);
+    connect(mergeToggleBtn, &QToolButton::clicked, this, &EnterCalcPage::onMergeToggle);
+    g3->addButton(mergeToggleBtn);
+    m_schemeRibbon->addSeparator();
+
+    // ---- 组4 方案库比较 ----
+    auto *g4 = m_schemeRibbon->addGroup(QStringLiteral("方案库比较"));
+    auto *compareBtn = new RibbonButton(QStringLiteral("方案库比较"), ":/icons/compare.svg", g4);
+    compareBtn->setCheckable(false);
+    connect(compareBtn, &QToolButton::clicked, this, &EnterCalcPage::onCompareLibrary);
+    g4->addButton(compareBtn);
+    m_schemeRibbon->addSeparator();
+
+    // ---- 组5 方案选择：方案库/方案序号 + 方案确认 ----
+    auto *g5 = m_schemeRibbon->addGroup(QStringLiteral("方案选择"));
+    auto *selWidget = new QWidget(g5);
+    auto *selLayout = new QVBoxLayout(selWidget);
+    selLayout->setContentsMargins(0, 0, 0, 0);
+    selLayout->setSpacing(6);
+    auto *libRow = new QHBoxLayout();
+    libRow->setSpacing(4);
+    libRow->addWidget(new QLabel(QStringLiteral("选择方案库:"), selWidget));
+    m_libIndexSpin = new QSpinBox(selWidget);
+    m_libIndexSpin->setRange(1, 99);
+    m_libIndexSpin->setValue(1);
+    m_libIndexSpin->setFixedWidth(70);
+    connect(m_libIndexSpin, QOverload<int>::of(&QSpinBox::valueChanged),
+            this, &EnterCalcPage::onLibIndexChanged);
+    libRow->addWidget(m_libIndexSpin);
+    selLayout->addLayout(libRow);
+    auto *schemeRow = new QHBoxLayout();
+    schemeRow->setSpacing(4);
+    schemeRow->addWidget(new QLabel(QStringLiteral("选择方案:"), selWidget));
+    m_schemeIndexSpin = new QSpinBox(selWidget);
+    m_schemeIndexSpin->setRange(1, 9999);
+    m_schemeIndexSpin->setValue(1);
+    m_schemeIndexSpin->setFixedWidth(70);
+    connect(m_schemeIndexSpin, QOverload<int>::of(&QSpinBox::valueChanged),
+            this, &EnterCalcPage::onSchemeIndexChanged);
+    schemeRow->addWidget(m_schemeIndexSpin);
+    selLayout->addLayout(schemeRow);
+    g5->addWidget(selWidget);
+    auto *confirmBtn = new RibbonButton(QStringLiteral("方案确认"), ":/icons/confirm.svg", g5);
+    confirmBtn->setCheckable(false);
+    connect(confirmBtn, &QToolButton::clicked, this, &EnterCalcPage::onConfirmScheme);
+    g5->addButton(confirmBtn);
 }
 
+// 输出打印 Ribbon：与原型图两组布局一致
+// 打印（设置/快速/打印/预览/报价单/计算单/三张参数表）| 输出Excel
 void EnterCalcPage::buildPrintRibbon()
 {
     auto *g1 = m_printRibbon->addGroup(QStringLiteral("打印"));
+    auto *setupBtn = new RibbonButton(QStringLiteral("打印设置"), ":/icons/print_setup.svg", g1);
+    setupBtn->setCheckable(false);
+    connect(setupBtn, &QToolButton::clicked, this, &EnterCalcPage::onPrintSetup);
+    g1->addButton(setupBtn);
     auto *b1 = new RibbonButton(QStringLiteral("快速打印"), ":/icons/print_fast.svg", g1);
     b1->setCheckable(false);
+    connect(b1, &QToolButton::clicked, this, &EnterCalcPage::onQuickPrint);
     g1->addButton(b1);
     auto *b2 = new RibbonButton(QStringLiteral("打印"), ":/icons/print.svg", g1);
     b2->setCheckable(false);
+    connect(b2, &QToolButton::clicked, this, &EnterCalcPage::onPrint);
     g1->addButton(b2);
     auto *b3 = new RibbonButton(QStringLiteral("打印预览"), ":/icons/preview.svg", g1);
     b3->setCheckable(false);
+    connect(b3, &QToolButton::clicked, this, &EnterCalcPage::onPrintPreview);
     g1->addButton(b3);
+    auto *quoteBtn = new RibbonButton(QStringLiteral("打开报价单"), ":/icons/quote_open.svg", g1);
+    quoteBtn->setCheckable(false);
+    connect(quoteBtn, &QToolButton::clicked, this, &EnterCalcPage::onOpenQuote);
+    g1->addButton(quoteBtn);
+    auto *sheetBtn = new RibbonButton(QStringLiteral("打开计算单"), ":/icons/calc_sheet.svg", g1);
+    sheetBtn->setCheckable(false);
+    connect(sheetBtn, &QToolButton::clicked, this, &EnterCalcPage::onOpenCalcSheet);
+    g1->addButton(sheetBtn);
+    // 三张参数表：紧凑堆叠一列
+    const auto compact = [](RibbonButton *b) {
+        b->setIconSize(QSize(16, 16));
+        b->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+        b->setMinimumSize(150, 20);
+        b->setMaximumHeight(20);
+        b->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
+        b->setStyleSheet("QToolButton { padding: 0px 4px; }");
+    };
+    auto *tablesCol = new QVBoxLayout();
+    tablesCol->setSpacing(1);
+    auto *t1 = new RibbonButton(QStringLiteral("打开绝缘半径表"), ":/icons/table_open.svg", g1);
+    compact(t1);
+    t1->setCheckable(false);
+    connect(t1, &QToolButton::clicked, this, &EnterCalcPage::onOpenInsulRadiusTable);
+    tablesCol->addWidget(t1);
+    auto *t2 = new RibbonButton(QStringLiteral("打开铁芯尺寸表"), ":/icons/table_open.svg", g1);
+    compact(t2);
+    t2->setCheckable(false);
+    connect(t2, &QToolButton::clicked, this, &EnterCalcPage::onOpenCoreSizeTable);
+    tablesCol->addWidget(t2);
+    auto *t3 = new RibbonButton(QStringLiteral("打开性能参数比对表"), ":/icons/table_open.svg", g1);
+    compact(t3);
+    t3->setCheckable(false);
+    connect(t3, &QToolButton::clicked, this, &EnterCalcPage::onOpenPerfCompareTable);
+    tablesCol->addWidget(t3);
+    g1->contentLayout()->addLayout(tablesCol);
     m_printRibbon->addSeparator();
 
     auto *g2 = m_printRibbon->addGroup(QStringLiteral("输出Excel"));
-    auto *b4 = new RibbonButton(QStringLiteral("输出外部文件"), ":/icons/export.svg", g2);
+    auto *b4 = new RibbonButton(QStringLiteral("输出外部文件"), ":/icons/excel_export.svg", g2);
     b4->setCheckable(false);
+    connect(b4, &QToolButton::clicked, this, &EnterCalcPage::onExportCsv);
     g2->addButton(b4);
-    auto *b5 = new RibbonButton(QStringLiteral("保存为计算单"), ":/icons/save.svg", g2);
-    b5->setCheckable(false);
-    g2->addButton(b5);
+    auto *stackBtn = new RibbonButton(QStringLiteral("叠铁铁芯片下料表"), ":/icons/excel_stack.svg", g2);
+    stackBtn->setCheckable(false);
+    connect(stackBtn, &QToolButton::clicked, this, &EnterCalcPage::onExportStackTable);
+    g2->addButton(stackBtn);
+    auto *cfgBtn = new RibbonButton(QStringLiteral("计算单配置关联"), ":/icons/excel_star.svg", g2);
+    cfgBtn->setCheckable(false);
+    connect(cfgBtn, &QToolButton::clicked, this, &EnterCalcPage::onCalcSheetConfig);
+    g2->addButton(cfgBtn);
+    auto *swBtn = new RibbonButton(QStringLiteral("保存为软件计算单"), ":/icons/excel_save.svg", g2);
+    swBtn->setCheckable(false);
+    connect(swBtn, &QToolButton::clicked, this, &EnterCalcPage::onSaveSoftwareSheet);
+    g2->addButton(swBtn);
+    m_printRibbon->addSeparator();
+    auto *customBtn = new RibbonButton(QStringLiteral("保存为自定义计算单"), ":/icons/excel_custom.svg", g2);
+    customBtn->setCheckable(false);
+    connect(customBtn, &QToolButton::clicked, this, &EnterCalcPage::onSaveCustomSheet);
+    g2->addButton(customBtn);
 }
 
 void EnterCalcPage::setupOptimizeTab()
@@ -265,7 +500,17 @@ void EnterCalcPage::setupOptimizeTab()
             row++;
         }
     }
-    layout->addWidget(table, 1);
+
+    // 主区分割：左结构配置表，右电磁计算结果面板
+    auto *splitter = new QSplitter(Qt::Horizontal, tab);
+    splitter->setHandleWidth(1);
+    splitter->addWidget(table);
+    m_emResultPanel = new EmResultPanel(splitter);
+    splitter->addWidget(m_emResultPanel);
+    splitter->setStretchFactor(0, 2);
+    splitter->setStretchFactor(1, 3);
+    splitter->setSizes({ 500, 700 });
+    layout->addWidget(splitter, 1);
     m_stack->addWidget(tab);
 }
 
@@ -285,8 +530,7 @@ void EnterCalcPage::setupPrintTab()
     auto *layout = new QVBoxLayout(tab);
     layout->setContentsMargins(0, 0, 0, 0);
     m_printTable = new PrintTableWidget(tab);
-    MockCalcEngine engine;
-    m_printTable->loadData(engine.calculate(m_params, m_config));
+    m_printTable->loadData(m_engine.calculate(m_params, m_config));
     layout->addWidget(m_printTable);
     m_stack->addWidget(tab);
 }
@@ -299,13 +543,912 @@ void EnterCalcPage::onTabChanged(int index)
     m_stack->setCurrentIndex(index);
 }
 
-void EnterCalcPage::onStartOptimize()
+void EnterCalcPage::onRunEmCalc()
 {
-    if (!m_optimizer) {
-        m_optimizer = new MockOptimizer(this);
-        connect(m_optimizer, &IOptimizer::resultReady, m_schemeTable, &SchemeTableWidget::addResult);
+    CalcInput input;   // 默认设计变量（SB20-M-630-10）
+    m_lastInput = input;
+    if (!m_engine.calcElectromagnetic(input, m_emResult) || !m_emResult.valid) {
+        m_statusBar->setText(QStringLiteral("电磁计算失败: %1").arg(m_emResult.error));
+        QMessageBox::warning(this, QStringLiteral("电磁计算"),
+                             QStringLiteral("计算失败: %1").arg(m_emResult.error));
+        return;
     }
-    m_schemeTable->clearResults();
-    OptimizationSettings settings;
-    m_optimizer->start(m_params, m_config, settings);
+    m_hasResult = true;
+
+    // 结果面板 + 打印表 + 方案入库
+    m_emResultPanel->loadResult(m_emResult);
+    m_printTable->loadData(m_engine.calculate(m_params, m_config));
+    appendScheme(input, m_emResult);
+
+    m_statusBar->setText(
+        QStringLiteral("电磁计算完成：空载损耗 %1 W | 负载损耗 %2 W | 阻抗电压 %3% | "
+                       "油面温升 %4 K | 总重 %5 kg | 材料成本 %6 元")
+            .arg(QString::number(m_emResult.core.noLoadLoss_W, 'f', 0),
+                 QString::number(m_emResult.winding.loadLoss_W, 'f', 0),
+                 QString::number(m_emResult.impedance.impedance_pct, 'f', 2),
+                 QString::number(m_emResult.thermal.oilRise_K, 'f', 1),
+                 QString::number(m_emResult.mass.totalWeight_kg, 'f', 0),
+                 QString::number(m_emResult.cost.materialCost, 'f', 0)));
+}
+
+void EnterCalcPage::onSelfTest()
+{
+    const QString report = ElectromagneticEngine::selfTestReport();
+    QMessageBox box(this);
+    box.setWindowTitle(QStringLiteral("对拍自检（SB20-M-630-10 计算单缓存值）"));
+    box.setText(report);
+    box.setTextFormat(Qt::PlainText);
+    box.setIcon(QMessageBox::Information);
+    box.setFont(QFont(QStringLiteral("Consolas")));
+    box.exec();
+    m_statusBar->setText(QStringLiteral("对拍自检已执行，详见弹窗报告"));
+}
+
+void EnterCalcPage::onSaveCalcSheet()
+{
+    if (!m_hasResult) {
+        // 未计算过时先执行一次默认输入的全链路计算
+        onRunEmCalc();
+        if (!m_hasResult) {
+            return;
+        }
+    }
+    const QString path = QFileDialog::getSaveFileName(
+        this, QStringLiteral("保存计算单"),
+        QStringLiteral("SB20-M-630-10计算单.txt"),
+        QStringLiteral("文本文件 (*.txt)"));
+    if (path.isEmpty()) {
+        return;
+    }
+    QFile file(path);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        QMessageBox::warning(this, QStringLiteral("保存计算单"),
+                             QStringLiteral("无法写入文件: %1").arg(path));
+        return;
+    }
+    QTextStream ts(&file);
+    ts.setEncoding(QStringConverter::Utf8);
+    ts << EmResultPanel::resultText(m_emResult) << "\n";
+    file.close();
+    m_statusBar->setText(QStringLiteral("计算单已保存: %1").arg(path));
+}
+
+namespace {
+
+// 表格分页绘制到打印机（表头每页重复，列宽按打印区宽度等比）
+void paintTableToPrinter(QPrinter *printer, QTableWidget *table)
+{
+    QPainter painter(printer);
+    const QRectF page = printer->pageRect(QPrinter::DevicePixel);
+    const int rows = table->rowCount();
+    const int cols = table->columnCount();
+
+    // 列宽比例：按表格当前可见列宽
+    QVector<double> ratios(cols, 0.0);
+    double totalRatio = 0.0;
+    for (int c = 0; c < cols; ++c) {
+        ratios[c] = table->isColumnHidden(c) ? 0.0 : table->columnWidth(c);
+        totalRatio += ratios[c];
+    }
+    if (totalRatio <= 0.0) {
+        return;
+    }
+    for (int c = 0; c < cols; ++c) {
+        ratios[c] /= totalRatio;
+    }
+
+    const QFont bodyFont = table->font();
+    QFont bFont = bodyFont;
+    bFont.setBold(true);
+    const QFontMetrics fmBody(bodyFont);
+    const QFontMetrics fmHead(bFont);
+    const double rowH = fmBody.height() + 10.0;
+    const double headH = fmHead.height() + 10.0;
+
+    auto drawRow = [&](int row, double y, bool header) {
+        double x = page.left();
+        for (int c = 0; c < cols; ++c) {
+            const double w = ratios[c] * page.width();
+            if (w <= 0.0) {
+                continue;
+            }
+            QString text;
+            if (header) {
+                text = table->horizontalHeaderItem(c)
+                           ? table->horizontalHeaderItem(c)->text() : QString();
+                text.replace(QLatin1Char('\n'), QLatin1Char(' '));
+            } else {
+                const QTableWidgetItem *it = table->item(row, c);
+                text = it ? it->text() : QString();
+            }
+            painter.setFont(header ? bFont : bodyFont);
+            painter.drawText(QRectF(x + 3, y, w - 6, header ? headH : rowH),
+                             Qt::AlignVCenter | Qt::AlignLeft,
+                             text);
+            painter.drawLine(QPointF(x, y + (header ? headH : rowH)),
+                             QPointF(x + w, y + (header ? headH : rowH)));
+            painter.drawLine(QPointF(x, y), QPointF(x, y + (header ? headH : rowH)));
+            x += w;
+        }
+        painter.drawLine(QPointF(page.right(), y),
+                         QPointF(page.right(), y + (header ? headH : rowH)));
+    };
+
+    double y = page.top();
+    drawRow(-1, y, true);
+    y += headH;
+    for (int r = 0; r < rows; ++r) {
+        if (y + rowH > page.bottom()) {
+            printer->newPage();
+            y = page.top();
+            drawRow(-1, y, true);
+            y += headH;
+        }
+        if (!table->isRowHidden(r)) {
+            drawRow(r, y, false);
+            y += rowH;
+        }
+    }
+    painter.end();
+}
+
+} // namespace
+
+// ---- 方案选择 Tab ----
+
+void EnterCalcPage::onSortSchemes(bool ascending)
+{
+    if (m_schemeTable->rowCount() == 0) {
+        m_statusBar->setText(QStringLiteral("暂无方案可排序，请先执行计算"));
+        return;
+    }
+    m_schemeTable->sortItems(m_sortCol, ascending ? Qt::AscendingOrder : Qt::DescendingOrder);
+    const auto *head = m_schemeTable->horizontalHeaderItem(m_sortCol);
+    m_statusBar->setText(QStringLiteral("方案已按%1%2排序")
+                             .arg(head ? head->text().replace(QLatin1Char('\n'), QLatin1Char(' '))
+                                       : QString())
+                             .arg(ascending ? QStringLiteral("升序") : QStringLiteral("降序")));
+}
+
+void EnterCalcPage::onSortCancel()
+{
+    if (m_schemeTable->rowCount() == 0) {
+        m_statusBar->setText(QStringLiteral("暂无方案，无需取消排序"));
+        return;
+    }
+    // 按方案序号列恢复原始顺序
+    m_schemeTable->sortItems(1, Qt::AscendingOrder);
+    m_statusBar->setText(QStringLiteral("已取消排序，恢复方案序号顺序"));
+}
+
+void EnterCalcPage::onFilterSchemes()
+{
+    if (m_schemeTable->rowCount() == 0) {
+        m_statusBar->setText(QStringLiteral("暂无方案可筛选，请先执行计算"));
+        return;
+    }
+    bool ok = false;
+    const double limit = QInputDialog::getDouble(
+        this, QStringLiteral("筛选方案"),
+        QStringLiteral("主材成本上限（元，取消则清除筛选）："),
+        0.0, 0.0, 1e9, 1, &ok);
+    int shown = 0;
+    for (int r = 0; r < m_schemeTable->rowCount(); ++r) {
+        const bool visible = ok
+            && m_schemeTable->item(r, 2)
+            && m_schemeTable->item(r, 2)->text().toDouble() <= limit;
+        m_schemeTable->setRowHidden(r, ok ? !visible : false);
+        if (!m_schemeTable->isRowHidden(r)) {
+            ++shown;
+        }
+    }
+    m_statusBar->setText(ok
+        ? QStringLiteral("筛选：主材成本 ≤ %1，共 %2/%3 个方案")
+              .arg(QString::number(limit, 'f', 1)).arg(shown)
+              .arg(m_schemeTable->rowCount())
+        : QStringLiteral("已清除方案筛选"));
+}
+
+void EnterCalcPage::onSchemeColumnMenu()
+{
+    QMenu menu(this);
+    for (int c = 1; c < m_schemeTable->columnCount(); ++c) {
+        const auto *head = m_schemeTable->horizontalHeaderItem(c);
+        if (!head) {
+            continue;
+        }
+        auto *act = menu.addAction(head->text().replace(QLatin1Char('\n'), QLatin1Char(' ')));
+        act->setCheckable(true);
+        act->setChecked(!m_schemeTable->isColumnHidden(c));
+        connect(act, &QAction::toggled, this, [this, c](bool on) {
+            m_schemeTable->setColumnHidden(c, !on);
+        });
+    }
+    menu.exec(QCursor::pos());
+    m_statusBar->setText(QStringLiteral("显示选项已更新"));
+}
+
+void EnterCalcPage::onConfirmScheme()
+{
+    const int row = m_schemeTable->currentRow();
+    if (row < 0 || m_schemeTable->rowCount() == 0) {
+        QMessageBox::information(this, QStringLiteral("方案确认"),
+                                 QStringLiteral("请先在方案表中选择一个方案"));
+        return;
+    }
+    m_confirmedRow = row;
+    const QString idx = m_schemeTable->item(row, 1)
+                            ? m_schemeTable->item(row, 1)->text() : QString('?');
+    if (m_schemeIndexSpin) {
+        m_schemeIndexSpin->blockSignals(true);
+        m_schemeIndexSpin->setValue(idx.toInt());
+        m_schemeIndexSpin->blockSignals(false);
+    }
+    m_statusBar->setText(QStringLiteral("已确认方案 %1，跳转输出打印").arg(idx));
+    m_tabBar->setCurrentIndex(2);
+}
+
+void EnterCalcPage::onFilterAdvanced()
+{
+    if (m_schemeTable->rowCount() == 0) {
+        m_statusBar->setText(QStringLiteral("暂无方案可筛选，请先执行计算"));
+        return;
+    }
+    QDialog dlg(this);
+    dlg.setWindowTitle(QStringLiteral("高级筛选"));
+    auto *form = new QVBoxLayout(&dlg);
+    auto *costSpin = new QDoubleSpinBox(&dlg);
+    costSpin->setRange(0.0, 1e9);
+    costSpin->setDecimals(1);
+    costSpin->setSuffix(QStringLiteral(" 元"));
+    costSpin->setValue(0.0);
+    form->addWidget(new QLabel(QStringLiteral("主材成本上限（0=不限）："), &dlg));
+    form->addWidget(costSpin);
+    auto *dMinSpin = new QDoubleSpinBox(&dlg);
+    dMinSpin->setRange(0.0, 2000.0);
+    dMinSpin->setDecimals(0);
+    dMinSpin->setSuffix(QStringLiteral(" mm"));
+    form->addWidget(new QLabel(QStringLiteral("铁芯直径下限（0=不限）："), &dlg));
+    form->addWidget(dMinSpin);
+    auto *dMaxSpin = new QDoubleSpinBox(&dlg);
+    dMaxSpin->setRange(0.0, 2000.0);
+    dMaxSpin->setDecimals(0);
+    dMaxSpin->setValue(2000.0);
+    dMaxSpin->setSuffix(QStringLiteral(" mm"));
+    form->addWidget(new QLabel(QStringLiteral("铁芯直径上限："), &dlg));
+    form->addWidget(dMaxSpin);
+    auto *btns = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
+    connect(btns, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+    connect(btns, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+    form->addWidget(btns);
+    if (dlg.exec() != QDialog::Accepted) {
+        m_statusBar->setText(QStringLiteral("已取消高级筛选"));
+        return;
+    }
+    const double costMax = costSpin->value();
+    const double dMin = dMinSpin->value();
+    const double dMax = dMaxSpin->value();
+    int shown = 0;
+    for (int r = 0; r < m_schemeTable->rowCount(); ++r) {
+        const double cost = m_schemeTable->item(r, 2)
+                                ? m_schemeTable->item(r, 2)->text().toDouble() : 0.0;
+        const double dia = m_schemeTable->item(r, 4)
+                               ? m_schemeTable->item(r, 4)->text().toDouble() : 0.0;
+        const bool ok = (costMax <= 0.0 || cost <= costMax)
+                        && (dMin <= 0.0 || dia >= dMin) && dia <= dMax;
+        m_schemeTable->setRowHidden(r, !ok);
+        if (ok) {
+            ++shown;
+        }
+    }
+    m_statusBar->setText(QStringLiteral("高级筛选：成本≤%1、直径 %2~%3，共 %4/%5 个方案")
+                             .arg(QString::number(costMax, 'f', 1))
+                             .arg(QString::number(dMin, 'f', 0))
+                             .arg(QString::number(dMax, 'f', 0))
+                             .arg(shown).arg(m_schemeTable->rowCount()));
+}
+
+void EnterCalcPage::onFilterPick()
+{
+    if (m_schemeTable->rowCount() == 0) {
+        m_statusBar->setText(QStringLiteral("暂无方案可筛选，请先执行计算"));
+        return;
+    }
+    QStringList cols;
+    for (int c = 1; c < m_schemeTable->columnCount(); ++c) {
+        const auto *head = m_schemeTable->horizontalHeaderItem(c);
+        cols << (head ? head->text().replace(QLatin1Char('\n'), QLatin1Char(' ')) : QString());
+    }
+    bool ok = false;
+    const QString colName = QInputDialog::getItem(
+        this, QStringLiteral("选择筛选"), QStringLiteral("筛选列："), cols, 0, false, &ok);
+    if (!ok) {
+        return;
+    }
+    const int col = cols.indexOf(colName) + 1;
+    const QString val = QInputDialog::getText(
+        this, QStringLiteral("选择筛选"),
+        QStringLiteral("“%1”等于：").arg(colName), QLineEdit::Normal, QString(), &ok);
+    if (!ok || val.isEmpty()) {
+        return;
+    }
+    int shown = 0;
+    for (int r = 0; r < m_schemeTable->rowCount(); ++r) {
+        const bool hit = m_schemeTable->item(r, col)
+                         && m_schemeTable->item(r, col)->text() == val;
+        m_schemeTable->setRowHidden(r, !hit);
+        if (hit) {
+            ++shown;
+        }
+    }
+    m_statusBar->setText(QStringLiteral("选择筛选：%1 = %2，共 %3 个方案")
+                             .arg(colName, val).arg(shown));
+}
+
+void EnterCalcPage::onFilterCancel()
+{
+    for (int r = 0; r < m_schemeTable->rowCount(); ++r) {
+        m_schemeTable->setRowHidden(r, false);
+    }
+    m_statusBar->setText(QStringLiteral("已清除全部筛选"));
+}
+
+void EnterCalcPage::onSwitchSortColumn()
+{
+    const QList<int> cols = {2, 3, 4, 6};
+    const int i = cols.indexOf(m_sortCol);
+    m_sortCol = cols[(i + 1) % cols.size()];
+    const auto *head = m_schemeTable->horizontalHeaderItem(m_sortCol);
+    m_statusBar->setText(QStringLiteral("排序列已切换为：%1")
+                             .arg(head ? head->text().replace(QLatin1Char('\n'), QLatin1Char(' '))
+                                       : QString()));
+}
+
+void EnterCalcPage::onFindScheme()
+{
+    if (m_schemeTable->rowCount() == 0) {
+        m_statusBar->setText(QStringLiteral("暂无方案可查找，请先执行计算"));
+        return;
+    }
+    bool ok = false;
+    const int idx = QInputDialog::getInt(
+        this, QStringLiteral("查找方案"), QStringLiteral("方案序号："),
+        1, 1, 99999, 1, &ok);
+    if (!ok) {
+        return;
+    }
+    for (int r = 0; r < m_schemeTable->rowCount(); ++r) {
+        if (m_schemeTable->item(r, 1)
+            && m_schemeTable->item(r, 1)->text().toInt() == idx) {
+            m_schemeTable->selectRow(r);
+            m_schemeTable->scrollToItem(m_schemeTable->item(r, 0));
+            m_statusBar->setText(QStringLiteral("已定位方案 %1（第 %2 行）").arg(idx).arg(r + 1));
+            return;
+        }
+    }
+    m_statusBar->setText(QStringLiteral("未找到方案 %1").arg(idx));
+}
+
+void EnterCalcPage::onMergeSet()
+{
+    // 设置合并模式：选择合并显示的主要参数列
+    onSchemeColumnMenu();
+}
+
+void EnterCalcPage::onMergeToggle()
+{
+    m_mergeOn = !m_mergeOn;
+    const QList<int> mainCols = {1, 2, 4, 6, 7, 8, 9, 10, 11};
+    for (int c = 1; c < m_schemeTable->columnCount(); ++c) {
+        m_schemeTable->setColumnHidden(c, m_mergeOn && !mainCols.contains(c));
+    }
+    if (m_showMainChk) {
+        m_showMainChk->blockSignals(true);
+        m_showMainChk->setChecked(m_mergeOn);
+        m_showMainChk->blockSignals(false);
+    }
+    m_statusBar->setText(m_mergeOn ? QStringLiteral("合并模式：开（仅主要参数列）")
+                                   : QStringLiteral("合并模式：关（全部参数列）"));
+}
+
+void EnterCalcPage::onCompareLibrary()
+{
+    if (m_confirmedRow < 0 || m_schemeTable->rowCount() == 0) {
+        QMessageBox::information(this, QStringLiteral("方案库比较"),
+                                 QStringLiteral("尚无已确认方案，请先在方案表中选择并确认一个方案"));
+        return;
+    }
+    const int cur = m_schemeTable->currentRow();
+    if (cur < 0 || cur == m_confirmedRow) {
+        QMessageBox::information(this, QStringLiteral("方案库比较"),
+                                 QStringLiteral("请先在方案表中选中待比较的方案（当前选中即已确认方案）"));
+        return;
+    }
+    const QList<int> cols = {2, 3, 4, 6, 7, 8, 9, 10, 11};
+    QString text = QStringLiteral("参数\t当前方案\t已确认方案\n");
+    for (int c : cols) {
+        const auto *head = m_schemeTable->horizontalHeaderItem(c);
+        const QString name = head ? head->text().replace(QLatin1Char('\n'), QLatin1Char(' ')) : QString();
+        const QString a = m_schemeTable->item(cur, c) ? m_schemeTable->item(cur, c)->text() : QString();
+        const QString b = m_schemeTable->item(m_confirmedRow, c)
+                              ? m_schemeTable->item(m_confirmedRow, c)->text() : QString();
+        text += name + QLatin1Char('\t') + a + QLatin1Char('\t') + b + QLatin1Char('\n');
+    }
+    QMessageBox::information(this, QStringLiteral("方案库比较"), text);
+}
+
+void EnterCalcPage::onShowCountChanged(int count)
+{
+    for (int r = 0; r < m_schemeTable->rowCount(); ++r) {
+        m_schemeTable->setRowHidden(r, r >= count);
+    }
+    m_statusBar->setText(QStringLiteral("显示数量：%1（共 %2 个方案）")
+                             .arg(count).arg(m_schemeTable->rowCount()));
+}
+
+void EnterCalcPage::onShowModeChanged(int index)
+{
+    const QList<int> cols = {2, 3, 4, 6};
+    if (index >= 0 && index < cols.size()) {
+        m_sortCol = cols[index];
+    }
+    const auto *head = m_schemeTable->horizontalHeaderItem(m_sortCol);
+    m_statusBar->setText(QStringLiteral("显示方式：%1（升/降序将按此列排序）")
+                             .arg(head ? head->text().replace(QLatin1Char('\n'), QLatin1Char(' '))
+                                       : QString()));
+}
+
+void EnterCalcPage::onObserveToggled(bool checked)
+{
+    if (!checked) {
+        return;
+    }
+    for (int c = 1; c < m_schemeTable->columnCount(); ++c) {
+        m_schemeTable->setColumnHidden(c, false);
+    }
+    if (m_showMainChk) {
+        m_showMainChk->blockSignals(true);
+        m_showMainChk->setChecked(false);
+        m_showMainChk->blockSignals(false);
+    }
+    m_statusBar->setText(QStringLiteral("观察完整参数：已显示全部参数列"));
+}
+
+void EnterCalcPage::onLibIndexChanged(int value)
+{
+    m_statusBar->setText(QStringLiteral("已选择方案库 %1（当前会话仅方案库 1 可用）").arg(value));
+}
+
+void EnterCalcPage::onSchemeIndexChanged(int value)
+{
+    const int row = value - 1;
+    if (row < 0 || row >= m_schemeTable->rowCount()) {
+        m_statusBar->setText(QStringLiteral("方案 %1 不存在（共 %2 个方案）")
+                                 .arg(value).arg(m_schemeTable->rowCount()));
+        return;
+    }
+    m_schemeTable->selectRow(row);
+    m_schemeTable->scrollToItem(m_schemeTable->item(row, 0));
+    m_statusBar->setText(QStringLiteral("已选中方案 %1").arg(value));
+}
+
+// ---- 输出打印 Tab ----
+
+void EnterCalcPage::onPrintSetup()
+{
+    QDialog dlg(this);
+    dlg.setWindowTitle(QStringLiteral("打印设置"));
+    auto *form = new QFormLayout(&dlg);
+    auto *printerCombo = new QComboBox(&dlg);
+    printerCombo->addItem(QStringLiteral("（系统默认打印机）"));
+    const auto printers = QPrinterInfo::availablePrinters();
+    for (const auto &pi : printers) {
+        printerCombo->addItem(pi.printerName());
+    }
+    if (!m_defaultPrinterName.isEmpty()) {
+        const int i = printerCombo->findText(m_defaultPrinterName);
+        if (i > 0) {
+            printerCombo->setCurrentIndex(i);
+        }
+    }
+    form->addRow(QStringLiteral("默认打印机:"), printerCombo);
+    auto *orientCombo = new QComboBox(&dlg);
+    orientCombo->addItems({QStringLiteral("纵向"), QStringLiteral("横向")});
+    orientCombo->setCurrentIndex(m_landscape ? 1 : 0);
+    form->addRow(QStringLiteral("页面方向:"), orientCombo);
+    auto *btns = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
+    connect(btns, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+    connect(btns, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+    form->addWidget(btns);
+    if (dlg.exec() != QDialog::Accepted) {
+        return;
+    }
+    m_defaultPrinterName = printerCombo->currentIndex() == 0
+                               ? QString() : printerCombo->currentText();
+    m_landscape = orientCombo->currentIndex() == 1;
+    m_statusBar->setText(QStringLiteral("打印设置已保存：%1 / %2")
+                             .arg(m_defaultPrinterName.isEmpty()
+                                      ? QStringLiteral("系统默认打印机") : m_defaultPrinterName,
+                                  m_landscape ? QStringLiteral("横向") : QStringLiteral("纵向")));
+}
+
+void EnterCalcPage::onQuickPrint()
+{
+    QPrinter printer(QPrinter::HighResolution);
+    if (!m_defaultPrinterName.isEmpty()) {
+        printer.setPrinterName(m_defaultPrinterName);
+    }
+    printer.setPageOrientation(m_landscape ? QPageLayout::Landscape : QPageLayout::Portrait);
+    if (!printer.isValid()) {
+        QMessageBox::warning(this, QStringLiteral("快速打印"),
+                             QStringLiteral("未找到可用打印机，请检查打印机连接"));
+        return;
+    }
+    paintTableToPrinter(&printer, m_printTable);
+    m_statusBar->setText(QStringLiteral("快速打印已发送至打印机: %1")
+                             .arg(printer.printerName()));
+}
+
+void EnterCalcPage::onPrint()
+{
+    QPrinter printer(QPrinter::HighResolution);
+    if (!m_defaultPrinterName.isEmpty()) {
+        printer.setPrinterName(m_defaultPrinterName);
+    }
+    printer.setPageOrientation(m_landscape ? QPageLayout::Landscape : QPageLayout::Portrait);
+    QPrintDialog dlg(&printer, this);
+    dlg.setWindowTitle(QStringLiteral("打印计算单"));
+    if (dlg.exec() != QDialog::Accepted) {
+        return;
+    }
+    paintTableToPrinter(&printer, m_printTable);
+    m_statusBar->setText(QStringLiteral("打印已发送至打印机: %1")
+                             .arg(printer.printerName()));
+}
+
+void EnterCalcPage::onPrintPreview()
+{
+    QPrinter printer(QPrinter::HighResolution);
+    if (!m_defaultPrinterName.isEmpty()) {
+        printer.setPrinterName(m_defaultPrinterName);
+    }
+    printer.setPageOrientation(m_landscape ? QPageLayout::Landscape : QPageLayout::Portrait);
+    QPrintPreviewDialog preview(&printer, this);
+    preview.setWindowTitle(QStringLiteral("打印预览 - 计算单"));
+    preview.resize(900, 700);
+    connect(&preview, &QPrintPreviewDialog::paintRequested, this,
+            [this](QPrinter *p) { paintTableToPrinter(p, m_printTable); });
+    preview.exec();
+    m_statusBar->setText(QStringLiteral("打印预览已关闭"));
+}
+
+void EnterCalcPage::onExportCsv()
+{
+    const QString path = QFileDialog::getSaveFileName(
+        this, QStringLiteral("输出外部文件"),
+        QStringLiteral("计算单.csv"),
+        QStringLiteral("CSV 文件 (*.csv)"));
+    if (path.isEmpty()) {
+        return;
+    }
+    QFile file(path);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        QMessageBox::warning(this, QStringLiteral("输出外部文件"),
+                             QStringLiteral("无法写入文件: %1").arg(path));
+        return;
+    }
+    // UTF-8 BOM：保证 Excel 直接打开不乱码
+    file.write("\xEF\xBB\xBF");
+    QTextStream ts(&file);
+    ts.setEncoding(QStringConverter::Utf8);
+    for (int r = 0; r < m_printTable->rowCount(); ++r) {
+        QStringList cells;
+        for (int c = 0; c < m_printTable->columnCount(); ++c) {
+            const QTableWidgetItem *it = m_printTable->item(r, c);
+            // CSV 转义：包含逗号/引号时加引号并转义内部引号
+            QString text = it ? it->text() : QString();
+            if (text.contains(QLatin1Char(',')) || text.contains(QLatin1Char('"'))) {
+                text.replace(QLatin1Char('"'), QStringLiteral("\"\""));
+                text = QLatin1Char('"') + text + QLatin1Char('"');
+            }
+            cells << text;
+        }
+        ts << cells.join(QLatin1Char(',')) << "\n";
+    }
+    file.close();
+    m_statusBar->setText(QStringLiteral("CSV 已导出: %1").arg(path));
+}
+
+void EnterCalcPage::onOpenQuote()
+{
+    if (!m_hasResult) {
+        onRunEmCalc();
+        if (!m_hasResult) {
+            return;
+        }
+    }
+    const auto &c = m_emResult.cost;
+    QString text = QStringLiteral("======== 报价单（材料成本明细） ========\n");
+    text += QStringLiteral("硅钢片成本: %1 元\n").arg(QString::number(c.steelCost, 'f', 1));
+    text += QStringLiteral("高压导线成本: %1 元\n").arg(QString::number(c.hvWireCost, 'f', 1));
+    text += QStringLiteral("低压箔成本: %1 元\n").arg(QString::number(c.lvWireCost, 'f', 1));
+    text += QStringLiteral("绝缘油成本: %1 元\n").arg(QString::number(c.oilCost, 'f', 1));
+    text += QStringLiteral("油箱成本: %1 元\n").arg(QString::number(c.tankCost, 'f', 1));
+    text += QStringLiteral("----------------------------------------\n");
+    text += QStringLiteral("材料成本合计: %1 元\n").arg(QString::number(c.materialCost, 'f', 1));
+    QMessageBox box(this);
+    box.setWindowTitle(QStringLiteral("报价单"));
+    box.setText(text);
+    box.setTextFormat(Qt::PlainText);
+    box.setFont(QFont(QStringLiteral("Consolas")));
+    box.exec();
+    m_statusBar->setText(QStringLiteral("报价单已打开"));
+}
+
+void EnterCalcPage::onOpenCalcSheet()
+{
+    if (!m_hasResult) {
+        onRunEmCalc();
+        if (!m_hasResult) {
+            return;
+        }
+    }
+    QDialog dlg(this);
+    dlg.setWindowTitle(QStringLiteral("计算单 - SB20-M-630-10"));
+    dlg.resize(640, 560);
+    auto *layout = new QVBoxLayout(&dlg);
+    auto *edit = new QPlainTextEdit(&dlg);
+    edit->setReadOnly(true);
+    edit->setPlainText(EmResultPanel::resultText(m_emResult));
+    edit->setFont(QFont(QStringLiteral("Consolas"), 9));
+    layout->addWidget(edit);
+    dlg.exec();
+    m_statusBar->setText(QStringLiteral("计算单已打开"));
+}
+
+void EnterCalcPage::onOpenInsulRadiusTable()
+{
+    if (!m_hasResult) {
+        onRunEmCalc();
+        if (!m_hasResult) {
+            return;
+        }
+    }
+    const auto &in = m_lastInput;
+    const auto &w = m_emResult.winding;
+    const double lvOuter = in.coreDiameter_mm / 2.0 + w.lvRadial_mm;
+    const double hvInner = lvOuter + m_emResult.impedance.lambda_mm - w.hvRadial_mm;
+    QString text = QStringLiteral("项目\t数值(mm)\n");
+    text += QStringLiteral("铁芯半径\t%1\n").arg(QString::number(in.coreDiameter_mm / 2.0, 'f', 1));
+    text += QStringLiteral("低压辐向厚\t%1\n").arg(QString::number(w.lvRadial_mm, 'f', 1));
+    text += QStringLiteral("低压外半径\t%1\n").arg(QString::number(lvOuter, 'f', 1));
+    text += QStringLiteral("主空道（含绝缘）\t%1\n").arg(QString::number(w.mainDuct_mm, 'f', 1));
+    text += QStringLiteral("高压内半径\t%1\n").arg(QString::number(hvInner, 'f', 1));
+    text += QStringLiteral("高压辐向厚\t%1\n").arg(QString::number(w.hvRadial_mm, 'f', 1));
+    text += QStringLiteral("高压外半径\t%1\n").arg(QString::number(hvInner + w.hvRadial_mm, 'f', 1));
+    QMessageBox box(this);
+    box.setWindowTitle(QStringLiteral("绝缘半径表"));
+    box.setText(text);
+    box.setTextFormat(Qt::PlainText);
+    box.setFont(QFont(QStringLiteral("Consolas")));
+    box.exec();
+    m_statusBar->setText(QStringLiteral("绝缘半径表已打开"));
+}
+
+void EnterCalcPage::onOpenCoreSizeTable()
+{
+    if (!m_hasResult) {
+        onRunEmCalc();
+        if (!m_hasResult) {
+            return;
+        }
+    }
+    const auto &core = m_emResult.core;
+    QString text = QStringLiteral("级数\t片宽(mm)\t叠厚(mm)\n");
+    const int n = qMin(core.widths_mm.size(), core.stacks_mm.size());
+    for (int i = 0; i < n; ++i) {
+        text += QStringLiteral("%1\t%2\t%3\n")
+                    .arg(i + 1)
+                    .arg(QString::number(core.widths_mm[i], 'f', 1),
+                         QString::number(core.stacks_mm[i], 'f', 1));
+    }
+    text += QStringLiteral("----------------------------------------\n");
+    text += QStringLiteral("心柱截面: %1 cm²\n").arg(QString::number(core.coreArea_cm2, 'f', 2));
+    text += QStringLiteral("铁轭截面: %1 cm²\n").arg(QString::number(core.yokeArea_cm2, 'f', 2));
+    text += QStringLiteral("短轴长: %1 mm\n").arg(QString::number(core.minorAxis_mm, 'f', 2));
+    text += QStringLiteral("大圆半径: %1 mm\n").arg(QString::number(core.majorRadius_mm, 'f', 2));
+    QMessageBox box(this);
+    box.setWindowTitle(QStringLiteral("铁芯尺寸表（叠积）"));
+    box.setText(text);
+    box.setTextFormat(Qt::PlainText);
+    box.setFont(QFont(QStringLiteral("Consolas")));
+    box.exec();
+    m_statusBar->setText(QStringLiteral("铁芯尺寸表已打开"));
+}
+
+void EnterCalcPage::onOpenPerfCompareTable()
+{
+    if (!m_hasResult) {
+        onRunEmCalc();
+        if (!m_hasResult) {
+            return;
+        }
+    }
+    const auto &r = m_emResult;
+    const auto &p = m_params;
+    QString text = QStringLiteral("项目\t标准值\t计算值\t判定\n");
+    const auto line = [&text](const QString &name, double std, double calc,
+                              double maxDevPct, double minDevPct, const QString &unit) {
+        const double dev = std > 0.0 ? (calc - std) / std * 100.0 : 0.0;
+        const bool ok = dev <= maxDevPct && dev >= minDevPct;
+        text += QStringLiteral("%1\t%2\t%3\t%4\n")
+                    .arg(name,
+                         QString::number(std, 'f', 1) + unit,
+                         QString::number(calc, 'f', 1) + unit,
+                         ok ? QStringLiteral("合格")
+                            : QStringLiteral("超差(%1%)").arg(QString::number(dev, 'f', 1)));
+    };
+    line(QStringLiteral("空载损耗(W)"), p.noLoadLossStd_W, r.core.noLoadLoss_W,
+         p.noLoadLossMaxDev_pct, -100.0, QString());
+    line(QStringLiteral("负载损耗(W)"), p.loadLossStd_W, r.winding.loadLoss_W,
+         p.loadLossMaxDev_pct, -100.0, QString());
+    line(QStringLiteral("总损耗(W)"), p.totalLossStd_W,
+         r.core.noLoadLoss_W + r.winding.loadLoss_W,
+         p.totalLossMaxDev_pct, -100.0, QString());
+    line(QStringLiteral("阻抗电压(%)"), p.impedanceVoltageStd_pct, r.impedance.impedance_pct,
+         p.impedanceVoltageMaxDev_pct, p.impedanceVoltageMinDev_pct, QString());
+    line(QStringLiteral("空载电流(%)"), p.noLoadCurrentStd_pct, r.core.noLoadCurrent_pct,
+         p.noLoadCurrentMaxDev_pct, -100.0, QString());
+    line(QStringLiteral("油顶层温升(K)"), p.oilTopTempRise_K, r.thermal.oilTopRise_K,
+         0.0, -100.0, QString());
+    line(QStringLiteral("高压绕组温升(K)"), p.hvCoilTempRise_K, r.thermal.hvWindingRise_K,
+         0.0, -100.0, QString());
+    line(QStringLiteral("低压绕组温升(K)"), p.lvCoilTempRise_K, r.thermal.lvWindingRise_K,
+         0.0, -100.0, QString());
+    QMessageBox box(this);
+    box.setWindowTitle(QStringLiteral("性能参数比对表"));
+    box.setText(text);
+    box.setTextFormat(Qt::PlainText);
+    box.setFont(QFont(QStringLiteral("Consolas")));
+    box.exec();
+    m_statusBar->setText(QStringLiteral("性能参数比对表已打开"));
+}
+
+void EnterCalcPage::onExportStackTable()
+{
+    if (!m_hasResult) {
+        onRunEmCalc();
+        if (!m_hasResult) {
+            return;
+        }
+    }
+    const QString path = QFileDialog::getSaveFileName(
+        this, QStringLiteral("叠铁铁芯片下料表"),
+        QStringLiteral("铁芯片下料表.csv"),
+        QStringLiteral("CSV 文件 (*.csv)"));
+    if (path.isEmpty()) {
+        return;
+    }
+    QFile file(path);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        QMessageBox::warning(this, QStringLiteral("叠铁铁芯片下料表"),
+                             QStringLiteral("无法写入文件: %1").arg(path));
+        return;
+    }
+    file.write("\xEF\xBB\xBF");
+    QTextStream ts(&file);
+    ts.setEncoding(QStringConverter::Utf8);
+    ts << QStringLiteral("级数,片宽(mm),叠厚(mm)\n");
+    const auto &core = m_emResult.core;
+    const int n = qMin(core.widths_mm.size(), core.stacks_mm.size());
+    for (int i = 0; i < n; ++i) {
+        ts << i + 1 << ',' << QString::number(core.widths_mm[i], 'f', 1)
+           << ',' << QString::number(core.stacks_mm[i], 'f', 1) << '\n';
+    }
+    file.close();
+    m_statusBar->setText(QStringLiteral("叠铁铁芯片下料表已导出: %1").arg(path));
+}
+
+void EnterCalcPage::onCalcSheetConfig()
+{
+    if (!m_hasResult) {
+        onRunEmCalc();
+        if (!m_hasResult) {
+            return;
+        }
+    }
+    const auto &in = m_lastInput;
+    QString text = QStringLiteral("======== 计算单配置关联 ========\n");
+    text += QStringLiteral("容量: %1 kVA\n").arg(QString::number(in.capacity_kVA, 'f', 0));
+    text += QStringLiteral("高压/低压: %1/%2 kV\n")
+                .arg(QString::number(in.hvRated_kV, 'f', 1),
+                     QString::number(in.lvRated_kV, 'f', 2));
+    text += QStringLiteral("硅钢牌号: %1（厚 %2 mm）\n")
+                .arg(in.steelGrade, QString::number(in.steelThickness_mm, 'f', 2));
+    text += QStringLiteral("铁芯直径: %1 mm / 直线长: %2 mm\n")
+                .arg(QString::number(in.coreDiameter_mm, 'f', 0),
+                     QString::number(in.coreStraight_mm, 'f', 0));
+    text += QStringLiteral("低压: %1 匝 / 箔 %2×%3 mm\n")
+                .arg(in.lvTurns)
+                .arg(QString::number(in.lvFoilThick_mm, 'f', 2),
+                     QString::number(in.lvFoilWidth_mm, 'f', 0));
+    text += QStringLiteral("高压: 裸线 %1×%2 mm / 每层 %3 匝\n")
+                .arg(QString::number(in.hvBareThick_mm, 'f', 2),
+                     QString::number(in.hvBareWidth_mm, 'f', 2))
+                .arg(in.hvTurnsPerLayer);
+    text += QStringLiteral("主空道: %1 mm（纸板 %2 mm）\n")
+                .arg(QString::number(in.mainDuctWidth_mm, 'f', 1),
+                     QString::number(in.mainDuctInsul_mm, 'f', 1));
+    text += QStringLiteral("叠片系数: %1 / 工艺系数: %2\n")
+                .arg(QString::number(in.stackFactor, 'f', 2),
+                     QString::number(in.coreLossCraftCoef, 'f', 2));
+    QMessageBox box(this);
+    box.setWindowTitle(QStringLiteral("计算单配置关联"));
+    box.setText(text);
+    box.setTextFormat(Qt::PlainText);
+    box.setFont(QFont(QStringLiteral("Consolas")));
+    box.exec();
+    m_statusBar->setText(QStringLiteral("计算单配置关联已打开"));
+}
+
+void EnterCalcPage::onSaveSoftwareSheet()
+{
+    onSaveCalcSheet();
+}
+
+void EnterCalcPage::onSaveCustomSheet()
+{
+    if (!m_hasResult) {
+        onRunEmCalc();
+        if (!m_hasResult) {
+            return;
+        }
+    }
+    const QString path = QFileDialog::getSaveFileName(
+        this, QStringLiteral("保存为自定义计算单"),
+        QStringLiteral("自定义计算单.csv"),
+        QStringLiteral("CSV 文件 (*.csv)"));
+    if (path.isEmpty()) {
+        return;
+    }
+    QFile file(path);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        QMessageBox::warning(this, QStringLiteral("保存为自定义计算单"),
+                             QStringLiteral("无法写入文件: %1").arg(path));
+        return;
+    }
+    file.write("\xEF\xBB\xBF");
+    QTextStream ts(&file);
+    ts.setEncoding(QStringConverter::Utf8);
+    ts << QStringLiteral("分组,参数名称,数值,单位\n");
+    const auto groups = EmResultPanel::buildGroups(m_emResult);
+    for (const auto &group : groups) {
+        for (const auto &r : group.second) {
+            ts << group.first << ',' << r[0] << ',' << r[1] << ',' << r.value(2) << '\n';
+        }
+    }
+    file.close();
+    m_statusBar->setText(QStringLiteral("自定义计算单已保存: %1").arg(path));
+}
+
+void EnterCalcPage::appendScheme(const CalcInput &input, const CalcResult &result)
+{
+    OptimizationResult scheme;
+    scheme.schemeIdx = m_schemeTable->rowCount() + 1;
+    scheme.costCuFeOil = result.cost.materialCost;
+    scheme.costCuFe = result.cost.steelCost + result.cost.hvWireCost
+                      + result.cost.lvWireCost;
+    scheme.coreD = input.coreDiameter_mm;
+    scheme.coreL = result.core.minorAxis_mm;
+    scheme.lvTurns = input.lvTurns;
+    scheme.lvRuleT = input.lvFoilThick_mm;
+    scheme.lvRuleW = input.lvFoilWidth_mm;
+    scheme.hvRuleT = input.hvBareThick_mm;
+    scheme.hvRuleW = input.hvBareWidth_mm;
+    scheme.hvLayers = result.winding.layerCount;
+    scheme.lvOilDucts = 5;
+    scheme.hvOilDucts = 5;
+    scheme.lvToYoke = input.lvEndInsul_mm;
+    scheme.mainDuct = result.winding.mainDuct_mm;
+    m_schemeTable->addResult(scheme);
 }

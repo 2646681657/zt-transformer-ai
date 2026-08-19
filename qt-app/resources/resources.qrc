@@ -41,13 +41,31 @@
         <file>icons/visibility.svg</file>
         <file>icons/sort_asc.svg</file>
         <file>icons/sort_desc.svg</file>
+        <file>icons/sort_cancel.svg</file>
         <file>icons/filter.svg</file>
+        <file>icons/filter_adv.svg</file>
+        <file>icons/filter_pick.svg</file>
+        <file>icons/filter_clear.svg</file>
+        <file>icons/switch_az.svg</file>
+        <file>icons/find_replace.svg</file>
+        <file>icons/merge_set.svg</file>
+        <file>icons/merge_toggle.svg</file>
+        <file>icons/compare.svg</file>
         <file>icons/confirm.svg</file>
         <file>icons/print.svg</file>
         <file>icons/print_fast.svg</file>
+        <file>icons/print_setup.svg</file>
         <file>icons/preview.svg</file>
         <file>icons/export.svg</file>
         <file>icons/save.svg</file>
+        <file>icons/quote_open.svg</file>
+        <file>icons/calc_sheet.svg</file>
+        <file>icons/table_open.svg</file>
+        <file>icons/excel_export.svg</file>
+        <file>icons/excel_stack.svg</file>
+        <file>icons/excel_star.svg</file>
+        <file>icons/excel_save.svg</file>
+        <file>icons/excel_custom.svg</file>
         <file>icons/recommend.svg</file>
         <file>icons/save_scheme.svg</file>
         <file>icons/library.svg</file>

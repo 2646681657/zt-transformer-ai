@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48">
+  <text x="5" y="20" font-family="Arial" font-size="16" font-weight="bold" fill="#4dd0e1">A</text>
+  <text x="5" y="40" font-family="Arial" font-size="16" font-weight="bold" fill="#8a9bb0">Z</text>
+  <path d="M20 10 L20 32 M14 26 L20 32 L26 26" stroke="#8a9bb0" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  <line x1="30" y1="8" x2="44" y2="42" stroke="#e05252" stroke-width="4" stroke-linecap="round"/>
+</svg>
