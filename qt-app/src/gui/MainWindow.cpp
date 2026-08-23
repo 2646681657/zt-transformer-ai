@@ -39,6 +39,9 @@ MainWindow::MainWindow(QWidget *parent)
     connect(m_optimizeCalcPage, &OptimizeCalcPage::navigateToEnterCalc, this, &MainWindow::showEnterCalc);
     connect(m_optimizeCalcPage, &OptimizeCalcPage::navigateBack, this, &MainWindow::showDashboard);
     connect(m_enterCalcPage, &EnterCalcPage::navigateBack, this, &MainWindow::showOptimizeCalc);
+    // 方案确认后同步数据到主界面内嵌产品报价页
+    connect(m_enterCalcPage, &EnterCalcPage::schemeConfirmed,
+            m_dashboardPage, &MainDashboardPage::loadQuoteScheme);
 
     m_stack->setCurrentWidget(m_loginPage);
 }

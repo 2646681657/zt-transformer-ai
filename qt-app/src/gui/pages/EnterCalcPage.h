@@ -36,6 +36,9 @@ public:
 
 signals:
     void navigateBack();
+    // 方案确认后发出（携带确认方案完整数据，供主界面报价页联动）
+    void schemeConfirmed(const TransformerParams &params, const CalcInput &input,
+                         const CalcResult &result);
 
 private slots:
     void onTabChanged(int index);
