@@ -1,4 +1,5 @@
 #include "MainDashboardPage.h"
+#include "DataQueryPage.h"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QGridLayout>
@@ -32,22 +33,27 @@ MainDashboardPage::MainDashboardPage(const QString &username, QWidget *parent)
     setupToolBar(navAreaLayout);
     mainLayout->addWidget(navArea);
 
-    // Sub buttons area (动态切换，根据选中的主按钮显示对应子按钮)
-    auto *subArea = new QWidget(this);
-    subArea->setStyleSheet("background: #1e2228; border-bottom: 1px solid #3a4050;");
-    subArea->setFixedHeight(110);
-    auto *subLayout = new QVBoxLayout(subArea);
+    // Sub buttons area (动态切换，根据选中的主按钮显示对应子按钮；
+    // 选中"数据查询"时整体隐藏，让内容区直接显示数据查询界面)
+    m_subArea = new QWidget(this);
+    m_subArea->setStyleSheet("background: #1e2228; border-bottom: 1px solid #3a4050;");
+    m_subArea->setFixedHeight(110);
+    auto *subLayout = new QVBoxLayout(m_subArea);
     subLayout->setContentsMargins(0, 0, 0, 0);
     subLayout->setSpacing(0);
-    m_subStack = new QStackedWidget(subArea);
+    m_subStack = new QStackedWidget(m_subArea);
     subLayout->addWidget(m_subStack);
-    mainLayout->addWidget(subArea);
+    mainLayout->addWidget(m_subArea);
     setupSubArea();
 
-    // Content area
-    auto *content = new QWidget(this);
-    content->setStyleSheet("background: #1a1d23;");
-    mainLayout->addWidget(content, 1);
+    // Content area（空白页 + 内嵌数据查询页，点击"数据查询"主按钮直接切换）
+    m_contentStack = new QStackedWidget(this);
+    m_contentStack->setStyleSheet("QStackedWidget { background: #1a1d23; }");
+    m_contentStack->addWidget(new QWidget(m_contentStack));   // index 0: 空白
+    m_dataQueryPage = new DataQueryPage(this);
+    m_contentStack->addWidget(m_dataQueryPage);               // index 1: 数据查询
+    m_contentStack->setCurrentIndex(0);
+    mainLayout->addWidget(m_contentStack, 1);
 
     // Footer
     auto *footer = new QWidget(this);
@@ -123,8 +129,9 @@ void MainDashboardPage::setupSubArea()
     m_subStack->addWidget(new QWidget(m_subStack));
     // index 1: 优化设计 - 两个子按钮（主按钮 0 点击后显示）
     m_subStack->addWidget(createOptimizeSubPage());
-    // index 2/3/4: 其他主按钮对应的空白页
-    for (int i = 0; i < 3; ++i)
+    // index 2/3: 产品报价/程序工具 - 空白页（暂未实现；
+    // 数据查询主按钮不走子按钮区，直接在内容区显示界面）
+    for (int i = 0; i < 2; ++i)
         m_subStack->addWidget(new QWidget(m_subStack));
     // 默认显示空白页
     m_subStack->setCurrentIndex(0);
@@ -171,7 +178,16 @@ QWidget *MainDashboardPage::createOptimizeSubPage()
 
 void MainDashboardPage::onNavButtonClicked(int index)
 {
+    // 数据查询（主按钮 3）：隐藏子按钮区，内容区直接显示数据查询界面
+    if (index == 3) {
+        m_subArea->hide();
+        m_contentStack->setCurrentWidget(m_dataQueryPage);
+        return;
+    }
+    // 其他主按钮：恢复子按钮区，内容区回到空白页；
     // 主按钮 index 对应子页面 index+1（index 0 为默认空白页）
+    m_subArea->show();
+    m_contentStack->setCurrentIndex(0);
     m_subStack->setCurrentIndex(index + 1);
 }
 
