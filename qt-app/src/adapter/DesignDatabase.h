@@ -76,6 +76,12 @@ public:
     // 裸线宽 → 线规（阶梯查）
     bool wireByBareWidth(double bareWidthMm, WireSpec &spec) const;
 
+    // ---- 原始数据只读访问（数据查询页展示用）----
+    const QVector<QPair<double, double>> &perfStandards() const { return m_perfStd; }
+    const QVector<CoreLaminationRow> &coreRows() const { return m_coreRows; }
+    const QVector<QVector<double>> &corrCoefs() const { return m_corrCoefs; }
+    const QVector<WireSpec> &wireSpecs() const { return m_wireSpecs; }
+
 private:
     DesignDatabase() = default;
 
