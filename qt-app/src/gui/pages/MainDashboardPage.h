@@ -16,6 +16,7 @@ class DataQueryPage;
 class QuotePage;
 class ImpedanceCalcPage;
 class LossCalcPage;
+class DataManagementPage;
 
 class MainDashboardPage : public QWidget {
     Q_OBJECT
@@ -51,6 +52,7 @@ private:
     QuotePage *m_quotePage = nullptr;         // 内嵌产品报价页
     ImpedanceCalcPage *m_impedanceCalcPage = nullptr; // 阻抗计算器
     LossCalcPage *m_lossCalcPage = nullptr;             // 损耗计算器
+    DataManagementPage *m_dataMgmtPage = nullptr;      // 数据管理
 };
 
 #endif // MAINDASHBOARDPAGE_H

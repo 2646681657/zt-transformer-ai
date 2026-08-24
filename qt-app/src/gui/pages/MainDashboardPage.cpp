@@ -3,6 +3,7 @@
 #include "QuotePage.h"
 #include "ImpedanceCalcPage.h"
 #include "LossCalcPage.h"
+#include "DataManagementPage.h"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QGridLayout>
@@ -62,6 +63,8 @@ MainDashboardPage::MainDashboardPage(const QString &username, QWidget *parent)
     m_contentStack->addWidget(m_impedanceCalcPage);           // index 3: 阻抗计算器
     m_lossCalcPage = new LossCalcPage(this);
     m_contentStack->addWidget(m_lossCalcPage);               // index 4: 损耗计算器
+    m_dataMgmtPage = new DataManagementPage(this);
+    m_contentStack->addWidget(m_dataMgmtPage);               // index 5: 数据管理
     m_contentStack->setCurrentIndex(0);
     mainLayout->addWidget(m_contentStack, 1);
 
@@ -218,6 +221,12 @@ QWidget *MainDashboardPage::createToolsSubPage()
         m_contentStack->setCurrentWidget(m_lossCalcPage);
     });
     layout->addWidget(lossBtn);
+
+    auto *mgmtBtn = makeToolBtn(QStringLiteral("数据管理"), ":/icons/tools.svg");
+    connect(mgmtBtn, &QToolButton::clicked, this, [this]() {
+        m_contentStack->setCurrentWidget(m_dataMgmtPage);
+    });
+    layout->addWidget(mgmtBtn);
 
     layout->addStretch();
     return page;
