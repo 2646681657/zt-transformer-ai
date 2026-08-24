@@ -15,6 +15,10 @@ class UserManagementPage : public QWidget {
 public:
     explicit UserManagementPage(QWidget *parent = nullptr);
 
+protected:
+    // 每次显示时刷新（页面创建早于登录，需在显示时重读登录状态）
+    void showEvent(QShowEvent *event) override;
+
 private slots:
     void onAddUser();
     void onDeleteUser();

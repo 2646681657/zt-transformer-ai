@@ -16,11 +16,19 @@
 #include <QDialogButtonBox>
 #include <QMessageBox>
 #include <QIntValidator>
+#include <QShowEvent>
 
 UserManagementPage::UserManagementPage(QWidget *parent)
     : QWidget(parent)
 {
     setupUi();
+    refreshTable();
+}
+
+void UserManagementPage::showEvent(QShowEvent *event)
+{
+    QWidget::showEvent(event);
+    // 页面在登录前创建，权限状态需在每次显示时重读
     refreshTable();
 }
 
