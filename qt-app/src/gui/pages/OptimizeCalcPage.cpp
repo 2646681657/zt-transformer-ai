@@ -13,6 +13,7 @@
 #include <QSizePolicy>
 #include <QToolButton>
 #include <QMenu>
+#include <QSettings>
 
 OptimizeCalcPage::OptimizeCalcPage(QWidget *parent)
     : QWidget(parent)
@@ -109,13 +110,20 @@ OptimizeCalcPage::OptimizeCalcPage(QWidget *parent)
 
 void OptimizeCalcPage::setupRibbon()
 {
-    // Group 1: 计算模式 (互斥)
+    // Group 1: 计算模式 (互斥)：记住上次选择（默认正常模式）
     auto *g1 = m_ribbon->addGroup(QStringLiteral("计算模式"));
     g1->setExclusive(true);
     auto *normalBtn = new RibbonButton(QStringLiteral("正常模式"), ":/icons/mode_normal.svg", g1);
-    normalBtn->setActive(true);
     g1->addButton(normalBtn);
-    g1->addButton(new RibbonButton(QStringLiteral("专业模式"), ":/icons/mode_pro.svg", g1));
+    auto *proBtn = new RibbonButton(QStringLiteral("专业模式"), ":/icons/mode_pro.svg", g1);
+    g1->addButton(proBtn);
+    m_modeGroup = g1;
+    {
+        QSettings settings("ZTF", "Designer");
+        const bool proMode = settings.value("optimize/proMode", false).toBool();
+        (proMode ? proBtn : normalBtn)->setActive(true);
+        m_config.calcMode = proMode ? StructureConfig::Professional : StructureConfig::Normal;
+    }
     m_ribbon->addSeparator();
 
     // Group 2: 变压器结构 (互斥)
@@ -201,9 +209,11 @@ void OptimizeCalcPage::setupMainArea()
     auto *enterBtn = m_sidebar->addButton(QStringLiteral("进入计算"), ":/icons/enter_calc.svg");
     connect(enterBtn, &QToolButton::clicked, this, &OptimizeCalcPage::onEnterCalcClicked);
 
-    // Param table（设计变量初值取自 m_input，默认即 SB20-M-630-10）
+    // Param table（设计变量初值取自 m_input，默认即 SB20-M-630-10；
+    // 计算模式已在 setupRibbon 中从 QSettings 恢复）
     m_paramTable = new ParamTableWidget(this);
-    m_paramTable->loadParamsForConfig(m_params, m_config, m_input);
+    m_paramTable->loadParamsForConfig(m_params, m_config, m_input,
+                                      m_config.calcMode == StructureConfig::Professional);
 
     // Help panel
     m_helpPanel = new QTextEdit(this);
@@ -272,18 +282,37 @@ void OptimizeCalcPage::updateConfigFromRibbon()
     m_config.hvCoilStructure = (idx == 1) ? StructureConfig::TwoSegCylinder : StructureConfig::MultiLayerCylinder;
 }
 
-// 保存当前表格编辑内容（含设计变量）后按新配置重新加载参数表
+// 保存当前表格编辑内容（含设计变量）后按新配置重新加载参数表；
+// 专业模式追加七~十节高级参数，两模式共享同一份 m_input（切回正常模式保留专业模式输入值）
 void OptimizeCalcPage::refreshParamTable()
 {
     m_params = m_paramTable->getParams();
     m_paramTable->saveToInput(m_input);   // 刷新前保留已编辑的设计变量
-    m_paramTable->loadParamsForConfig(m_params, m_config, m_input);
+    const bool proMode = (m_config.calcMode == StructureConfig::Professional);
+    m_paramTable->loadParamsForConfig(m_params, m_config, m_input, proMode);
+    saveModePreference();
+}
+
+// 记住上次的计算模式选择（正常/专业）
+void OptimizeCalcPage::saveModePreference() const
+{
+    QSettings settings("ZTF", "Designer");
+    settings.setValue("optimize/proMode",
+                      m_config.calcMode == StructureConfig::Professional);
 }
 
 // 外部设置结构配置（由类型选择对话框调用），更新标题栏并刷新参数表
 void OptimizeCalcPage::setStructureConfig(const StructureConfig &config)
 {
     m_config = config;
+
+    // 计算模式以 Ribbon 当前选中为准（含 QSettings 恢复的上次选择），
+    // 避免被外部传入的默认 calcMode 覆盖导致模式按钮与表格内容不一致
+    if (m_modeGroup && m_modeGroup->hasSelection()) {
+        m_config.calcMode = (m_modeGroup->selectedIndex() == 1)
+                                ? StructureConfig::Professional
+                                : StructureConfig::Normal;
+    }
 
     // 更新标题栏显示当前选择的类型
     QString catStr = (config.category == StructureConfig::OilImmersed) ?

@@ -22,7 +22,7 @@ MainWindow::MainWindow(QWidget *parent)
     m_stack = new QStackedWidget(this);
     setCentralWidget(m_stack);
 
-    m_loginPage = new LoginPage(&m_userStore, this);
+    m_loginPage = new LoginPage(&UserStore::instance(), this);
     m_dashboardPage = new MainDashboardPage(QString(), this);
     m_optimizeCalcPage = new OptimizeCalcPage(this);
     m_enterCalcPage = new EnterCalcPage(this);
@@ -39,6 +39,9 @@ MainWindow::MainWindow(QWidget *parent)
     connect(m_optimizeCalcPage, &OptimizeCalcPage::navigateToEnterCalc, this, &MainWindow::showEnterCalc);
     connect(m_optimizeCalcPage, &OptimizeCalcPage::navigateBack, this, &MainWindow::showDashboard);
     connect(m_enterCalcPage, &EnterCalcPage::navigateBack, this, &MainWindow::showOptimizeCalc);
+    // 计算页三个 Tab 的"程序选择"按钮均跳转主界面
+    connect(m_enterCalcPage, &EnterCalcPage::dashboardRequested,
+            this, &MainWindow::showDashboard);
     // 方案确认后同步数据到主界面内嵌产品报价页
     connect(m_enterCalcPage, &EnterCalcPage::schemeConfirmed,
             m_dashboardPage, &MainDashboardPage::loadQuoteScheme);
@@ -53,7 +56,7 @@ void MainWindow::onLoginSuccess()
 
 void MainWindow::onLogout()
 {
-    m_userStore.logout();
+    UserStore::instance().logout();
     m_stack->setCurrentWidget(m_loginPage);
 }
 

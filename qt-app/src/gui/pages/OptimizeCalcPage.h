@@ -39,6 +39,7 @@ private:
     void setupMainArea();
     void updateConfigFromRibbon();
     void refreshParamTable();
+    void saveModePreference() const;
 
     RibbonBar *m_ribbon;
     ParamTableWidget *m_paramTable;
@@ -49,6 +50,7 @@ private:
     StructureConfig m_config;
     CalcInput m_input;              // 设计变量（默认即 SB20-M-630-10）
     QVector<RibbonGroup *> m_selectGroups;
+    RibbonGroup *m_modeGroup = nullptr;   // 计算模式组（正常/专业）
 };
 
 #endif // OPTIMIZECALCPAGE_H

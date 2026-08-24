@@ -14,9 +14,10 @@ class ParamTableWidget : public QTableWidget {
 public:
     explicit ParamTableWidget(QWidget *parent = nullptr);
     // 根据结构配置动态加载参数（不同铁芯/绕组显示不同行），
-    // 设计变量节初值取自 input（默认即 SB20-M-630-10）
+    // 设计变量节初值取自 input（默认即 SB20-M-630-10）；
+    // proMode=true 时追加工艺/油道/损耗/油箱四节高级参数（专业模式）
     void loadParamsForConfig(const TransformerParams &params, const StructureConfig &config,
-                             const CalcInput &input);
+                             const CalcInput &input, bool proMode = false);
     TransformerParams getParams() const;
     // 从表格设计变量节读回 CalcInput（未绑定或非法输入的域保持原值）
     void saveToInput(CalcInput &input) const;
@@ -32,8 +33,10 @@ private:
                      const QString &optName, const QString &optValue,
                      const QString &key, const QString &optKey);
     void bindInput(const QString &key, int row, int col);
+    // 专业模式追加的高级参数节（七~十）
+    void addProModeSections(int &row, const CalcInput &input);
 
-    QHash<QString, QPair<int, int>> m_inputRefs;  // 设计变量键 → {行, 列}
+    QHash<QString, QPair<int, int>> m_inputRefs;  // 参数键 → {行, 列}（含静态节与设计变量）
 };
 
 #endif // PARAMTABLEWIDGET_H

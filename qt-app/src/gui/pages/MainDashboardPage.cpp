@@ -1,6 +1,11 @@
 #include "MainDashboardPage.h"
 #include "DataQueryPage.h"
 #include "QuotePage.h"
+#include "ImpedanceCalcPage.h"
+#include "LossCalcPage.h"
+#include "DataManagementPage.h"
+#include "UserManagementPage.h"
+#include "SettingsPage.h"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QGridLayout>
@@ -56,6 +61,16 @@ MainDashboardPage::MainDashboardPage(const QString &username, QWidget *parent)
     m_contentStack->addWidget(m_quotePage);                   // index 1: 产品报价
     m_dataQueryPage = new DataQueryPage(this);
     m_contentStack->addWidget(m_dataQueryPage);               // index 2: 数据查询
+    m_impedanceCalcPage = new ImpedanceCalcPage(this);
+    m_contentStack->addWidget(m_impedanceCalcPage);           // index 3: 阻抗计算器
+    m_lossCalcPage = new LossCalcPage(this);
+    m_contentStack->addWidget(m_lossCalcPage);               // index 4: 损耗计算器
+    m_dataMgmtPage = new DataManagementPage(this);
+    m_contentStack->addWidget(m_dataMgmtPage);               // index 5: 数据管理
+    m_userMgmtPage = new UserManagementPage(this);
+    m_contentStack->addWidget(m_userMgmtPage);               // index 6: 用户管理
+    m_settingsPage = new SettingsPage(this);
+    m_contentStack->addWidget(m_settingsPage);               // index 7: 系统设置
     m_contentStack->setCurrentIndex(0);
     mainLayout->addWidget(m_contentStack, 1);
 
@@ -131,12 +146,12 @@ void MainDashboardPage::setupSubArea()
 {
     // index 0: 默认空白页（未点击任何主按钮时显示）
     m_subStack->addWidget(new QWidget(m_subStack));
-    // index 1: 优化设计 - 两个子按钮（主按钮 0 点击后显示）
+    // index 1: 优化设计 - 子按钮（主按钮 0 点击后显示）
     m_subStack->addWidget(createOptimizeSubPage());
-    // index 2/3: 产品报价/程序工具 - 空白页（暂未实现；
-    // 数据查询主按钮不走子按钮区，直接在内容区显示界面）
-    for (int i = 0; i < 2; ++i)
-        m_subStack->addWidget(new QWidget(m_subStack));
+    // index 2: 程序工具 - 子按钮（阻抗计算器/损耗计算器）
+    m_subStack->addWidget(createToolsSubPage());
+    // index 3: 数据查询 - 空白页（主按钮直接在内容区显示，不走子按钮区）
+    m_subStack->addWidget(new QWidget(m_subStack));
     // 默认显示空白页
     m_subStack->setCurrentIndex(0);
 }
@@ -180,6 +195,61 @@ QWidget *MainDashboardPage::createOptimizeSubPage()
     return page;
 }
 
+QWidget *MainDashboardPage::createToolsSubPage()
+{
+    auto *page = new QWidget(m_subStack);
+    auto *layout = new QHBoxLayout(page);
+    layout->setContentsMargins(40, 10, 20, 10);
+    layout->setSpacing(24);
+
+    auto makeToolBtn = [page](const QString &text, const QString &icon) {
+        auto *btn = new QToolButton(page);
+        btn->setText(text);
+        btn->setIcon(QIcon(icon));
+        btn->setIconSize(QSize(48, 48));
+        btn->setToolButtonStyle(Qt::ToolButtonTextUnderIcon);
+        btn->setFixedSize(96, 84);
+        btn->setCursor(Qt::PointingHandCursor);
+        btn->setStyleSheet(
+            "QToolButton { background: transparent; border: none; color: #c0c8d0; font-size: 12px; }"
+            "QToolButton:hover { background: rgba(0,188,212,0.15); border-radius: 6px; color: #4dd0e1; }");
+        return btn;
+    };
+
+    auto *impBtn = makeToolBtn(QStringLiteral("阻抗计算器"), ":/icons/calculate.svg");
+    connect(impBtn, &QToolButton::clicked, this, [this]() {
+        m_contentStack->setCurrentWidget(m_impedanceCalcPage);
+    });
+    layout->addWidget(impBtn);
+
+    auto *lossBtn = makeToolBtn(QStringLiteral("损耗计算器"), ":/icons/calculate.svg");
+    connect(lossBtn, &QToolButton::clicked, this, [this]() {
+        m_contentStack->setCurrentWidget(m_lossCalcPage);
+    });
+    layout->addWidget(lossBtn);
+
+    auto *mgmtBtn = makeToolBtn(QStringLiteral("数据管理"), ":/icons/tools.svg");
+    connect(mgmtBtn, &QToolButton::clicked, this, [this]() {
+        m_contentStack->setCurrentWidget(m_dataMgmtPage);
+    });
+    layout->addWidget(mgmtBtn);
+
+    auto *userBtn = makeToolBtn(QStringLiteral("用户管理"), ":/icons/help.svg");
+    connect(userBtn, &QToolButton::clicked, this, [this]() {
+        m_contentStack->setCurrentWidget(m_userMgmtPage);
+    });
+    layout->addWidget(userBtn);
+
+    auto *settingsBtn = makeToolBtn(QStringLiteral("系统设置"), ":/icons/tools.svg");
+    connect(settingsBtn, &QToolButton::clicked, this, [this]() {
+        m_contentStack->setCurrentWidget(m_settingsPage);
+    });
+    layout->addWidget(settingsBtn);
+
+    layout->addStretch();
+    return page;
+}
+
 void MainDashboardPage::loadQuoteScheme(const TransformerParams &params, const CalcInput &input,
                                         const CalcResult &result)
 {
@@ -200,11 +270,18 @@ void MainDashboardPage::onNavButtonClicked(int index)
         m_contentStack->setCurrentWidget(m_quotePage);
         return;
     }
-    // 其他主按钮：恢复子按钮区，内容区回到空白页；
-    // 主按钮 index 对应子页面 index+1（index 0 为默认空白页）
+    // 其他主按钮：恢复子按钮区，内容区回到空白页
     m_subArea->show();
     m_contentStack->setCurrentIndex(0);
-    m_subStack->setCurrentIndex(index + 1);
+    // 子按钮区索引映射：
+    //   主按钮 0（优化设计）→ subStack 1
+    //   主按钮 2（程序工具）→ subStack 2
+    if (index == 0)
+        m_subStack->setCurrentIndex(1);
+    else if (index == 2)
+        m_subStack->setCurrentIndex(2);
+    else
+        m_subStack->setCurrentIndex(0);
 }
 
 void MainDashboardPage::onLogoutClicked()
