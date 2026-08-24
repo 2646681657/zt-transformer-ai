@@ -22,7 +22,7 @@ MainWindow::MainWindow(QWidget *parent)
     m_stack = new QStackedWidget(this);
     setCentralWidget(m_stack);
 
-    m_loginPage = new LoginPage(&m_userStore, this);
+    m_loginPage = new LoginPage(&UserStore::instance(), this);
     m_dashboardPage = new MainDashboardPage(QString(), this);
     m_optimizeCalcPage = new OptimizeCalcPage(this);
     m_enterCalcPage = new EnterCalcPage(this);
@@ -53,7 +53,7 @@ void MainWindow::onLoginSuccess()
 
 void MainWindow::onLogout()
 {
-    m_userStore.logout();
+    UserStore::instance().logout();
     m_stack->setCurrentWidget(m_loginPage);
 }
 

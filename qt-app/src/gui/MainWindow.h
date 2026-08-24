@@ -28,7 +28,6 @@ private slots:
 
 private:
     QStackedWidget *m_stack;
-    UserStore m_userStore;
     StructureConfig m_config;
     LoginPage *m_loginPage;
     MainDashboardPage *m_dashboardPage;
