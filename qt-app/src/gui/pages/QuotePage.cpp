@@ -15,6 +15,9 @@
 #include <QDateTime>
 #include <QDir>
 #include <QFile>
+#include <QPalette>
+#include <QFont>
+#include <QLineEdit>
 
 namespace {
 
@@ -95,7 +98,7 @@ void QuotePage::setupUi()
     // ---- 左：报价参数 ----
     auto *paramWidget = new QWidget(splitter);
     paramWidget->setStyleSheet("background: #1e2228;");
-    paramWidget->setMinimumWidth(240);
+    paramWidget->setMinimumWidth(260);
     auto *paramLayout = new QVBoxLayout(paramWidget);
     paramLayout->setContentsMargins(8, 8, 8, 8);
     paramLayout->setSpacing(8);
@@ -106,9 +109,23 @@ void QuotePage::setupUi()
         spin->setDecimals(1);
         spin->setValue(val);
         spin->setSuffix(suffix);
-        spin->setFixedWidth(120);
-        spin->setStyleSheet("QDoubleSpinBox { background: #22262e; color: #e0e6ed;"
-                            " border: 1px solid #3a4050; border-radius: 3px; padding: 2px 4px; font-size: 11px; }");
+        spin->setFixedWidth(150);
+        // 不对 QDoubleSpinBox 整体设 QSS（会触发 Qt 重排内部子控件，
+        // 导致行编辑框覆盖上按钮）。改用调色板 + 对子控件单独设样式
+        QPalette pal = spin->palette();
+        pal.setColor(QPalette::Base, QColor(0x22, 0x26, 0x2e));      // 输入区背景
+        pal.setColor(QPalette::Text, QColor(0xe0, 0xe6, 0xed));       // 文字
+        pal.setColor(QPalette::Button, QColor(0x2a, 0x2f, 0x38));    // 按钮背景
+        pal.setColor(QPalette::ButtonText, QColor(0xc0, 0xc8, 0xd0)); // 按钮箭头
+        spin->setPalette(pal);
+        QFont f = spin->font();
+        f.setPointSize(8);
+        spin->setFont(f);
+        // 对行编辑框子控件设样式（不影响按钮布局）
+        if (auto *le = spin->findChild<QLineEdit*>()) {
+            le->setStyleSheet("QLineEdit { background: #22262e; color: #e0e6ed;"
+                              " border: 1px solid #3a4050; border-radius: 3px; padding: 1px 4px; }");
+        }
         connect(spin, &QDoubleSpinBox::valueChanged, this, &QuotePage::onParamsChanged);
         return spin;
     };
