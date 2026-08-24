@@ -1032,6 +1032,8 @@ void EnterCalcPage::confirmSchemeAt(int row)
         m_hasResult = true;
         m_emResultPanel->loadResult(m_emResult);
         m_printTable->loadData(ElectromagneticEngine::buildPrintOutput(it->input, it->result));
+        // 通知主界面：已确认方案数据同步到产品报价页
+        emit schemeConfirmed(m_params, m_lastInput, m_emResult);
     }
 
     if (m_schemeIndexSpin) {

@@ -1,5 +1,6 @@
 #include "MainDashboardPage.h"
 #include "DataQueryPage.h"
+#include "QuotePage.h"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QGridLayout>
@@ -46,12 +47,15 @@ MainDashboardPage::MainDashboardPage(const QString &username, QWidget *parent)
     mainLayout->addWidget(m_subArea);
     setupSubArea();
 
-    // Content area（空白页 + 内嵌数据查询页，点击"数据查询"主按钮直接切换）
+    // Content area（空白页 + 内嵌功能页，点击"产品报价"/"数据查询"
+    // 主按钮直接在内容区显示对应界面）
     m_contentStack = new QStackedWidget(this);
     m_contentStack->setStyleSheet("QStackedWidget { background: #1a1d23; }");
     m_contentStack->addWidget(new QWidget(m_contentStack));   // index 0: 空白
+    m_quotePage = new QuotePage(this);
+    m_contentStack->addWidget(m_quotePage);                   // index 1: 产品报价
     m_dataQueryPage = new DataQueryPage(this);
-    m_contentStack->addWidget(m_dataQueryPage);               // index 1: 数据查询
+    m_contentStack->addWidget(m_dataQueryPage);               // index 2: 数据查询
     m_contentStack->setCurrentIndex(0);
     mainLayout->addWidget(m_contentStack, 1);
 
@@ -176,12 +180,24 @@ QWidget *MainDashboardPage::createOptimizeSubPage()
     return page;
 }
 
+void MainDashboardPage::loadQuoteScheme(const TransformerParams &params, const CalcInput &input,
+                                        const CalcResult &result)
+{
+    m_quotePage->loadScheme(params, input, result);
+}
+
 void MainDashboardPage::onNavButtonClicked(int index)
 {
     // 数据查询（主按钮 3）：隐藏子按钮区，内容区直接显示数据查询界面
     if (index == 3) {
         m_subArea->hide();
         m_contentStack->setCurrentWidget(m_dataQueryPage);
+        return;
+    }
+    // 产品报价（主按钮 1）：同样隐藏子按钮区，内容区直接显示报价界面
+    if (index == 1) {
+        m_subArea->hide();
+        m_contentStack->setCurrentWidget(m_quotePage);
         return;
     }
     // 其他主按钮：恢复子按钮区，内容区回到空白页；

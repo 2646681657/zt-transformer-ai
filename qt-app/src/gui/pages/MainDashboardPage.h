@@ -4,17 +4,25 @@
 
 #include <QWidget>
 #include <QPushButton>
+#include "CalcResult.h"
+#include "CalcInput.h"
+#include "TransformerParams.h"
 
 class QHBoxLayout;
 class QVBoxLayout;
 class QButtonGroup;
 class QStackedWidget;
 class DataQueryPage;
+class QuotePage;
 
 class MainDashboardPage : public QWidget {
     Q_OBJECT
 public:
     explicit MainDashboardPage(const QString &username, QWidget *parent = nullptr);
+
+    // 载入已确认方案到内嵌报价页（方案确认后由 MainWindow 调用）
+    void loadQuoteScheme(const TransformerParams &params, const CalcInput &input,
+                         const CalcResult &result);
 
 protected:
     bool eventFilter(QObject *obj, QEvent *event) override;
@@ -34,9 +42,10 @@ private:
     QString m_username;
     QButtonGroup *m_navGroup;
     QStackedWidget *m_subStack;
-    QWidget *m_subArea = nullptr;             // 子按钮区容器（数据查询时整体隐藏）
-    QStackedWidget *m_contentStack = nullptr; // 内容区（空白页/内嵌数据查询页）
+    QWidget *m_subArea = nullptr;             // 子按钮区容器（功能页时整体隐藏）
+    QStackedWidget *m_contentStack = nullptr; // 内容区（空白页/内嵌功能页）
     DataQueryPage *m_dataQueryPage = nullptr; // 内嵌数据查询页
+    QuotePage *m_quotePage = nullptr;         // 内嵌产品报价页
 };
 
 #endif // MAINDASHBOARDPAGE_H
