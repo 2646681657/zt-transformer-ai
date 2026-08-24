@@ -5,6 +5,7 @@
 
 #include <QString>
 #include <QVector>
+#include <QJsonDocument>
 
 struct SteelCurvePoint {
     double b = 0.0;        // 磁密 T
@@ -81,6 +82,14 @@ public:
     const QVector<CoreLaminationRow> &coreRows() const { return m_coreRows; }
     const QVector<QVector<double>> &corrCoefs() const { return m_corrCoefs; }
     const QVector<WireSpec> &wireSpecs() const { return m_wireSpecs; }
+
+    // ---- 数据导出/导入（数据管理工具用）----
+    // 导出全部设计数据为 JSON 文档
+    QJsonDocument exportToJson() const;
+    // 导出指定类别为 CSV 文本（category: steel/perf/core/corrugated/wire）
+    QString exportToCsv(const QString &category) const;
+    // 从外部 JSON 文件导入数据（替换当前运行时数据，不影响 qrc 资源）
+    bool loadFromExternal(const QString &filePath);
 
 private:
     DesignDatabase() = default;
