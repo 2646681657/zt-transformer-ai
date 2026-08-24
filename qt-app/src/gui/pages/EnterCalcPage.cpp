@@ -449,6 +449,22 @@ void EnterCalcPage::buildPrintRibbon()
     g2->addButton(customBtn);
 }
 
+// 竖排"程序选择"导航按钮（点击返回主界面），三个 Tab 各自调用创建
+QPushButton *EnterCalcPage::createNavButton(QWidget *parent)
+{
+    auto *btn = new QPushButton(QStringLiteral("程\n序\n选\n择"), parent);
+    btn->setCursor(Qt::PointingHandCursor);
+    btn->setToolTip(QStringLiteral("返回主界面"));
+    btn->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Expanding);
+    btn->setStyleSheet(
+        "QPushButton { background: rgba(0,188,212,0.15); color: #4dd0e1;"
+        "border: none; border-right: 1px solid #3a4050; border-radius: 0px;"
+        "font-size: 12px; padding: 4px; }"
+        "QPushButton:hover { background: #00bcd4; color: #0d1117; }");
+    connect(btn, &QPushButton::clicked, this, &EnterCalcPage::dashboardRequested);
+    return btn;
+}
+
 void EnterCalcPage::setupOptimizeTab()
 {
     auto *tab = new QWidget();
@@ -456,18 +472,8 @@ void EnterCalcPage::setupOptimizeTab()
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(0);
 
-    // 竖排"程序选择"导航按钮（点击返回主界面），顶格放置于侧边栏左侧
-    m_navButton = new QPushButton(QStringLiteral("程\n序\n选\n择"), tab);
-    m_navButton->setCursor(Qt::PointingHandCursor);
-    m_navButton->setToolTip(QStringLiteral("返回主界面"));
-    m_navButton->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Expanding);
-    m_navButton->setStyleSheet(
-        "QPushButton { background: rgba(0,188,212,0.15); color: #4dd0e1;"
-        "border: none; border-right: 1px solid #3a4050; border-radius: 0px;"
-        "font-size: 12px; padding: 4px; }"
-        "QPushButton:hover { background: #00bcd4; color: #0d1117; }");
-    connect(m_navButton, &QPushButton::clicked, this, &EnterCalcPage::navigateBack);
-    layout->addWidget(m_navButton);
+    // 程序选择导航按钮，顶格放置于侧边栏左侧
+    layout->addWidget(createNavButton(tab));
 
     // Left sidebar
     auto *sidebar = new SidebarPanel(tab);
@@ -545,21 +551,29 @@ void EnterCalcPage::setupOptimizeTab()
 void EnterCalcPage::setupSchemeTab()
 {
     auto *tab = new QWidget();
-    auto *layout = new QVBoxLayout(tab);
-    layout->setContentsMargins(0, 0, 0, 0);
+    auto *outer = new QHBoxLayout(tab);
+    outer->setContentsMargins(0, 0, 0, 0);
+    outer->setSpacing(0);
+    // 程序选择导航按钮（返回主界面）
+    outer->addWidget(createNavButton(tab));
+
     m_schemeTable = new SchemeTableWidget(tab);
     // 行内「选择」按钮：标记待确认方案（按钮变亮，不跳转）
     connect(m_schemeTable, &SchemeTableWidget::schemeSelected,
             this, &EnterCalcPage::onSchemeSelected);
-    layout->addWidget(m_schemeTable);
+    outer->addWidget(m_schemeTable, 1);
     m_stack->addWidget(tab);
 }
 
 void EnterCalcPage::setupPrintTab()
 {
     auto *tab = new QWidget();
-    auto *layout = new QVBoxLayout(tab);
-    layout->setContentsMargins(0, 0, 0, 0);
+    auto *outer = new QHBoxLayout(tab);
+    outer->setContentsMargins(0, 0, 0, 0);
+    outer->setSpacing(0);
+    // 程序选择导航按钮（返回主界面）
+    outer->addWidget(createNavButton(tab));
+
     m_printTable = new PrintTableWidget(tab);
     // 初始显示当前设计变量（m_calcInput，默认 SB20-M-630-10）的计算结果
     CalcResult initResult;
@@ -567,7 +581,7 @@ void EnterCalcPage::setupPrintTab()
         m_printTable->loadData(
             ElectromagneticEngine::buildPrintOutput(m_calcInput, initResult));
     }
-    layout->addWidget(m_printTable);
+    outer->addWidget(m_printTable, 1);
     m_stack->addWidget(tab);
 }
 

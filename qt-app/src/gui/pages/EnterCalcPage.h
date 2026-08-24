@@ -36,6 +36,8 @@ public:
 
 signals:
     void navigateBack();
+    // 程序选择导航按钮：跳转主界面（区别于 navigateBack 返回参数设置页）
+    void dashboardRequested();
     // 方案确认后发出（携带确认方案完整数据，供主界面报价页联动）
     void schemeConfirmed(const TransformerParams &params, const CalcInput &input,
                          const CalcResult &result);
@@ -129,6 +131,8 @@ private:
     void setupOptimizeTab();
     void setupSchemeTab();
     void setupPrintTab();
+    // 竖排"程序选择"导航按钮（点击返回主界面），三个 Tab 各自持有
+    QPushButton *createNavButton(QWidget *parent);
     void buildOptimizeRibbon();
     void buildSchemeRibbon();
     void buildPrintRibbon();
@@ -143,7 +147,6 @@ private:
     RibbonBar *m_schemeRibbon;
     RibbonBar *m_printRibbon;
     QWidget *m_ribbonStack;
-    QPushButton *m_navButton;
     RibbonButton *m_pauseBtn = nullptr;   // 暂停/继续 切换按钮
     GridOptimizer *m_optimizer = nullptr; // 网格寻优器（后台线程）
     bool m_optRunning = false;            // 寻优运行中标志
