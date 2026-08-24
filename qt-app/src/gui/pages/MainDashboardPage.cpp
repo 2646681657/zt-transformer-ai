@@ -4,6 +4,8 @@
 #include "ImpedanceCalcPage.h"
 #include "LossCalcPage.h"
 #include "DataManagementPage.h"
+#include "UserManagementPage.h"
+#include "SettingsPage.h"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QGridLayout>
@@ -65,6 +67,10 @@ MainDashboardPage::MainDashboardPage(const QString &username, QWidget *parent)
     m_contentStack->addWidget(m_lossCalcPage);               // index 4: 损耗计算器
     m_dataMgmtPage = new DataManagementPage(this);
     m_contentStack->addWidget(m_dataMgmtPage);               // index 5: 数据管理
+    m_userMgmtPage = new UserManagementPage(this);
+    m_contentStack->addWidget(m_userMgmtPage);               // index 6: 用户管理
+    m_settingsPage = new SettingsPage(this);
+    m_contentStack->addWidget(m_settingsPage);               // index 7: 系统设置
     m_contentStack->setCurrentIndex(0);
     mainLayout->addWidget(m_contentStack, 1);
 
@@ -227,6 +233,18 @@ QWidget *MainDashboardPage::createToolsSubPage()
         m_contentStack->setCurrentWidget(m_dataMgmtPage);
     });
     layout->addWidget(mgmtBtn);
+
+    auto *userBtn = makeToolBtn(QStringLiteral("用户管理"), ":/icons/help.svg");
+    connect(userBtn, &QToolButton::clicked, this, [this]() {
+        m_contentStack->setCurrentWidget(m_userMgmtPage);
+    });
+    layout->addWidget(userBtn);
+
+    auto *settingsBtn = makeToolBtn(QStringLiteral("系统设置"), ":/icons/tools.svg");
+    connect(settingsBtn, &QToolButton::clicked, this, [this]() {
+        m_contentStack->setCurrentWidget(m_settingsPage);
+    });
+    layout->addWidget(settingsBtn);
 
     layout->addStretch();
     return page;
