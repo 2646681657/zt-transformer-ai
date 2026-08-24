@@ -306,6 +306,14 @@ void OptimizeCalcPage::setStructureConfig(const StructureConfig &config)
 {
     m_config = config;
 
+    // 计算模式以 Ribbon 当前选中为准（含 QSettings 恢复的上次选择），
+    // 避免被外部传入的默认 calcMode 覆盖导致模式按钮与表格内容不一致
+    if (m_modeGroup && m_modeGroup->hasSelection()) {
+        m_config.calcMode = (m_modeGroup->selectedIndex() == 1)
+                                ? StructureConfig::Professional
+                                : StructureConfig::Normal;
+    }
+
     // 更新标题栏显示当前选择的类型
     QString catStr = (config.category == StructureConfig::OilImmersed) ?
         QStringLiteral("油浸式变压器") : QStringLiteral("干式变压器");
