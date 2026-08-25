@@ -9,6 +9,8 @@
 #include "GridOptimizer.h"
 #include "SchemeConstraints.h"
 #include "SchemeStore.h"
+#include "RecommendSchemes.h"
+#include "SchemePickDialog.h"
 #include <QDateTime>
 #include <QDir>
 #include <algorithm>
@@ -483,10 +485,13 @@ void EnterCalcPage::setupOptimizeTab()
     sidebar->addButton(QStringLiteral("返回上一次方案"), ":/icons/undo.svg");
     sidebar->addButton(QStringLiteral("下一步"), ":/icons/enter_calc.svg");
     sidebar->addButton(QStringLiteral("取消"), ":/icons/stop.svg");
-    // 取消按钮(index 5)返回优化计算参数设置页
+    // 前 4 个方案按钮接方案逻辑；取消按钮(index 5)返回优化计算参数设置页
     connect(sidebar, &SidebarPanel::buttonClicked, this, [this](int index) {
-        if (index == 5)
+        if (index == 5) {
             emit navigateBack();
+        } else if (index < 4) {
+            onSchemeButtonClicked(index);
+        }
     });
     layout->addWidget(sidebar);
 
@@ -626,6 +631,92 @@ void EnterCalcPage::onRunEmCalc()
         status += QStringLiteral(" ｜ 注意：%1").arg(check.violations.join(QStringLiteral("，")));
     }
     m_statusBar->setText(status);
+}
+
+// 侧边栏方案按钮：应用方案到 m_calcInput 后立即重算（结果面板/打印表/方案表联动刷新）
+void EnterCalcPage::onSchemeButtonClicked(int index)
+{
+    switch (index) {
+    case 0: {  // 选用推荐方案（内置推荐表，只读无删除）
+        QVector<SchemeStore::SchemeEntry> entries;
+        for (const auto &s : RecommendSchemes::all()) {
+            SchemeStore::SchemeEntry e;
+            e.name = s.name;
+            e.input = s.input;
+            entries.append(e);
+        }
+        SchemePickDialog dlg(QStringLiteral("选用推荐方案"), entries, QString(), this);
+        if (dlg.exec() == QDialog::Accepted && dlg.hasSelection()) {
+            m_calcInput = dlg.selectedEntry().input;
+            onRunEmCalc();
+        }
+        break;
+    }
+    case 1: {  // 保存为我的方案（命名保存当前设计变量，同名提示覆盖）
+        bool ok = false;
+        const QString name = QInputDialog::getText(this,
+            QStringLiteral("保存为我的方案"),
+            QStringLiteral("方案名称："), QLineEdit::Normal,
+            QStringLiteral("我的方案1"), &ok);
+        if (!ok || name.trimmed().isEmpty()) {
+            return;
+        }
+        QVector<SchemeStore::SchemeEntry> entries =
+            SchemeStore::loadEntries(SchemeStore::mySchemesPath());
+        for (int i = 0; i < entries.size(); ++i) {
+            if (entries[i].name == name.trimmed()) {
+                if (QMessageBox::question(this, QStringLiteral("方案已存在"),
+                        QStringLiteral("方案库中已有同名方案「%1」，是否覆盖？").arg(name.trimmed()))
+                        != QMessageBox::Yes) {
+                    return;
+                }
+                entries.removeAt(i);
+                break;
+            }
+        }
+        SchemeStore::SchemeEntry e;
+        e.name = name.trimmed();
+        e.savedAt = QDateTime::currentDateTime();
+        e.input = m_calcInput;
+        entries.prepend(e);
+        if (SchemeStore::saveEntries(SchemeStore::mySchemesPath(), entries)) {
+            QMessageBox::information(this, QStringLiteral("保存成功"),
+                QStringLiteral("方案「%1」已保存到我的方案库").arg(e.name));
+        } else {
+            QMessageBox::warning(this, QStringLiteral("保存失败"),
+                QStringLiteral("无法写入方案库文件"));
+        }
+        break;
+    }
+    case 2: {  // 从方案库中选择（我的方案库，支持删除所选）
+        QVector<SchemeStore::SchemeEntry> entries =
+            SchemeStore::loadEntries(SchemeStore::mySchemesPath());
+        if (entries.isEmpty()) {
+            QMessageBox::information(this, QStringLiteral("方案库为空"),
+                QStringLiteral("暂无已保存方案，请先用「保存为我的方案」添加"));
+            return;
+        }
+        SchemePickDialog dlg(QStringLiteral("从方案库中选择"), entries,
+                             SchemeStore::mySchemesPath(), this);
+        if (dlg.exec() == QDialog::Accepted && dlg.hasSelection()) {
+            m_calcInput = dlg.selectedEntry().input;
+            onRunEmCalc();
+        }
+        break;
+    }
+    case 3: {  // 返回上一次方案（最近一次实际计算的输入）
+        if (!m_hasResult) {
+            QMessageBox::information(this, QStringLiteral("暂无记录"),
+                QStringLiteral("还没有计算记录，请先执行计算"));
+            return;
+        }
+        m_calcInput = m_lastInput;
+        onRunEmCalc();
+        break;
+    }
+    default:
+        break;
+    }
 }
 
 // ---- 异步寻优 ----
