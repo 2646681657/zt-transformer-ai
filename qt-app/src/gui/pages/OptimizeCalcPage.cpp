@@ -6,6 +6,7 @@
 #include "SidebarPanel.h"
 #include "SchemeStore.h"
 #include "RecommendSchemes.h"
+#include "SchemePickDialog.h"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -16,86 +17,8 @@
 #include <QToolButton>
 #include <QMenu>
 #include <QSettings>
-#include <QDialog>
-#include <QDialogButtonBox>
-#include <QListWidget>
 #include <QInputDialog>
 #include <QLineEdit>
-
-namespace {
-// 方案条目选择对话框：列表展示名称与时间，双击或确定返回行号，取消返回 -1。
-// 需传入存储文件路径：删除所选后同步写回文件（entries 随之更新，行号基于删除后列表）
-int pickSchemeEntry(QWidget *parent, const QString &title, const QString &storeFilePath,
-                    QVector<SchemeStore::SchemeEntry> &entries)
-{
-    QDialog dlg(parent);
-    dlg.setWindowTitle(title);
-    dlg.setModal(true);
-    dlg.resize(420, 360);
-    auto *layout = new QVBoxLayout(&dlg);
-    auto *list = new QListWidget(&dlg);
-    auto fillList = [&entries, list]() {
-        list->clear();
-        for (const auto &e : entries) {
-            list->addItem(QStringLiteral("%1    （%2）")
-                              .arg(e.name,
-                                   e.savedAt.toString(QStringLiteral("yyyy-MM-dd HH:mm"))));
-        }
-        list->setCurrentRow(entries.isEmpty() ? -1 : 0);
-    };
-    fillList();
-    layout->addWidget(list);
-    auto *btns = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
-    auto *delBtn = btns->addButton(QStringLiteral("删除所选"), QDialogButtonBox::ActionRole);
-    layout->addWidget(btns);
-    QObject::connect(btns, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
-    QObject::connect(btns, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
-    QObject::connect(list, &QListWidget::itemDoubleClicked, &dlg, &QDialog::accept);
-    QObject::connect(delBtn, &QPushButton::clicked, &dlg, [&, fillList]() {
-        const int row = list->currentRow();
-        if (row < 0 || row >= entries.size()) {
-            return;
-        }
-        if (QMessageBox::question(&dlg, QStringLiteral("删除方案"),
-                QStringLiteral("确定删除方案「%1」吗？").arg(entries[row].name))
-                != QMessageBox::Yes) {
-            return;
-        }
-        entries.removeAt(row);
-        SchemeStore::saveEntries(storeFilePath, entries);
-        fillList();
-        if (entries.isEmpty()) {
-            dlg.reject();   // 全部删空：关闭对话框（返回 -1）
-        }
-    });
-    return dlg.exec() == QDialog::Accepted ? list->currentRow() : -1;
-}
-
-// 内置推荐方案选择对话框：列表展示名称与说明，取消返回空名称方案
-RecommendSchemes::RecommendScheme pickRecommendScheme(QWidget *parent)
-{
-    const auto schemes = RecommendSchemes::all();
-    QDialog dlg(parent);
-    dlg.setWindowTitle(QStringLiteral("选用推荐方案"));
-    dlg.setModal(true);
-    dlg.resize(460, 320);
-    auto *layout = new QVBoxLayout(&dlg);
-    auto *list = new QListWidget(&dlg);
-    for (const auto &s : schemes) {
-        list->addItem(QStringLiteral("%1\n    %2").arg(s.name, s.description));
-    }
-    list->setCurrentRow(0);
-    layout->addWidget(list);
-    auto *btns = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
-    layout->addWidget(btns);
-    QObject::connect(btns, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
-    QObject::connect(btns, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
-    QObject::connect(list, &QListWidget::itemDoubleClicked, &dlg, &QDialog::accept);
-    const int row = dlg.exec() == QDialog::Accepted ? list->currentRow() : -1;
-    return (row >= 0 && row < schemes.size()) ? schemes[row]
-                                               : RecommendSchemes::RecommendScheme();
-}
-} // namespace
 
 OptimizeCalcPage::OptimizeCalcPage(QWidget *parent)
     : QWidget(parent)
@@ -364,10 +287,17 @@ void OptimizeCalcPage::applySchemeInput(const CalcInput &input)
 void OptimizeCalcPage::onSchemeButtonClicked(int index)
 {
     switch (index) {
-    case 0: {  // 选用推荐方案（内置推荐表）
-        const auto scheme = pickRecommendScheme(this);
-        if (!scheme.name.isEmpty()) {
-            applySchemeInput(scheme.input);
+    case 0: {  // 选用推荐方案（内置推荐表，只读无删除）
+        QVector<SchemeStore::SchemeEntry> entries;
+        for (const auto &s : RecommendSchemes::all()) {
+            SchemeStore::SchemeEntry e;
+            e.name = s.name;   // 推荐方案无保存时间，副行留空
+            e.input = s.input;
+            entries.append(e);
+        }
+        SchemePickDialog dlg(QStringLiteral("选用推荐方案"), entries, QString(), this);
+        if (dlg.exec() == QDialog::Accepted && dlg.hasSelection()) {
+            applySchemeInput(dlg.selectedEntry().input);
         }
         break;
     }
@@ -417,10 +347,10 @@ void OptimizeCalcPage::onSchemeButtonClicked(int index)
                 QStringLiteral("暂无已保存方案，请先用「保存为我的方案」添加"));
             return;
         }
-        const int row = pickSchemeEntry(this, QStringLiteral("从方案库中选择"),
-                                        SchemeStore::mySchemesPath(), entries);
-        if (row >= 0 && row < entries.size()) {
-            applySchemeInput(entries[row].input);
+        SchemePickDialog dlg(QStringLiteral("从方案库中选择"), entries,
+                             SchemeStore::mySchemesPath(), this);
+        if (dlg.exec() == QDialog::Accepted && dlg.hasSelection()) {
+            applySchemeInput(dlg.selectedEntry().input);
         }
         break;
     }
@@ -432,10 +362,10 @@ void OptimizeCalcPage::onSchemeButtonClicked(int index)
                 QStringLiteral("暂无使用记录，进入计算后将自动记录方案"));
             return;
         }
-        const int row = pickSchemeEntry(this, QStringLiteral("从记忆库中选择"),
-                                        SchemeStore::memorySchemesPath(), entries);
-        if (row >= 0 && row < entries.size()) {
-            applySchemeInput(entries[row].input);
+        SchemePickDialog dlg(QStringLiteral("从记忆库中选择"), entries,
+                             SchemeStore::memorySchemesPath(), this);
+        if (dlg.exec() == QDialog::Accepted && dlg.hasSelection()) {
+            applySchemeInput(dlg.selectedEntry().input);
         }
         break;
     }
