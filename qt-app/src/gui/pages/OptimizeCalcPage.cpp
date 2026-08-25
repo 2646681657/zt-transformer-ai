@@ -4,6 +4,8 @@
 #include "RibbonButton.h"
 #include "ParamTableWidget.h"
 #include "SidebarPanel.h"
+#include "SchemeStore.h"
+#include "RecommendSchemes.h"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -14,6 +16,86 @@
 #include <QToolButton>
 #include <QMenu>
 #include <QSettings>
+#include <QDialog>
+#include <QDialogButtonBox>
+#include <QListWidget>
+#include <QInputDialog>
+#include <QLineEdit>
+
+namespace {
+// 方案条目选择对话框：列表展示名称与时间，双击或确定返回行号，取消返回 -1。
+// 需传入存储文件路径：删除所选后同步写回文件（entries 随之更新，行号基于删除后列表）
+int pickSchemeEntry(QWidget *parent, const QString &title, const QString &storeFilePath,
+                    QVector<SchemeStore::SchemeEntry> &entries)
+{
+    QDialog dlg(parent);
+    dlg.setWindowTitle(title);
+    dlg.setModal(true);
+    dlg.resize(420, 360);
+    auto *layout = new QVBoxLayout(&dlg);
+    auto *list = new QListWidget(&dlg);
+    auto fillList = [&entries, list]() {
+        list->clear();
+        for (const auto &e : entries) {
+            list->addItem(QStringLiteral("%1    （%2）")
+                              .arg(e.name,
+                                   e.savedAt.toString(QStringLiteral("yyyy-MM-dd HH:mm"))));
+        }
+        list->setCurrentRow(entries.isEmpty() ? -1 : 0);
+    };
+    fillList();
+    layout->addWidget(list);
+    auto *btns = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
+    auto *delBtn = btns->addButton(QStringLiteral("删除所选"), QDialogButtonBox::ActionRole);
+    layout->addWidget(btns);
+    QObject::connect(btns, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+    QObject::connect(btns, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+    QObject::connect(list, &QListWidget::itemDoubleClicked, &dlg, &QDialog::accept);
+    QObject::connect(delBtn, &QPushButton::clicked, &dlg, [&, fillList]() {
+        const int row = list->currentRow();
+        if (row < 0 || row >= entries.size()) {
+            return;
+        }
+        if (QMessageBox::question(&dlg, QStringLiteral("删除方案"),
+                QStringLiteral("确定删除方案「%1」吗？").arg(entries[row].name))
+                != QMessageBox::Yes) {
+            return;
+        }
+        entries.removeAt(row);
+        SchemeStore::saveEntries(storeFilePath, entries);
+        fillList();
+        if (entries.isEmpty()) {
+            dlg.reject();   // 全部删空：关闭对话框（返回 -1）
+        }
+    });
+    return dlg.exec() == QDialog::Accepted ? list->currentRow() : -1;
+}
+
+// 内置推荐方案选择对话框：列表展示名称与说明，取消返回空名称方案
+RecommendSchemes::RecommendScheme pickRecommendScheme(QWidget *parent)
+{
+    const auto schemes = RecommendSchemes::all();
+    QDialog dlg(parent);
+    dlg.setWindowTitle(QStringLiteral("选用推荐方案"));
+    dlg.setModal(true);
+    dlg.resize(460, 320);
+    auto *layout = new QVBoxLayout(&dlg);
+    auto *list = new QListWidget(&dlg);
+    for (const auto &s : schemes) {
+        list->addItem(QStringLiteral("%1\n    %2").arg(s.name, s.description));
+    }
+    list->setCurrentRow(0);
+    layout->addWidget(list);
+    auto *btns = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
+    layout->addWidget(btns);
+    QObject::connect(btns, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+    QObject::connect(btns, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+    QObject::connect(list, &QListWidget::itemDoubleClicked, &dlg, &QDialog::accept);
+    const int row = dlg.exec() == QDialog::Accepted ? list->currentRow() : -1;
+    return (row >= 0 && row < schemes.size()) ? schemes[row]
+                                               : RecommendSchemes::RecommendScheme();
+}
+} // namespace
 
 OptimizeCalcPage::OptimizeCalcPage(QWidget *parent)
     : QWidget(parent)
@@ -68,12 +150,31 @@ OptimizeCalcPage::OptimizeCalcPage(QWidget *parent)
         "QToolButton:hover { background: #00bcd4; color: #0d1117; border-color: #00bcd4; }"
         "QToolButton::menu-indicator { subcontrol-origin: padding; subcontrol-position: right center; width: 8px; }");
     auto *schemeMenu = new QMenu(schemeBtn);
-    schemeMenu->addAction(QStringLiteral("方案一"));
-    schemeMenu->addAction(QStringLiteral("方案二"));
-    schemeMenu->addAction(QStringLiteral("方案三"));
+    // 菜单弹出前从我的方案库动态填充（保存/删除后自动同步）
+    connect(schemeMenu, &QMenu::aboutToShow, this, [schemeMenu]() {
+        schemeMenu->clear();
+        const QVector<SchemeStore::SchemeEntry> entries =
+            SchemeStore::loadEntries(SchemeStore::mySchemesPath());
+        if (entries.isEmpty()) {
+            auto *empty = schemeMenu->addAction(QStringLiteral("（空）"));
+            empty->setEnabled(false);
+            return;
+        }
+        for (const auto &e : entries) {
+            schemeMenu->addAction(e.name);
+        }
+    });
     schemeBtn->setMenu(schemeMenu);
-    connect(schemeMenu, &QMenu::triggered, headerBar, [schemeBtn](QAction *action) {
-        schemeBtn->setText(action->text());
+    // 选中方案：应用到参数表
+    connect(schemeMenu, &QMenu::triggered, this, [this](QAction *action) {
+        const QVector<SchemeStore::SchemeEntry> entries =
+            SchemeStore::loadEntries(SchemeStore::mySchemesPath());
+        for (const auto &e : entries) {
+            if (e.name == action->text()) {
+                applySchemeInput(e.input);
+                break;
+            }
+        }
     });
     headerLayout->addWidget(schemeBtn);
 
@@ -208,6 +309,9 @@ void OptimizeCalcPage::setupMainArea()
     m_sidebar->addButton(QStringLiteral("采用上一次方案"), ":/icons/undo.svg");
     auto *enterBtn = m_sidebar->addButton(QStringLiteral("进入计算"), ":/icons/enter_calc.svg");
     connect(enterBtn, &QToolButton::clicked, this, &OptimizeCalcPage::onEnterCalcClicked);
+    // 前 5 个方案按钮（0=推荐 1=保存我的 2=方案库 3=记忆库 4=上次方案）
+    connect(m_sidebar, &SidebarPanel::buttonClicked,
+            this, &OptimizeCalcPage::onSchemeButtonClicked);
 
     // Param table（设计变量初值取自 m_input，默认即 SB20-M-630-10；
     // 计算模式已在 setupRibbon 中从 QSettings 恢复）
@@ -240,8 +344,114 @@ void OptimizeCalcPage::onEnterCalcClicked()
     }
     m_params = m_paramTable->getParams();
     m_paramTable->saveToInput(m_input);   // 收集表格中编辑的设计变量
+    // 进入计算自动记录：记忆库（去重限量）+ 上次方案
+    SchemeStore::appendMemory(m_input);
+    SchemeStore::saveLastScheme(m_input);
     updateConfigFromRibbon();
     emit navigateToEnterCalc();
+}
+
+// 应用方案设计变量到参数表：直接重建表格（不经 refreshParamTable，
+// 避免其先把旧表格值存回 m_input 覆盖方案值）
+void OptimizeCalcPage::applySchemeInput(const CalcInput &input)
+{
+    m_input = input;
+    const bool proMode = (m_config.calcMode == StructureConfig::Professional);
+    m_paramTable->loadParamsForConfig(m_params, m_config, m_input, proMode);
+}
+
+// 侧边栏五个方案按钮分发（进入计算按钮为 index 5，已独立连接，此处忽略）
+void OptimizeCalcPage::onSchemeButtonClicked(int index)
+{
+    switch (index) {
+    case 0: {  // 选用推荐方案（内置推荐表）
+        const auto scheme = pickRecommendScheme(this);
+        if (!scheme.name.isEmpty()) {
+            applySchemeInput(scheme.input);
+        }
+        break;
+    }
+    case 1: {  // 保存为我的方案（命名保存当前设计变量）
+        bool ok = false;
+        const QString name = QInputDialog::getText(this,
+            QStringLiteral("保存为我的方案"),
+            QStringLiteral("方案名称："), QLineEdit::Normal,
+            QStringLiteral("我的方案1"), &ok);
+        if (!ok || name.trimmed().isEmpty()) {
+            return;
+        }
+        m_paramTable->saveToInput(m_input);   // 收集当前表格编辑值
+        QVector<SchemeStore::SchemeEntry> entries =
+            SchemeStore::loadEntries(SchemeStore::mySchemesPath());
+        // 同名提示：确认覆盖才移除旧记录
+        for (int i = 0; i < entries.size(); ++i) {
+            if (entries[i].name == name.trimmed()) {
+                if (QMessageBox::question(this, QStringLiteral("方案已存在"),
+                        QStringLiteral("方案库中已有同名方案「%1」，是否覆盖？").arg(name.trimmed()))
+                        != QMessageBox::Yes) {
+                    return;   // 不覆盖：取消本次保存
+                }
+                entries.removeAt(i);
+                break;
+            }
+        }
+        SchemeStore::SchemeEntry e;
+        e.name = name.trimmed();
+        e.savedAt = QDateTime::currentDateTime();
+        e.input = m_input;
+        entries.prepend(e);
+        if (SchemeStore::saveEntries(SchemeStore::mySchemesPath(), entries)) {
+            QMessageBox::information(this, QStringLiteral("保存成功"),
+                QStringLiteral("方案「%1」已保存到我的方案库").arg(e.name));
+        } else {
+            QMessageBox::warning(this, QStringLiteral("保存失败"),
+                QStringLiteral("无法写入方案库文件"));
+        }
+        break;
+    }
+    case 2: {  // 从方案库中选择（我的方案库，支持删除所选）
+        QVector<SchemeStore::SchemeEntry> entries =
+            SchemeStore::loadEntries(SchemeStore::mySchemesPath());
+        if (entries.isEmpty()) {
+            QMessageBox::information(this, QStringLiteral("方案库为空"),
+                QStringLiteral("暂无已保存方案，请先用「保存为我的方案」添加"));
+            return;
+        }
+        const int row = pickSchemeEntry(this, QStringLiteral("从方案库中选择"),
+                                        SchemeStore::mySchemesPath(), entries);
+        if (row >= 0 && row < entries.size()) {
+            applySchemeInput(entries[row].input);
+        }
+        break;
+    }
+    case 3: {  // 从记忆库中选择（最近使用的方案，支持删除所选）
+        QVector<SchemeStore::SchemeEntry> entries =
+            SchemeStore::loadEntries(SchemeStore::memorySchemesPath());
+        if (entries.isEmpty()) {
+            QMessageBox::information(this, QStringLiteral("记忆库为空"),
+                QStringLiteral("暂无使用记录，进入计算后将自动记录方案"));
+            return;
+        }
+        const int row = pickSchemeEntry(this, QStringLiteral("从记忆库中选择"),
+                                        SchemeStore::memorySchemesPath(), entries);
+        if (row >= 0 && row < entries.size()) {
+            applySchemeInput(entries[row].input);
+        }
+        break;
+    }
+    case 4: {  // 采用上一次方案
+        CalcInput last;
+        if (!SchemeStore::loadLastScheme(last)) {
+            QMessageBox::information(this, QStringLiteral("暂无记录"),
+                QStringLiteral("还没有上次方案，进入计算后将自动记录"));
+            return;
+        }
+        applySchemeInput(last);
+        break;
+    }
+    default:
+        break;   // index 5 为进入计算按钮，已独立连接
+    }
 }
 
 // Ribbon选项变更时同步更新结构配置并刷新参数表
