@@ -12,6 +12,8 @@
 #include <QDateTime>
 #include <QFile>
 #include <QFileInfo>
+#include <QStandardPaths>
+#include <QDir>
 #include "CalcInput.h"
 
 namespace SchemeStore {
@@ -253,6 +255,144 @@ inline QVector<CalcInput> loadSchemes(const QString &path, bool *ok = nullptr)
         *ok = true;
     }
     return inputs;
+}
+
+// ---- 带元数据的方案条目（我的方案库/记忆库/上次方案共用）----
+struct SchemeEntry {
+    QString name;         // 方案名称（记忆库为自动生成的时间戳名）
+    QDateTime savedAt;    // 保存/使用时间
+    CalcInput input;      // 设计变量
+};
+
+// 条目序列化：设计变量字段之上叠加 name/savedAt 元数据
+inline QJsonObject entryToJson(const SchemeEntry &e)
+{
+    QJsonObject o = toJson(e.input);
+    o.insert(QStringLiteral("name"), e.name);
+    o.insert(QStringLiteral("savedAt"), e.savedAt.toString(Qt::ISODate));
+    return o;
+}
+
+inline SchemeEntry entryFromJson(const QJsonObject &o)
+{
+    SchemeEntry e;
+    e.name = o.value(QStringLiteral("name")).toString();
+    e.savedAt = QDateTime::fromString(
+        o.value(QStringLiteral("savedAt")).toString(), Qt::ISODate);
+    e.input = fromJson(o);
+    return e;
+}
+
+// ---- 三类持久化库（AppData/schemes 目录）----
+// AppData 下方案存储目录中的文件路径（目录不存在则创建）
+inline QString storePath(const QString &fileName)
+{
+    const QString dir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation)
+                        + QStringLiteral("/schemes");
+    QDir().mkpath(dir);
+    return dir + QStringLiteral("/") + fileName;
+}
+
+// 我的方案库（用户命名保存，可增删）
+inline QString mySchemesPath()     { return storePath(QStringLiteral("my_schemes.json")); }
+// 记忆库（自动记录最近使用的方案，去重限量）
+inline QString memorySchemesPath() { return storePath(QStringLiteral("memory_schemes.json")); }
+// 上次方案（单条，进入计算时覆盖）
+inline QString lastSchemePath()    { return storePath(QStringLiteral("last_scheme.json")); }
+
+// 列表库读写（我的方案库/记忆库共用；format 区别于旧版纯数组方案库文件）
+inline bool saveEntries(const QString &path, const QVector<SchemeEntry> &entries)
+{
+    QJsonObject root;
+    root.insert(QStringLiteral("format"), QStringLiteral("ZTBLD-SchemeEntries"));
+    root.insert(QStringLiteral("version"), 1);
+    root.insert(QStringLiteral("savedAt"),
+                QDateTime::currentDateTime().toString(Qt::ISODate));
+    QJsonArray arr;
+    for (const SchemeEntry &e : entries) {
+        arr.append(entryToJson(e));
+    }
+    root.insert(QStringLiteral("schemes"), arr);
+
+    QFile file(path);
+    if (!file.open(QIODevice::WriteOnly)) {
+        return false;
+    }
+    file.write(QJsonDocument(root).toJson(QJsonDocument::Indented));
+    return true;
+}
+
+inline QVector<SchemeEntry> loadEntries(const QString &path)
+{
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly)) {
+        return {};
+    }
+    const QJsonDocument doc = QJsonDocument::fromJson(file.readAll());
+    if (!doc.isObject()) {
+        return {};
+    }
+    const QJsonObject root = doc.object();
+    if (root.value(QStringLiteral("format")).toString()
+            != QStringLiteral("ZTBLD-SchemeEntries")) {
+        return {};
+    }
+    const QJsonArray arr = root.value(QStringLiteral("schemes")).toArray();
+    QVector<SchemeEntry> entries;
+    entries.reserve(arr.size());
+    for (const QJsonValue &v : arr) {
+        if (v.isObject()) {
+            entries.append(entryFromJson(v.toObject()));
+        }
+    }
+    return entries;
+}
+
+// 设计变量是否完全一致（记忆库去重依据；借 JSON 序列化比较，免手写字段比对）
+inline bool sameInput(const CalcInput &a, const CalcInput &b)
+{
+    return toJson(a) == toJson(b);
+}
+
+// 记忆库追加：设计变量相同则移除旧记录后重新置顶（更新时间），保持最近 maxCount 条
+inline void appendMemory(const CalcInput &input, int maxCount = 20)
+{
+    QVector<SchemeEntry> entries = loadEntries(memorySchemesPath());
+    for (int i = 0; i < entries.size(); ++i) {
+        if (sameInput(entries[i].input, input)) {
+            entries.removeAt(i);
+            break;
+        }
+    }
+    SchemeEntry e;
+    e.name = QDateTime::currentDateTime().toString(QStringLiteral("yyyy-MM-dd HH:mm"));
+    e.savedAt = QDateTime::currentDateTime();
+    e.input = input;
+    entries.prepend(e);
+    while (entries.size() > maxCount) {
+        entries.removeLast();
+    }
+    saveEntries(memorySchemesPath(), entries);
+}
+
+// 上次方案（单条覆盖写）
+inline bool saveLastScheme(const CalcInput &input)
+{
+    SchemeEntry e;
+    e.name = QStringLiteral("上次方案");
+    e.savedAt = QDateTime::currentDateTime();
+    e.input = input;
+    return saveEntries(lastSchemePath(), { e });
+}
+
+inline bool loadLastScheme(CalcInput &out)
+{
+    const QVector<SchemeEntry> entries = loadEntries(lastSchemePath());
+    if (entries.isEmpty()) {
+        return false;
+    }
+    out = entries.first().input;
+    return true;
 }
 
 } // namespace SchemeStore

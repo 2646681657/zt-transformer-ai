@@ -46,6 +46,8 @@ private slots:
     void onTabChanged(int index);
     // 执行电磁计算全链路并填充结果面板/打印表/方案表
     void onRunEmCalc();
+    // 侧边栏方案按钮（0=推荐 1=保存我的 2=方案库 3=上一次）
+    void onSchemeButtonClicked(int index);
     // ---- 异步寻优（开始运行/暂停/停止 按钮驱动 GridOptimizer）----
     void onOptimizeStart();
     void onOptimizePause();

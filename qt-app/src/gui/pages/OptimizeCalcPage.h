@@ -40,6 +40,10 @@ private:
     void updateConfigFromRibbon();
     void refreshParamTable();
     void saveModePreference() const;
+    // 应用方案设计变量到参数表（不动 Ribbon 结构选型）
+    void applySchemeInput(const CalcInput &input);
+    // 侧边栏方案按钮（0=推荐 1=保存我的 2=方案库 3=记忆库 4=上次方案）
+    void onSchemeButtonClicked(int index);
 
     RibbonBar *m_ribbon;
     ParamTableWidget *m_paramTable;
