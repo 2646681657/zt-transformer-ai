@@ -86,5 +86,7 @@ void MainWindow::showEnterCalc()
 {
     m_enterCalcPage->setParams(m_optimizeCalcPage->currentParams());
     m_enterCalcPage->setCalcInput(m_optimizeCalcPage->currentInput());
+    // 结构配置同步（Ribbon 选型）：寻优启动与初始化查看弹窗依赖此值
+    m_enterCalcPage->setConfig(m_optimizeCalcPage->currentConfig());
     m_stack->setCurrentWidget(m_enterCalcPage);
 }
