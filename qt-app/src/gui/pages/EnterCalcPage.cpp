@@ -1238,6 +1238,9 @@ void paintTableToPrinter(QPrinter *printer, QTableWidget *table)
         ratios[c] /= totalRatio;
     }
 
+    // 打印专用字号：point 为物理单位，与打印机分辨率解耦；
+    // 度量必须以打印机设备为基准（QFontMetricsF 默认按屏幕 DPI 换算，
+    // 在 HighResolution 打印画布上行高会缩成十几个设备像素，整表挤压）
     const QFont bodyFont(QStringLiteral("Microsoft YaHei"), 9);
     QFont bFont = bodyFont;
     bFont.setBold(true);
