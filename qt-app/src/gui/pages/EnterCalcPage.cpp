@@ -1,4 +1,5 @@
 #include "EnterCalcPage.h"
+#include "PrintOutputData.h"
 #include "RibbonBar.h"
 #include "RibbonGroup.h"
 #include "RibbonButton.h"
@@ -543,6 +544,46 @@ void EnterCalcPage::buildPrintRibbon()
     customBtn->setCheckable(false);
     connect(customBtn, &QToolButton::clicked, this, &EnterCalcPage::onSaveCustomSheet);
     g2->addButton(customBtn);
+    m_printRibbon->addSeparator();
+
+    // ---- AI 说明草稿：基于引擎输出生成计算书文字说明（阶段三）----
+    auto *g3 = m_printRibbon->addGroup(QStringLiteral("AI 辅助"));
+    auto *aiDraftBtn = new RibbonButton(QStringLiteral("AI 说明草稿"), ":/icons/memory_on.svg", g3);
+    aiDraftBtn->setCheckable(false);
+    connect(aiDraftBtn, &QToolButton::clicked, this, [this]() {
+        if (!m_hasResult) {
+            onRunEmCalc();
+            if (!m_hasResult) {
+                return;
+            }
+        }
+        // 打印表数据 → 文本（左/右双栏行合并为键值对）
+        const PrintOutputData po =
+            ElectromagneticEngine::buildPrintOutput(m_calcInput, m_emResult);
+        QString data = QStringLiteral("计算单数据（引擎输出，双栏行已合并）：\n");
+        for (const auto &r : po.rows) {
+            if (r.isSectionHeader) {
+                data += QStringLiteral("【%1】\n").arg(r.leftName);
+                continue;
+            }
+            QString line;
+            if (!r.leftName.isEmpty())
+                line += QStringLiteral("%1 = %2 %3").arg(
+                    r.leftName, r.leftValue, r.leftUnit).trimmed() + QStringLiteral("；");
+            if (!r.rightName.isEmpty())
+                line += QStringLiteral("%1 = %2 %3").arg(
+                    r.rightName, r.rightValue, r.rightUnit).trimmed();
+            if (!line.isEmpty())
+                data += line + QStringLiteral("\n");
+        }
+        AiAnalysisDialog dlg(QStringLiteral("AI 计算书说明草稿"),
+            QStringLiteral("任务：为该变压器计算单起草一段文字说明（计算书用），"
+                           "包括产品概况、主要设计参数选取、性能指标达标情况和结构特点描述。"
+                           "只使用数据中出现的数值，不得编造。"),
+            data, this);
+        dlg.exec();
+    });
+    g3->addButton(aiDraftBtn);
 }
 
 // 竖排"程序选择"导航按钮（点击返回主界面），三个 Tab 各自调用创建
