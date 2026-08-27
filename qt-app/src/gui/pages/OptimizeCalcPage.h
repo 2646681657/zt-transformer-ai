@@ -33,6 +33,7 @@ signals:
 private slots:
     void onEnterCalcClicked();
     void onSelectionChanged();
+    void onVerifySheetClicked();   // 校验算单：约束预检
 
 private:
     void setupRibbon();

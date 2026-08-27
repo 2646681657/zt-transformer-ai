@@ -8,6 +8,8 @@
 #include "RecommendSchemes.h"
 #include "SchemePickDialog.h"
 #include "AiSchemeDialog.h"
+#include "ElectromagneticEngine.h"
+#include "SchemeConstraints.h"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -199,6 +201,8 @@ void OptimizeCalcPage::setupRibbon()
     g6->addButton(enterCalcBtn);
     auto *verifyBtn = new RibbonButton(QStringLiteral("校验算单"), ":/icons/verify.svg", g6);
     verifyBtn->setCheckable(false);
+    // 约束预检：用当前表格参数即时计算并校验约束，进入计算前预知方案可行性
+    connect(verifyBtn, &QToolButton::clicked, this, &OptimizeCalcPage::onVerifySheetClicked);
     g6->addButton(verifyBtn);
 
     // 保存选项分组引用用于验证
@@ -283,6 +287,58 @@ void OptimizeCalcPage::onEnterCalcClicked()
     SchemeStore::saveLastScheme(m_input);
     updateConfigFromRibbon();
     emit navigateToEnterCalc();
+}
+
+// 校验算单（约束预检）：用当前表格参数即时计算并校验约束，
+// 弹窗报告超差项，进入计算前预知方案可行性（不跳转、不记录方案）
+void OptimizeCalcPage::onVerifySheetClicked()
+{
+    // 收集当前表格参数与设计变量（与进入计算同链路，但不记忆/不跳转）
+    const TransformerParams params = m_paramTable->getParams();
+    CalcInput input = m_input;
+    m_paramTable->saveToInput(input);
+    input.capacity_kVA = params.capacity_kVA;
+    input.hvRated_kV = params.hvRatedVoltage_kV;
+    input.lvRated_kV = params.lvRatedVoltage_kV;
+
+    ElectromagneticEngine engine;
+    CalcResult result;
+    if (!engine.calcElectromagnetic(input, result) || !result.valid) {
+        QMessageBox::warning(this, QStringLiteral("校验失败"),
+            QStringLiteral("电磁计算未成功，请检查参数设置是否合理"));
+        return;
+    }
+
+    const SchemeConstraintsResult check = checkSchemeConstraints(params, result);
+    QString report = QStringLiteral(
+        "方案：%1kVA / 高压%2kV\n\n"
+        "空载损耗: %3 W\n"
+        "负载损耗: %4 W\n"
+        "总损耗: %5 W\n"
+        "空载电流: %6 %\n"
+        "阻抗电压: %7 %\n"
+        "油顶层温升: %8 K\n"
+        "高压绕组温升: %9 K\n")
+        .arg(params.capacity_kVA)
+        .arg(params.hvRatedVoltage_kV, 0, 'f', 1)
+        .arg(result.core.noLoadLoss_W, 0, 'f', 1)
+        .arg(result.winding.loadLoss_W, 0, 'f', 1)
+        .arg(result.core.noLoadLoss_W + result.winding.loadLoss_W, 0, 'f', 1)
+        .arg(result.core.noLoadCurrent_pct, 0, 'f', 2)
+        .arg(result.impedance.impedance_pct, 0, 'f', 2)
+        .arg(result.thermal.oilTopRise_K, 0, 'f', 1);
+    // arg() 占位符最多 9 个，低压绕组温升单独追加
+    report += QStringLiteral("低压绕组温升: %1 K\n\n")
+                  .arg(result.thermal.lvWindingRise_K, 0, 'f', 1);
+
+    if (check.passed) {
+        report += QStringLiteral("校验结论：全部指标在限值范围内");
+        QMessageBox::information(this, QStringLiteral("校验算单（约束预检）"), report);
+    } else {
+        report += QStringLiteral("校验结论：以下指标超差——\n%1")
+                      .arg(check.violations.join(QStringLiteral("\n")));
+        QMessageBox::warning(this, QStringLiteral("校验算单（约束预检）"), report);
+    }
 }
 
 // 应用方案设计变量到参数表：直接重建表格（不经 refreshParamTable，
