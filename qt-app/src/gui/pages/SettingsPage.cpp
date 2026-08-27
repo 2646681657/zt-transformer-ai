@@ -1,5 +1,6 @@
 #include "SettingsPage.h"
 #include "QuoteCalculator.h"
+#include "CloudLlmClient.h"
 
 #include <QVBoxLayout>
 #include <QHBoxLayout>
@@ -16,6 +17,10 @@
 #include <QStandardPaths>
 #include <QDir>
 #include <QFile>
+#include <QLineEdit>
+#include <QCheckBox>
+#include <QScrollArea>
+#include <QFrame>
 
 SettingsPage::SettingsPage(QWidget *parent)
     : QWidget(parent)
@@ -168,6 +173,56 @@ void SettingsPage::setupUi()
 
     contentLayout->addWidget(quoteGroup);
 
+    // ---- AI 配置 ----
+    auto *llmGroup = new QGroupBox(QStringLiteral("AI 配置（大语言模型）"), content);
+    llmGroup->setStyleSheet(groupStyle);
+    auto *llmForm = new QFormLayout(llmGroup);
+    llmForm->setContentsMargins(12, 8, 12, 12);
+    llmForm->setSpacing(10);
+
+    const QString editStyle =
+        "QLineEdit { background: #22262e; color: #e0e6ed;"
+        " border: 1px solid #3a4050; border-radius: 4px; padding: 4px 6px; }"
+        "QLineEdit:focus { border: 1px solid #00bcd4; }";
+
+    m_llmEnabled = new QCheckBox(QStringLiteral("启用 AI 功能"), llmGroup);
+    m_llmEnabled->setStyleSheet("QCheckBox { color: #e0e6ed; font-size: 12px; }");
+    llmForm->addRow(m_llmEnabled);
+
+    m_llmKeyEdit = new QLineEdit(llmGroup);
+    m_llmKeyEdit->setPlaceholderText(QStringLiteral("sk- 开头的 API 密钥"));
+    m_llmKeyEdit->setEchoMode(QLineEdit::Password);
+    m_llmKeyEdit->setStyleSheet(editStyle);
+    llmForm->addRow(QStringLiteral("API 密钥："), m_llmKeyEdit);
+
+    m_llmModelEdit = new QLineEdit(llmGroup);
+    m_llmModelEdit->setPlaceholderText(LlmConfig::defaultModel());
+    m_llmModelEdit->setStyleSheet(editStyle);
+    llmForm->addRow(QStringLiteral("模型名："), m_llmModelEdit);
+
+    m_llmUrlEdit = new QLineEdit(llmGroup);
+    m_llmUrlEdit->setPlaceholderText(LlmConfig::defaultCloudBaseUrl());
+    m_llmUrlEdit->setStyleSheet(editStyle);
+    llmForm->addRow(QStringLiteral("接口地址："), m_llmUrlEdit);
+
+    m_llmTestBtn = new QPushButton(QStringLiteral("测试连接"), llmGroup);
+    m_llmTestBtn->setCursor(Qt::PointingHandCursor);
+    m_llmTestBtn->setStyleSheet(
+        "QPushButton { background: #00bcd4; color: #1a1d23; font-size: 12px;"
+        " padding: 6px 16px; border: none; border-radius: 4px; font-weight: bold; }"
+        "QPushButton:hover { background: #4dd0e1; }"
+        "QPushButton:disabled { background: #45505e; color: #8a9bb0; }");
+    llmForm->addRow(QString(), m_llmTestBtn);
+
+    auto *llmHint = new QLabel(QStringLiteral(
+        "云端过渡验证（OpenAI 兼容协议）。关闭开关即离线模式，AI 功能整体停用；"
+        "密钥仅保存在本机用户目录，不会入库"), llmGroup);
+    llmHint->setWordWrap(true);
+    llmHint->setStyleSheet("color: #8a9bb0; font-size: 11px;");
+    llmForm->addRow(QString(), llmHint);
+    contentLayout->addWidget(llmGroup);
+
+
     // ---- 操作按钮 ----
     auto *btnLayout = new QHBoxLayout();
     btnLayout->setSpacing(10);
@@ -201,9 +256,23 @@ void SettingsPage::setupUi()
     connect(saveBtn, &QPushButton::clicked, this, &SettingsPage::onSave);
     connect(resetQuoteBtn, &QPushButton::clicked, this, &SettingsPage::onResetQuote);
     connect(restoreBtn, &QPushButton::clicked, this, &SettingsPage::onRestoreDefaults);
+    connect(m_llmTestBtn, &QPushButton::clicked, this, &SettingsPage::onTestLlm);
 
     contentLayout->addStretch();
-    mainLayout->addWidget(content, 1);
+
+    // 包一层滚动区域：窗口过矮时滚动查看，不再压缩变形
+    auto *scroll = new QScrollArea(this);
+    scroll->setWidgetResizable(true);
+    scroll->setFrameShape(QFrame::NoFrame);
+    scroll->setStyleSheet("QScrollArea { background: #1a1d23; }"
+                          "QScrollBar:vertical { background: #22262e; width: 8px; }"
+                          "QScrollBar::handle:vertical { background: #45505e;"
+                          " border-radius: 4px; min-height: 30px; }"
+                          "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {"
+                          " height: 0px; }");
+    content->setAutoFillBackground(true);
+    scroll->setWidget(content);
+    mainLayout->addWidget(scroll, 1);
 }
 
 void SettingsPage::loadSettings()
@@ -235,6 +304,13 @@ void SettingsPage::loadSettings()
     m_miscCost->setValue(p.miscCost);
 
     m_statusLabel->setText(QStringLiteral("设置已加载"));
+
+    // AI 配置
+    const LlmConfig llm = LlmConfig::load();
+    m_llmEnabled->setChecked(llm.enabled);
+    m_llmKeyEdit->setText(llm.apiKey);
+    m_llmModelEdit->setText(llm.model);
+    m_llmUrlEdit->setText(llm.baseUrl);
 }
 
 void SettingsPage::onSave()
@@ -259,11 +335,29 @@ void SettingsPage::onSave()
     const QString path = QuoteCalculator::defaultParamsPath();
     bool quoteOk = QuoteParams::saveToFile(path, p);
 
-    if (quoteOk) {
+    // AI 配置（留空字段回落默认值）
+    LlmConfig llm;
+    llm.enabled = m_llmEnabled->isChecked();
+    llm.provider = QStringLiteral("cloud");
+    llm.apiKey = m_llmKeyEdit->text().trimmed();
+    llm.model = m_llmModelEdit->text().trimmed().isEmpty()
+                    ? LlmConfig::defaultModel()
+                    : m_llmModelEdit->text().trimmed();
+    llm.baseUrl = m_llmUrlEdit->text().trimmed().isEmpty()
+                      ? LlmConfig::defaultCloudBaseUrl()
+                      : m_llmUrlEdit->text().trimmed();
+    const bool llmOk = llm.save();
+
+    if (quoteOk && llmOk) {
         m_statusLabel->setText(QStringLiteral("设置已保存"));
         m_statusLabel->setStyleSheet("color: #4caf50; font-size: 11px;");
         QMessageBox::information(this, QStringLiteral("保存成功"),
             QStringLiteral("设置已保存"));
+    } else if (quoteOk && !llmOk) {
+        m_statusLabel->setText(QStringLiteral("AI 配置保存失败，其余设置已保存"));
+        m_statusLabel->setStyleSheet("color: #ef5350; font-size: 11px;");
+        QMessageBox::warning(this, QStringLiteral("部分保存失败"),
+            QStringLiteral("AI 配置写入失败，其余设置已保存"));
     } else {
         m_statusLabel->setText(QStringLiteral("报价参数保存失败，其余设置已保存"));
         m_statusLabel->setStyleSheet("color: #ef5350; font-size: 11px;");
@@ -304,6 +398,11 @@ void SettingsPage::onRestoreDefaults()
     m_precisionSpin->setValue(3);
     m_printerCombo->setCurrentIndex(0);
 
+    m_llmEnabled->setChecked(false);
+    m_llmKeyEdit->clear();
+    m_llmModelEdit->clear();
+    m_llmUrlEdit->clear();
+
     QuoteParams p;
     m_steelPrice->setValue(p.steelPrice);
     m_cuPrice->setValue(p.cuPrice);
@@ -317,4 +416,50 @@ void SettingsPage::onRestoreDefaults()
     m_miscCost->setValue(p.miscCost);
 
     m_statusLabel->setText(QStringLiteral("已恢复默认设置（点击保存生效）"));
+}
+
+void SettingsPage::onTestLlm()
+{
+    // 用表单当前值即时测试（无需先保存）
+    LlmConfig cfg;
+    cfg.enabled = true;  // 测试时临时启用
+    cfg.provider = QStringLiteral("cloud");
+    cfg.apiKey = m_llmKeyEdit->text().trimmed();
+    cfg.model = m_llmModelEdit->text().trimmed().isEmpty()
+                    ? LlmConfig::defaultModel()
+                    : m_llmModelEdit->text().trimmed();
+    cfg.baseUrl = m_llmUrlEdit->text().trimmed().isEmpty()
+                      ? LlmConfig::defaultCloudBaseUrl()
+                      : m_llmUrlEdit->text().trimmed();
+
+    if (cfg.apiKey.isEmpty()) {
+        QMessageBox::warning(this, QStringLiteral("缺少密钥"),
+            QStringLiteral("请先填写 API 密钥再测试连接"));
+        return;
+    }
+
+    m_llmTestBtn->setEnabled(false);
+    m_llmTestBtn->setText(QStringLiteral("测试中…"));
+
+    // 客户端生命周期：用完即毁，parent 设为本页
+    auto *client = new CloudLlmClient(cfg, this);
+    QVector<LlmMessage> msgs;
+    msgs.append({QStringLiteral("user"),
+                 QStringLiteral("请只回复四个字：连接成功")});
+
+    connect(client, &LlmClient::finished, this, [this, client](const QString &reply) {
+        client->deleteLater();
+        m_llmTestBtn->setEnabled(true);
+        m_llmTestBtn->setText(QStringLiteral("测试连接"));
+        QMessageBox::information(this, QStringLiteral("测试成功"),
+            QStringLiteral("模型已应答：%1").arg(reply));
+    });
+    connect(client, &LlmClient::failed, this, [this, client](const QString &error) {
+        client->deleteLater();
+        m_llmTestBtn->setEnabled(true);
+        m_llmTestBtn->setText(QStringLiteral("测试连接"));
+        QMessageBox::warning(this, QStringLiteral("测试失败"), error);
+    });
+
+    client->chat(msgs, 32);
 }
