@@ -24,8 +24,10 @@ public:
 
 private:
     void setupTable();
+    // advanced=true 时节标题使用琥珀色调，与一~六节（青蓝调）区分高级参数
     void addSectionRow(int row, const QString &title,
-                       const QString &optName = {}, const QString &optValue = {});
+                       const QString &optName = {}, const QString &optValue = {},
+                       bool advanced = false);
     void addParamRow(int row, const QString &name, const QString &value,
                      const QString &optName = {}, const QString &optValue = {});
     // 添加设计变量行：左值绑定 key（数值列），右值绑定 optKey（选项列）

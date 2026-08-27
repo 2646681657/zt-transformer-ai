@@ -83,8 +83,16 @@ void SettingsPage::setupUi()
     m_precisionSpin->setStyleSheet(spinStyle);
     calcForm->addRow(QStringLiteral("结果小数位数："), m_precisionSpin);
 
+    // 默认计算模式（与参数设置页 Ribbon 共用偏好；参数页切换模式时也会即时更新）
+    m_calcModeCombo = new QComboBox(calcGroup);
+    m_calcModeCombo->setStyleSheet(comboStyle);
+    m_calcModeCombo->addItem(QStringLiteral("正常模式"), false);
+    m_calcModeCombo->addItem(QStringLiteral("专业模式"), true);
+    calcForm->addRow(QStringLiteral("默认计算模式："), m_calcModeCombo);
+
     auto *calcHint = new QLabel(QStringLiteral(
-        "影响电磁计算结果在表格中的显示精度（0-6 位）"), calcGroup);
+        "影响电磁计算结果在表格中的显示精度（0-6 位）；"
+        "默认计算模式在下次进入参数设置页时生效"), calcGroup);
     calcHint->setStyleSheet("color: #8a9bb0; font-size: 11px;");
     calcForm->addRow(QString(), calcHint);
     contentLayout->addWidget(calcGroup);
@@ -282,6 +290,10 @@ void SettingsPage::loadSettings()
     // 计算精度
     m_precisionSpin->setValue(s.value("calc/precision", 3).toInt());
 
+    // 默认计算模式（与参数设置页共用 optimize/proMode）
+    const bool proMode = s.value("optimize/proMode", false).toBool();
+    m_calcModeCombo->setCurrentIndex(proMode ? 1 : 0);
+
     // 默认打印机
     const QString printer = s.value("print/defaultPrinter").toString();
     int idx = m_printerCombo->findData(printer);
@@ -318,6 +330,8 @@ void SettingsPage::onSave()
     QSettings s("ZTF", "Designer");
     s.setValue("calc/precision", m_precisionSpin->value());
     s.setValue("print/defaultPrinter", m_printerCombo->currentData().toString());
+    // 默认计算模式（写入后下次进入参数设置页生效）
+    s.setValue("optimize/proMode", m_calcModeCombo->currentData().toBool());
 
     // 保存报价参数到持久化文件
     QuoteParams p;
@@ -397,6 +411,7 @@ void SettingsPage::onRestoreDefaults()
 
     m_precisionSpin->setValue(3);
     m_printerCombo->setCurrentIndex(0);
+    m_calcModeCombo->setCurrentIndex(0);
 
     m_llmEnabled->setChecked(false);
     m_llmKeyEdit->clear();

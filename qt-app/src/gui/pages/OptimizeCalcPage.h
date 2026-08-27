@@ -39,6 +39,8 @@ private:
     void setupMainArea();
     void updateConfigFromRibbon();
     void refreshParamTable();
+    // 帮助面板文案随计算模式切换（正常/专业）
+    void updateHelpPanel();
     void saveModePreference() const;
     // 应用方案设计变量到参数表（不动 Ribbon 结构选型）
     void applySchemeInput(const CalcInput &input);

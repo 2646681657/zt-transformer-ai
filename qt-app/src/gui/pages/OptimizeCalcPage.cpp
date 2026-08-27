@@ -253,17 +253,13 @@ void OptimizeCalcPage::setupMainArea()
     m_paramTable->loadParamsForConfig(m_params, m_config, m_input,
                                       m_config.calcMode == StructureConfig::Professional);
 
-    // Help panel
+    // Help panel（文案随计算模式切换，见 updateHelpPanel）
     m_helpPanel = new QTextEdit(this);
     m_helpPanel->setFixedWidth(200);
     m_helpPanel->setReadOnly(true);
-    m_helpPanel->setPlainText(QStringLiteral(
-        "操作说明:\n\n"
-        "1. 在左侧选择设计方案\n"
-        "2. 在中间表格修改参数\n"
-        "3. 确认后点击\"进入计算\""));
     m_helpPanel->setStyleSheet("QTextEdit { background: #1e2228; border-left: 1px solid #3a4050;"
                                "color: #8a9bb0; }");
+    updateHelpPanel();
 }
 
 void OptimizeCalcPage::onEnterCalcClicked()
@@ -411,6 +407,30 @@ void OptimizeCalcPage::onSelectionChanged()
 {
     updateConfigFromRibbon();
     refreshParamTable();
+    updateHelpPanel();
+}
+
+// 帮助面板文案随计算模式切换（正常/专业）
+void OptimizeCalcPage::updateHelpPanel()
+{
+    if (!m_helpPanel)
+        return;
+    const bool proMode = (m_config.calcMode == StructureConfig::Professional);
+    m_helpPanel->setPlainText(proMode
+        ? QStringLiteral(
+            "操作说明（专业模式）:\n\n"
+            "1. 在左侧选择设计方案\n"
+            "2. 在中间表格修改参数\n"
+            "   七~十节为高级参数：\n"
+            "   铁芯工艺/绕组油道/\n"
+            "   损耗系数/油箱结构\n"
+            "   供精细调校使用\n"
+            "3. 确认后点击\"进入计算\"")
+        : QStringLiteral(
+            "操作说明:\n\n"
+            "1. 在左侧选择设计方案\n"
+            "2. 在中间表格修改参数\n"
+            "3. 确认后点击\"进入计算\""));
 }
 
 // 从Ribbon各分组的选中索引映射到StructureConfig枚举值

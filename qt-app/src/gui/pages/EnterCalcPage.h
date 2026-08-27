@@ -31,8 +31,11 @@ class EnterCalcPage : public QWidget {
 public:
     explicit EnterCalcPage(QWidget *parent = nullptr);
     void setParams(const TransformerParams &params) { m_params = params; }
-    // 设置设计变量（参数设置页编辑值，未设置时用 SB20-M-630-10 默认值）
-    void setCalcInput(const CalcInput &input) { m_calcInput = input; }
+    // 设置设计变量（参数设置页编辑值，未设置时用 SB20-M-630-10 默认值）；
+    // 同时刷新输出打印 Tab 初始计算单（构造时不预计算，避免显示默认方案结果）
+    void setCalcInput(const CalcInput &input);
+    // 设置结构配置（参数设置页 Ribbon 选型，寻优与查看弹窗使用）
+    void setConfig(const StructureConfig &config) { m_config = config; }
 
 signals:
     void navigateBack();
@@ -138,6 +141,8 @@ private:
     void buildOptimizeRibbon();
     void buildSchemeRibbon();
     void buildPrintRibbon();
+    // 初始化设置组按钮的只读查看弹窗（各配置项当前值，修改入口在参数设置页）
+    void showInitInfoDialog(int index);
     // 当前计算结果映射为方案行，追加进方案表
     void appendScheme(const CalcInput &input, const CalcResult &result);
     // 确认指定行方案：记录基准并跳转输出打印 Tab

@@ -34,6 +34,7 @@
 #include <QInputDialog>
 #include <QDoubleSpinBox>
 #include <QDialogButtonBox>
+#include <QDialog>
 #include <QLineEdit>
 #include <QMenu>
 #include <QPrinter>
@@ -203,18 +204,45 @@ void EnterCalcPage::buildOptimizeRibbon()
     g0->addButton(aiBtn);
     m_optimizeRibbon->addSeparator();
 
-    auto *g1 = m_optimizeRibbon->addGroup(QStringLiteral("初始化设置(从左到右顺序设置)"));
-    g1->addButton(new RibbonButton(QStringLiteral("产品结构"), ":/icons/product.svg", g1));
-    g1->addButton(new RibbonButton(QStringLiteral("材料选择"), ":/icons/material.svg", g1));
-    g1->addButton(new RibbonButton(QStringLiteral("修正参数"), ":/icons/adjust.svg", g1));
-    g1->addButton(new RibbonButton(QStringLiteral("循环参数"), ":/icons/loop_param.svg", g1));
-    g1->addButton(new RibbonButton(QStringLiteral("约束条件"), ":/icons/constraint.svg", g1));
-    g1->addButton(new RibbonButton(QStringLiteral("初始化信息"), ":/icons/init_info.svg", g1));
+    auto *g1 = m_optimizeRibbon->addGroup(QStringLiteral("初始化设置(从左到右顺序查看)"));
+    // 只读查看入口：展示各项配置当前值（编辑入口在参数设置页，寻优前可在此核对）
+    const QStringList initButtons = {
+        QStringLiteral("产品结构"), QStringLiteral("材料选择"),
+        QStringLiteral("修正参数"), QStringLiteral("循环参数"),
+        QStringLiteral("约束条件"), QStringLiteral("初始化信息")
+    };
+    for (int i = 0; i < initButtons.size(); ++i) {
+        auto *btn = new RibbonButton(initButtons[i],
+            QStringLiteral(":/icons/%1.svg").arg(
+                QStringList{"product", "material", "adjust",
+                            "loop_param", "constraint", "init_info"}[i]), g1);
+        btn->setCheckable(false);
+        const int index = i;
+        connect(btn, &QToolButton::clicked, this,
+                [this, index]() { showInitInfoDialog(index); });
+        g1->addButton(btn);
+    }
     m_optimizeRibbon->addSeparator();
 
     auto *gMem = m_optimizeRibbon->addGroup(QStringLiteral("学习记忆"));
     auto *memBtn = new RibbonButton(QStringLiteral("打开记忆功能"), ":/icons/memory_on.svg", gMem);
     memBtn->setCheckable(false);
+    // 从记忆库选择方案：应用后立即重新计算（与侧边栏方案库选择同链路）
+    connect(memBtn, &QToolButton::clicked, this, [this]() {
+        QVector<SchemeStore::SchemeEntry> entries =
+            SchemeStore::loadEntries(SchemeStore::memorySchemesPath());
+        if (entries.isEmpty()) {
+            QMessageBox::information(this, QStringLiteral("记忆库为空"),
+                QStringLiteral("暂无使用记录，进入计算后将自动记录方案"));
+            return;
+        }
+        SchemePickDialog dlg(QStringLiteral("从记忆库中选择"), entries,
+                             SchemeStore::memorySchemesPath(), this);
+        if (dlg.exec() == QDialog::Accepted && dlg.hasSelection()) {
+            m_calcInput = dlg.selectedEntry().input;
+            onRunEmCalc();
+        }
+    });
     gMem->addButton(memBtn);
     m_optimizeRibbon->addSeparator();
 
@@ -586,6 +614,185 @@ void EnterCalcPage::buildPrintRibbon()
     g3->addButton(aiDraftBtn);
 }
 
+// 初始化设置组只读查看弹窗：6 个按钮分别展示各项配置当前值；
+// 数值来自参数设置页（m_params/m_config/m_calcInput）与寻优默认设置
+void EnterCalcPage::showInitInfoDialog(int index)
+{
+    // 生成「键: 值」只读表格弹窗
+    const auto makeDialog = [this](const QString &title,
+                                   const QVector<QPair<QString, QString>> &rows) {
+        auto *dlg = new QDialog(this);
+        dlg->setWindowTitle(title);
+        dlg->setModal(true);
+        dlg->resize(420, 360);
+        auto *layout = new QVBoxLayout(dlg);
+        layout->setContentsMargins(12, 12, 12, 12);
+        auto *table = new QTableWidget(rows.size(), 2, dlg);
+        table->setHorizontalHeaderLabels({QStringLiteral("配置项"), QStringLiteral("当前值")});
+        table->verticalHeader()->setVisible(false);
+        table->horizontalHeader()->setStretchLastSection(true);
+        table->setColumnWidth(0, 160);
+        table->setEditTriggers(QAbstractItemView::NoEditTriggers);
+        table->setSelectionBehavior(QAbstractItemView::SelectRows);
+        table->setAlternatingRowColors(true);
+        for (int i = 0; i < rows.size(); ++i) {
+            table->setItem(i, 0, new QTableWidgetItem(rows[i].first));
+            table->setItem(i, 1, new QTableWidgetItem(rows[i].second));
+        }
+        layout->addWidget(table, 1);
+        auto *closeBtn = new QPushButton(QStringLiteral("关闭"), dlg);
+        closeBtn->setCursor(Qt::PointingHandCursor);
+        closeBtn->setStyleSheet(
+            "QPushButton { background: #00bcd4; color: #1a1d23; font-size: 12px;"
+            " padding: 6px 20px; border: none; border-radius: 4px; font-weight: bold; }"
+            "QPushButton:hover { background: #4dd0e1; }");
+        connect(closeBtn, &QPushButton::clicked, dlg, &QDialog::accept);
+        layout->addWidget(closeBtn, 0, Qt::AlignCenter);
+        dlg->exec();
+        dlg->deleteLater();
+    };
+
+    // 结构配置枚举值转中文标签
+    const auto coreTypeStr = [this]() {
+        switch (m_config.coreType) {
+        case StructureConfig::StackedSilicon:   return QStringLiteral("叠铁芯");
+        case StructureConfig::StereoscopicRoll: return QStringLiteral("立体卷铁芯");
+        case StructureConfig::PlanarAmorphous:  return QStringLiteral("平面非晶合金");
+        }
+        return QStringLiteral("未知");
+    };
+    const auto coreShapeStr = [this]() {
+        switch (m_config.coreShape) {
+        case StructureConfig::Circle:     return QStringLiteral("圆形");
+        case StructureConfig::LongRound:  return QStringLiteral("长圆形");
+        case StructureConfig::Ellipse:    return QStringLiteral("椭圆形");
+        case StructureConfig::HalfEllipse: return QStringLiteral("半椭圆形");
+        case StructureConfig::EllipseLike: return QStringLiteral("类椭圆型");
+        }
+        return QStringLiteral("未知");
+    };
+    const auto windingStr = [this]() {
+        return m_config.windingForm == StructureConfig::DualSplit
+                   ? QStringLiteral("双分裂") : QStringLiteral("双绕组");
+    };
+    const auto hvCoilStr = [this]() {
+        return m_config.hvCoilStructure == StructureConfig::TwoSegCylinder
+                   ? QStringLiteral("两段圆筒式") : QStringLiteral("多层圆筒式");
+    };
+
+    switch (index) {
+    case 0: {  // 产品结构（参数设置页 Ribbon 选型结果）
+        makeDialog(QStringLiteral("产品结构 - 当前配置"), {
+            { QStringLiteral("变压器大类"),
+              m_config.category == StructureConfig::OilImmersed
+                  ? QStringLiteral("油浸式") : QStringLiteral("干式") },
+            { QStringLiteral("绕组工艺"),
+              m_config.windingProcess == StructureConfig::FoilWound
+                  ? QStringLiteral("箔绕") : QStringLiteral("线绕") },
+            { QStringLiteral("铁芯结构"), coreTypeStr() },
+            { QStringLiteral("铁芯截面形状"), coreShapeStr() },
+            { QStringLiteral("绕组方式"), windingStr() },
+            { QStringLiteral("高压线圈结构"), hvCoilStr() },
+            { QStringLiteral("计算模式"),
+              m_config.calcMode == StructureConfig::Professional
+                  ? QStringLiteral("专业模式") : QStringLiteral("正常模式") },
+        });
+        break;
+    }
+    case 1: {  // 材料选择（设计变量中的材料项，单价见系统设置页）
+        makeDialog(QStringLiteral("材料选择 - 当前配置"), {
+            { QStringLiteral("硅钢片牌号"), m_calcInput.steelGrade },
+            { QStringLiteral("硅钢片厚度(mm)"),
+              QString::number(m_calcInput.steelThickness_mm) },
+            { QStringLiteral("低压线圈材料"), QStringLiteral("铜（箔绕）") },
+            { QStringLiteral("高压线圈材料"), QStringLiteral("铜") },
+            { QStringLiteral("材料单价"),
+              QStringLiteral("见系统设置页「报价参数」") },
+        });
+        break;
+    }
+    case 2: {  // 修正参数（寻优出发点，参数设置页表格编辑值）
+        makeDialog(QStringLiteral("修正参数 - 当前设计变量基准"), {
+            { QStringLiteral("铁芯直径(mm)"),
+              QString::number(m_calcInput.coreDiameter_mm) },
+            { QStringLiteral("直线段长(mm)"),
+              QString::number(m_calcInput.coreStraight_mm) },
+            { QStringLiteral("低压匝数"), QString::number(m_calcInput.lvTurns) },
+            { QStringLiteral("高压每层匝数"),
+              QString::number(m_calcInput.hvTurnsPerLayer) },
+            { QStringLiteral("主空道宽(mm)"),
+              QString::number(m_calcInput.mainDuctWidth_mm) },
+            { QStringLiteral("叠片系数"), QString::number(m_calcInput.stackFactor) },
+            { QStringLiteral("修改入口"), QStringLiteral("返回参数设置页编辑") },
+        });
+        break;
+    }
+    case 3: {  // 循环参数（寻优引擎默认设置，暂不可配置）
+        makeDialog(QStringLiteral("循环参数 - 寻优计算设置"), {
+            { QStringLiteral("寻优方式"), QStringLiteral("网格搜索") },
+            { QStringLiteral("搜索维度"),
+              QStringLiteral("直径/直线段/低压匝数/高压每层匝数") },
+            { QStringLiteral("线程数"), QStringLiteral("4") },
+            { QStringLiteral("成本模型"), QStringLiteral("铜+铁+油") },
+            { QStringLiteral("备注"), QStringLiteral("围绕当前设计变量基准搜索") },
+        });
+        break;
+    }
+    case 4: {  // 约束条件（性能指标标准值与允许偏差）
+        makeDialog(QStringLiteral("约束条件 - 性能指标约束"), {
+            { QStringLiteral("空载损耗标准(W)"),
+              QString::number(m_params.noLoadLossStd_W) },
+            { QStringLiteral("空载损耗允许偏差(%)"),
+              QString::number(m_params.noLoadLossMaxDev_pct) },
+            { QStringLiteral("负载损耗标准(W)"),
+              QString::number(m_params.loadLossStd_W) },
+            { QStringLiteral("负载损耗允许偏差(%)"),
+              QString::number(m_params.loadLossMaxDev_pct) },
+            { QStringLiteral("总损耗标准(W)"),
+              QString::number(m_params.totalLossStd_W) },
+            { QStringLiteral("总损耗允许偏差(%)"),
+              QString::number(m_params.totalLossMaxDev_pct) },
+            { QStringLiteral("阻抗电压标准(%)"),
+              QString::number(m_params.impedanceVoltageStd_pct) },
+            { QStringLiteral("阻抗电压允许偏差(%)"),
+              QStringLiteral("-%1 / +%2")
+                  .arg(QString::number(m_params.impedanceVoltageMinDev_pct),
+                       QString::number(m_params.impedanceVoltageMaxDev_pct)) },
+            { QStringLiteral("空载电流标准(%)"),
+              QString::number(m_params.noLoadCurrentStd_pct) },
+            { QStringLiteral("空载电流允许偏差(%)"),
+              QString::number(m_params.noLoadCurrentMaxDev_pct) },
+            { QStringLiteral("温升限值(K)"),
+              QStringLiteral("油面 %1 / 高压 %2 / 低压 %3")
+                  .arg(QString::number(m_params.oilTopTempRise_K),
+                       QString::number(m_params.hvCoilTempRise_K),
+                       QString::number(m_params.lvCoilTempRise_K)) },
+        });
+        break;
+    }
+    case 5: {  // 初始化信息（汇总以上各项，寻优前核对）
+        makeDialog(QStringLiteral("初始化信息 - 汇总确认"), {
+            { QStringLiteral("产品结构"),
+              coreTypeStr() + QStringLiteral(" / ") + coreShapeStr() +
+                  QStringLiteral(" / ") + windingStr() },
+            { QStringLiteral("材料"), m_calcInput.steelGrade },
+            { QStringLiteral("设计变量基准"),
+              QStringLiteral("D%1mm / N2=%2")
+                  .arg(QString::number(m_calcInput.coreDiameter_mm),
+                       QString::number(m_calcInput.lvTurns)) },
+            { QStringLiteral("寻优方式"), QStringLiteral("网格搜索（4线程）") },
+            { QStringLiteral("约束条件"), QStringLiteral("损耗/阻抗/温升超差剔除") },
+            { QStringLiteral("核对结果"), m_hasResult
+                  ? QStringLiteral("已有计算结果，可直接寻优或重新核对")
+                  : QStringLiteral("建议先运行快速计算验证基准方案") },
+        });
+        break;
+    }
+    default:
+        break;
+    }
+}
+
 // 竖排"程序选择"导航按钮（点击返回主界面），三个 Tab 各自调用创建
 QPushButton *EnterCalcPage::createNavButton(QWidget *parent)
 {
@@ -637,7 +844,7 @@ void EnterCalcPage::setupOptimizeTab()
     table->verticalHeader()->setVisible(false);
     table->setAlternatingRowColors(true);
     table->horizontalHeader()->setStretchLastSection(true);
-    table->setColumnWidth(0, 30);
+    table->setColumnWidth(0, 44);   // 序号列：容纳两位数序号完整显示
     table->setColumnWidth(1, 180);
     table->setColumnWidth(2, 150);
 
@@ -715,14 +922,25 @@ void EnterCalcPage::setupPrintTab()
     outer->addWidget(createNavButton(tab));
 
     m_printTable = new PrintTableWidget(tab);
-    // 初始显示当前设计变量（m_calcInput，默认 SB20-M-630-10）的计算结果
+    // 初始计算单延迟到 setCalcInput（进入页面同步设计变量时计算），
+    // 构造时 m_calcInput 尚未同步，预计算会显示默认方案结果
+    outer->addWidget(m_printTable, 1);
+    m_stack->addWidget(tab);
+}
+
+void EnterCalcPage::setCalcInput(const CalcInput &input)
+{
+    m_calcInput = input;
+    // 进入计算页时刷新打印表初始计算单（当前设计变量的计算结果；
+    // 快速计算/寻优完成后会由 onRunEmCalc 等用最新结果覆盖）
+    if (!m_printTable) {
+        return;   // 构造期间 Tab 未建完（正常流程不会发生）
+    }
     CalcResult initResult;
     if (m_engine.calcElectromagnetic(m_calcInput, initResult) && initResult.valid) {
         m_printTable->loadData(
             ElectromagneticEngine::buildPrintOutput(m_calcInput, initResult));
     }
-    outer->addWidget(m_printTable, 1);
-    m_stack->addWidget(tab);
 }
 
 void EnterCalcPage::onTabChanged(int index)
@@ -996,7 +1214,9 @@ void EnterCalcPage::onSaveCalcSheet()
 
 namespace {
 
-// 表格分页绘制到打印机（表头每页重复，列宽按打印区宽度等比）
+// 表格分页绘制到打印机（表头每页重复，列宽按打印区宽度等比）；
+// 按页面物理尺寸设置打印字号（HighResolution 打印机 DPI 远高于屏幕，
+// 直接用屏幕字号会导致表格在纸面上只占一角）
 void paintTableToPrinter(QPrinter *printer, QTableWidget *table)
 {
     QPainter painter(printer);
@@ -1018,13 +1238,16 @@ void paintTableToPrinter(QPrinter *printer, QTableWidget *table)
         ratios[c] /= totalRatio;
     }
 
-    const QFont bodyFont = table->font();
+    // 打印专用字号：point 为物理单位，与打印机分辨率解耦；
+    // 度量必须以打印机设备为基准（QFontMetricsF 默认按屏幕 DPI 换算，
+    // 在 HighResolution 打印画布上行高会缩成十几个设备像素，整表挤压）
+    const QFont bodyFont(QStringLiteral("Microsoft YaHei"), 9);
     QFont bFont = bodyFont;
     bFont.setBold(true);
-    const QFontMetrics fmBody(bodyFont);
-    const QFontMetrics fmHead(bFont);
-    const double rowH = fmBody.height() + 10.0;
-    const double headH = fmHead.height() + 10.0;
+    const QFontMetricsF fmBody(bodyFont, printer);
+    const QFontMetricsF fmHead(bFont, printer);
+    const double rowH = fmBody.height() * 1.4;
+    const double headH = fmHead.height() * 1.4;
 
     auto drawRow = [&](int row, double y, bool header) {
         double x = page.left();

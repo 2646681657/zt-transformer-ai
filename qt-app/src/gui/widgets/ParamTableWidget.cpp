@@ -24,7 +24,8 @@ void ParamTableWidget::setupTable()
 }
 
 void ParamTableWidget::addSectionRow(int row, const QString &title,
-                                      const QString &optName, const QString &optValue)
+                                      const QString &optName, const QString &optValue,
+                                      bool advanced)
 {
     insertRow(row);
     auto *item = new QTableWidgetItem(title);
@@ -32,17 +33,19 @@ void ParamTableWidget::addSectionRow(int row, const QString &title,
     QFont font = item->font();
     font.setBold(true);
     item->setFont(font);
-    item->setBackground(QColor("#1a3a4a"));
+    // 高级节（七~十）琥珀色标题，普通节（一~六）保持青蓝色
+    item->setBackground(advanced ? QColor("#4a3210") : QColor("#1a3a4a"));
+    item->setForeground(advanced ? QColor("#ffb74d") : QColor("#e0e6ed"));
     auto *numItem = new QTableWidgetItem(QString::number(row + 1));
     numItem->setTextAlignment(Qt::AlignCenter);
     setItem(row, 0, numItem);
     setItem(row, 1, item);
     setItem(row, 2, new QTableWidgetItem(""));
     auto *optNameItem = new QTableWidgetItem(optName);
-    optNameItem->setBackground(QColor("#1a3a4a"));
+    optNameItem->setBackground(advanced ? QColor("#4a3210") : QColor("#1a3a4a"));
     setItem(row, 3, optNameItem);
     auto *optValItem = new QTableWidgetItem(optValue);
-    optValItem->setBackground(QColor("#1a3a4a"));
+    optValItem->setBackground(advanced ? QColor("#4a3210") : QColor("#1a3a4a"));
     setItem(row, 4, optValItem);
     setItem(row, 5, new QTableWidgetItem(""));
 }
@@ -366,7 +369,7 @@ void ParamTableWidget::saveToInput(CalcInput &input) const
 void ParamTableWidget::addProModeSections(int &row, const CalcInput &input)
 {
     // 七 铁芯工艺
-    addSectionRow(row++, QStringLiteral("七 铁芯工艺（高级）"));
+    addSectionRow(row++, QStringLiteral("七 铁芯工艺（高级）"), {}, {}, true);
     addInputRow(row++, "T形轭片叠厚-宽90(mm)", QString::number(input.yokePiece1Stack_mm),
                 "轭片放大片宽(mm)", QString::number(input.yokeWidenTo_mm),
                 "yokePiece1Stack", "yokeWidenTo");
@@ -385,7 +388,7 @@ void ParamTableWidget::addProModeSections(int &row, const CalcInput &input)
     }
 
     // 八 绕组工艺（油道与绝缘细节）
-    addSectionRow(row++, QStringLiteral("八 绕组工艺（高级）"));
+    addSectionRow(row++, QStringLiteral("八 绕组工艺（高级）"), {}, {}, true);
     addInputRow(row++, "高压导线绝缘增厚(mm)", QString::number(input.hvWireInsulAdd_mm),
                 "低压层间绝缘层数", QString::number(input.lvLayerInsulCount),
                 "hvWireInsulAdd", "lvLayerInsulCount");
@@ -410,7 +413,7 @@ void ParamTableWidget::addProModeSections(int &row, const CalcInput &input)
     }
 
     // 九 损耗系数
-    addSectionRow(row++, QStringLiteral("九 损耗系数（高级）"));
+    addSectionRow(row++, QStringLiteral("九 损耗系数（高级）"), {}, {}, true);
     addInputRow(row++, "杂散损耗系数", QString::number(input.strayLossFactor),
                 "引线损耗(W)", QString::number(input.leadLoss_W),
                 "strayLossFactor", "leadLoss");
@@ -419,7 +422,7 @@ void ParamTableWidget::addProModeSections(int &row, const CalcInput &input)
                 "lvExtraLoss", {});
 
     // 十 油箱与结构
-    addSectionRow(row++, QStringLiteral("十 油箱与结构（高级）"));
+    addSectionRow(row++, QStringLiteral("十 油箱与结构（高级）"), {}, {}, true);
     addInputRow(row++, "箱底油空(mm)", QString::number(input.tankBottomOil_mm),
                 "垫脚高(mm)", QString::number(input.tankFoot_mm),
                 "tankBottomOil", "tankFoot");
