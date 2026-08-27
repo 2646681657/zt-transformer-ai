@@ -8,7 +8,7 @@ set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
 
-find_package(Qt6 REQUIRED COMPONENTS Core Widgets Gui Concurrent PrintSupport)
+find_package(Qt6 REQUIRED COMPONENTS Core Widgets Gui Concurrent PrintSupport Network)
 qt_standard_project_setup()
 
 file(GLOB_RECURSE CORE_SOURCES src/core/*.cpp src/core/*.h)
@@ -43,6 +43,7 @@ target_link_libraries(ztf-designer PRIVATE
     Qt6::Gui
     Qt6::Concurrent
     Qt6::PrintSupport
+    Qt6::Network
 )
 
 set_target_properties(ztf-designer PROPERTIES

@@ -7,6 +7,7 @@
 #include "SchemeStore.h"
 #include "RecommendSchemes.h"
 #include "SchemePickDialog.h"
+#include "AiSchemeDialog.h"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -225,6 +226,16 @@ void OptimizeCalcPage::setupMainArea()
 
     // Left sidebar
     m_sidebar = new SidebarPanel(this);
+    // AI 方案助手（独立按钮：走 LLM 解析，非方案库链路）
+    auto *aiBtn = m_sidebar->addButton(QStringLiteral("AI 方案助手"), ":/icons/recommend.svg");
+    connect(aiBtn, &QToolButton::clicked, this, [this]() {
+        // 先把当前表格编辑值收进 m_input（AI 未提及字段保持这些值）
+        m_paramTable->saveToInput(m_input);
+        AiSchemeDialog dlg(m_input, this);
+        if (dlg.exec() == QDialog::Accepted) {
+            applySchemeInput(dlg.resultInput());
+        }
+    });
     m_sidebar->addButton(QStringLiteral("选用推荐方案"), ":/icons/recommend.svg");
     m_sidebar->addButton(QStringLiteral("保存为我的方案"), ":/icons/save_scheme.svg");
     m_sidebar->addButton(QStringLiteral("从方案库中选择"), ":/icons/library.svg");
@@ -232,7 +243,7 @@ void OptimizeCalcPage::setupMainArea()
     m_sidebar->addButton(QStringLiteral("采用上一次方案"), ":/icons/undo.svg");
     auto *enterBtn = m_sidebar->addButton(QStringLiteral("进入计算"), ":/icons/enter_calc.svg");
     connect(enterBtn, &QToolButton::clicked, this, &OptimizeCalcPage::onEnterCalcClicked);
-    // 前 5 个方案按钮（0=推荐 1=保存我的 2=方案库 3=记忆库 4=上次方案）
+    // 方案按钮分发（0=AI助手(独立连接) 1=推荐 2=保存我的 3=方案库 4=记忆库 5=上次方案 6=进入计算(独立连接)）
     connect(m_sidebar, &SidebarPanel::buttonClicked,
             this, &OptimizeCalcPage::onSchemeButtonClicked);
 
@@ -267,6 +278,10 @@ void OptimizeCalcPage::onEnterCalcClicked()
     }
     m_params = m_paramTable->getParams();
     m_paramTable->saveToInput(m_input);   // 收集表格中编辑的设计变量
+    // 表格「一 输入信息」节编辑的额定值同步回 CalcInput（保持两体系一致）
+    m_input.capacity_kVA = m_params.capacity_kVA;
+    m_input.hvRated_kV = m_params.hvRatedVoltage_kV;
+    m_input.lvRated_kV = m_params.lvRatedVoltage_kV;
     // 进入计算自动记录：记忆库（去重限量）+ 上次方案
     SchemeStore::appendMemory(m_input);
     SchemeStore::saveLastScheme(m_input);
@@ -279,15 +294,22 @@ void OptimizeCalcPage::onEnterCalcClicked()
 void OptimizeCalcPage::applySchemeInput(const CalcInput &input)
 {
     m_input = input;
+    // 先收集用户在表格中编辑过的输入信息（海拔/环境温度等），
+    // 重建表格时保留这些值；再同步额定值（容量/电压）
+    m_params = m_paramTable->getParams();
+    m_params.capacity_kVA = input.capacity_kVA;
+    m_params.hvRatedVoltage_kV = input.hvRated_kV;
+    m_params.lvRatedVoltage_kV = input.lvRated_kV;
     const bool proMode = (m_config.calcMode == StructureConfig::Professional);
     m_paramTable->loadParamsForConfig(m_params, m_config, m_input, proMode);
 }
 
-// 侧边栏五个方案按钮分发（进入计算按钮为 index 5，已独立连接，此处忽略）
+// 侧边栏方案按钮分发（0=AI助手 6=进入计算，均已独立连接，此处忽略；
+// 1=推荐 2=保存我的 3=方案库 4=记忆库 5=上次方案）
 void OptimizeCalcPage::onSchemeButtonClicked(int index)
 {
     switch (index) {
-    case 0: {  // 选用推荐方案（内置推荐表，只读无删除）
+    case 1: {  // 选用推荐方案（内置推荐表，只读无删除）
         QVector<SchemeStore::SchemeEntry> entries;
         for (const auto &s : RecommendSchemes::all()) {
             SchemeStore::SchemeEntry e;
@@ -301,7 +323,7 @@ void OptimizeCalcPage::onSchemeButtonClicked(int index)
         }
         break;
     }
-    case 1: {  // 保存为我的方案（命名保存当前设计变量）
+    case 2: {  // 保存为我的方案（命名保存当前设计变量）
         bool ok = false;
         const QString name = QInputDialog::getText(this,
             QStringLiteral("保存为我的方案"),
@@ -339,7 +361,7 @@ void OptimizeCalcPage::onSchemeButtonClicked(int index)
         }
         break;
     }
-    case 2: {  // 从方案库中选择（我的方案库，支持删除所选）
+    case 3: {  // 从方案库中选择（我的方案库，支持删除所选）
         QVector<SchemeStore::SchemeEntry> entries =
             SchemeStore::loadEntries(SchemeStore::mySchemesPath());
         if (entries.isEmpty()) {
@@ -354,7 +376,7 @@ void OptimizeCalcPage::onSchemeButtonClicked(int index)
         }
         break;
     }
-    case 3: {  // 从记忆库中选择（最近使用的方案，支持删除所选）
+    case 4: {  // 从记忆库中选择（最近使用的方案，支持删除所选）
         QVector<SchemeStore::SchemeEntry> entries =
             SchemeStore::loadEntries(SchemeStore::memorySchemesPath());
         if (entries.isEmpty()) {
@@ -369,7 +391,7 @@ void OptimizeCalcPage::onSchemeButtonClicked(int index)
         }
         break;
     }
-    case 4: {  // 采用上一次方案
+    case 5: {  // 采用上一次方案
         CalcInput last;
         if (!SchemeStore::loadLastScheme(last)) {
             QMessageBox::information(this, QStringLiteral("暂无记录"),
@@ -380,7 +402,7 @@ void OptimizeCalcPage::onSchemeButtonClicked(int index)
         break;
     }
     default:
-        break;   // index 5 为进入计算按钮，已独立连接
+        break;   // index 0=AI助手、6=进入计算已独立连接
     }
 }
 

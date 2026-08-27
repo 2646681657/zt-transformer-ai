@@ -1,4 +1,5 @@
 #include "EnterCalcPage.h"
+#include "PrintOutputData.h"
 #include "RibbonBar.h"
 #include "RibbonGroup.h"
 #include "RibbonButton.h"
@@ -11,6 +12,7 @@
 #include "SchemeStore.h"
 #include "RecommendSchemes.h"
 #include "SchemePickDialog.h"
+#include "AiAnalysisDialog.h"
 #include <QDateTime>
 #include <QDir>
 #include <algorithm>
@@ -145,6 +147,60 @@ void EnterCalcPage::buildOptimizeRibbon()
     verifyBtn->setCheckable(false);
     connect(verifyBtn, &QToolButton::clicked, this, &EnterCalcPage::onSelfTest);
     g0->addButton(verifyBtn);
+    // AI 解读：当前计算结果 → LLM 解读文字（阶段三）
+    auto *aiBtn = new RibbonButton(QStringLiteral("AI 解读"), ":/icons/memory_on.svg", g0);
+    aiBtn->setCheckable(false);
+    connect(aiBtn, &QToolButton::clicked, this, [this]() {
+        if (!m_hasResult) {
+            QMessageBox::information(this, QStringLiteral("暂无结果"),
+                QStringLiteral("请先执行快速计算或寻优计算，再使用 AI 解读"));
+            return;
+        }
+        const QString data = QStringLiteral(
+            "变压器电磁计算结果（引擎输出）：\n"
+            "容量: %1 kVA；高压/低压: %2/%3 kV\n"
+            "空载损耗: %4 W；负载损耗: %5 W；阻抗电压: %6%\n"
+            "心柱磁密: %7 T；铁轭磁密: %8 T\n"
+            "空载电流: %9%\n"
+            "硅钢片总重: %10 kg；导线总重: %11 kg\n"
+            "油面温升: %12 K；高压绕组温升: %13 K；低压绕组温升: %14 K\n"
+            "高压电密: %15 A/mm²；低压电密: %16 A/mm²\n"
+            "变压器总重: %17 kg；材料成本: %18 元\n"
+            "性能标准：空载损耗标准 %19 W，负载损耗标准 %20 W，"
+            "阻抗电压标准 %21%，空载电流标准 %22%\n"
+            "约束校验：%23")
+            .arg(m_params.capacity_kVA).arg(m_params.hvRatedVoltage_kV).arg(m_params.lvRatedVoltage_kV)
+            .arg(m_emResult.core.noLoadLoss_W, 0, 'f', 0)
+            .arg(m_emResult.winding.loadLoss_W, 0, 'f', 0)
+            .arg(m_emResult.impedance.impedance_pct, 0, 'f', 2)
+            .arg(m_emResult.core.fluxDensity_core_T, 0, 'f', 3)
+            .arg(m_emResult.core.fluxDensity_yoke_T, 0, 'f', 3)
+            .arg(m_emResult.core.noLoadCurrent_pct, 0, 'f', 2)
+            .arg(m_emResult.core.coreWeight_kg, 0, 'f', 0)
+            .arg(m_emResult.winding.wireWeightTotal_kg, 0, 'f', 0)
+            .arg(m_emResult.thermal.oilRise_K, 0, 'f', 1)
+            .arg(m_emResult.thermal.hvWindingRise_K, 0, 'f', 1)
+            .arg(m_emResult.thermal.lvWindingRise_K, 0, 'f', 1)
+            .arg(m_emResult.winding.hvCurrentDensity, 0, 'f', 2)
+            .arg(m_emResult.winding.lvCurrentDensity, 0, 'f', 2)
+            .arg(m_emResult.mass.totalWeight_kg, 0, 'f', 0)
+            .arg(m_emResult.cost.materialCost, 0, 'f', 0)
+            .arg(m_params.noLoadLossStd_W, 0, 'f', 0)
+            .arg(m_params.loadLossStd_W, 0, 'f', 0)
+            .arg(m_params.impedanceVoltageStd_pct, 0, 'f', 2)
+            .arg(m_params.noLoadCurrentStd_pct, 0, 'f', 2)
+            .arg([&]() {
+                const auto check = checkSchemeConstraints(m_params, m_emResult);
+                return check.passed ? QStringLiteral("全部通过")
+                                    : check.violations.join(QStringLiteral("；"));
+            }());
+        AiAnalysisDialog dlg(QStringLiteral("AI 计算结果解读"),
+            QStringLiteral("任务：解读该电磁计算结果，评估各项指标是否达标、"
+                           "哪些指标偏离标准较大，并给出调整设计变量的方向建议。"),
+            data, this);
+        dlg.exec();
+    });
+    g0->addButton(aiBtn);
     m_optimizeRibbon->addSeparator();
 
     auto *g1 = m_optimizeRibbon->addGroup(QStringLiteral("初始化设置(从左到右顺序设置)"));
@@ -321,6 +377,45 @@ void EnterCalcPage::buildSchemeRibbon()
     compareBtn->setCheckable(false);
     connect(compareBtn, &QToolButton::clicked, this, &EnterCalcPage::onCompareLibrary);
     g4->addButton(compareBtn);
+    // AI 对比：方案表前若干方案汇总指标 → LLM 对比评价（阶段三）
+    auto *aiCompareBtn = new RibbonButton(QStringLiteral("AI 对比"), ":/icons/memory_on.svg", g4);
+    aiCompareBtn->setCheckable(false);
+    connect(aiCompareBtn, &QToolButton::clicked, this, [this]() {
+        // 取方案表前 5 个方案的汇总指标（方案序号 + 引擎输出）
+        if (m_schemeData.isEmpty()) {
+            QMessageBox::information(this, QStringLiteral("暂无方案"),
+                QStringLiteral("请先执行计算或寻优生成方案，再使用 AI 对比"));
+            return;
+        }
+        QList<int> idxs = m_schemeData.keys();
+        std::sort(idxs.begin(), idxs.end());
+        QString data = QStringLiteral("候选方案对比（均为引擎计算结果）：\n");
+        int count = 0;
+        for (int idx : idxs) {
+            if (count++ >= 5) break;   // 最多 5 个，控制 token
+            const auto &c = m_schemeData.value(idx);
+            const auto &r = c.result;
+            data += QStringLiteral(
+                "方案%1：主材成本 %2 元；空载损耗 %3 W；负载损耗 %4 W；"
+                "阻抗电压 %5%；心柱磁密 %6 T；油面温升 %7 K；"
+                "铁芯直径 %8 mm；低压匝数 %9\n")
+                .arg(idx)
+                .arg(c.scheme.costCuFeOil, 0, 'f', 0)
+                .arg(r.core.noLoadLoss_W, 0, 'f', 0)
+                .arg(r.winding.loadLoss_W, 0, 'f', 0)
+                .arg(r.impedance.impedance_pct, 0, 'f', 2)
+                .arg(r.core.fluxDensity_core_T, 0, 'f', 3)
+                .arg(r.thermal.oilRise_K, 0, 'f', 1)
+                .arg(c.input.coreDiameter_mm, 0, 'f', 0)
+                .arg(c.input.lvTurns);
+        }
+        AiAnalysisDialog dlg(QStringLiteral("AI 方案对比"),
+            QStringLiteral("任务：对比以上候选方案，从成本、损耗性能、温升等维度"
+                           "评价各方案优劣，给出推荐排序和理由。"),
+            data, this);
+        dlg.exec();
+    });
+    g4->addButton(aiCompareBtn);
     m_schemeRibbon->addSeparator();
 
     // ---- 组5 方案选择：方案库/方案序号 + 方案确认 ----
@@ -449,6 +544,46 @@ void EnterCalcPage::buildPrintRibbon()
     customBtn->setCheckable(false);
     connect(customBtn, &QToolButton::clicked, this, &EnterCalcPage::onSaveCustomSheet);
     g2->addButton(customBtn);
+    m_printRibbon->addSeparator();
+
+    // ---- AI 说明草稿：基于引擎输出生成计算书文字说明（阶段三）----
+    auto *g3 = m_printRibbon->addGroup(QStringLiteral("AI 辅助"));
+    auto *aiDraftBtn = new RibbonButton(QStringLiteral("AI 说明草稿"), ":/icons/memory_on.svg", g3);
+    aiDraftBtn->setCheckable(false);
+    connect(aiDraftBtn, &QToolButton::clicked, this, [this]() {
+        if (!m_hasResult) {
+            onRunEmCalc();
+            if (!m_hasResult) {
+                return;
+            }
+        }
+        // 打印表数据 → 文本（左/右双栏行合并为键值对）
+        const PrintOutputData po =
+            ElectromagneticEngine::buildPrintOutput(m_calcInput, m_emResult);
+        QString data = QStringLiteral("计算单数据（引擎输出，双栏行已合并）：\n");
+        for (const auto &r : po.rows) {
+            if (r.isSectionHeader) {
+                data += QStringLiteral("【%1】\n").arg(r.leftName);
+                continue;
+            }
+            QString line;
+            if (!r.leftName.isEmpty())
+                line += QStringLiteral("%1 = %2 %3").arg(
+                    r.leftName, r.leftValue, r.leftUnit).trimmed() + QStringLiteral("；");
+            if (!r.rightName.isEmpty())
+                line += QStringLiteral("%1 = %2 %3").arg(
+                    r.rightName, r.rightValue, r.rightUnit).trimmed();
+            if (!line.isEmpty())
+                data += line + QStringLiteral("\n");
+        }
+        AiAnalysisDialog dlg(QStringLiteral("AI 计算书说明草稿"),
+            QStringLiteral("任务：为该变压器计算单起草一段文字说明（计算书用），"
+                           "包括产品概况、主要设计参数选取、性能指标达标情况和结构特点描述。"
+                           "只使用数据中出现的数值，不得编造。"),
+            data, this);
+        dlg.exec();
+    });
+    g3->addButton(aiDraftBtn);
 }
 
 // 竖排"程序选择"导航按钮（点击返回主界面），三个 Tab 各自调用创建

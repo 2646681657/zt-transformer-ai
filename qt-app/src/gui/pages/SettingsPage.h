@@ -9,6 +9,9 @@ class QSpinBox;
 class QDoubleSpinBox;
 class QComboBox;
 class QLabel;
+class QLineEdit;
+class QCheckBox;
+class QPushButton;
 
 class SettingsPage : public QWidget {
     Q_OBJECT
@@ -19,6 +22,7 @@ private slots:
     void onSave();
     void onResetQuote();
     void onRestoreDefaults();
+    void onTestLlm();
 
 private:
     void setupUi();
@@ -40,6 +44,12 @@ private:
     QDoubleSpinBox *m_profitPct = nullptr;
     QDoubleSpinBox *m_taxPct = nullptr;
     QDoubleSpinBox *m_miscCost = nullptr;
+    // AI 配置
+    QCheckBox *m_llmEnabled = nullptr;
+    QLineEdit *m_llmKeyEdit = nullptr;
+    QLineEdit *m_llmModelEdit = nullptr;
+    QLineEdit *m_llmUrlEdit = nullptr;
+    QPushButton *m_llmTestBtn = nullptr;
 
     QLabel *m_statusLabel = nullptr;
 };
