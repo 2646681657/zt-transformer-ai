@@ -1,6 +1,6 @@
 #ifndef SETTINGSPAGE_H
 #define SETTINGSPAGE_H
-// 系统设置页（程序工具子页）：计算精度 + 报价参数 + 默认打印机
+// 系统设置页（程序工具子页）：计算精度 + 默认计算模式 + 报价参数 + 默认打印机 + AI 配置
 
 #include <QWidget>
 #include "QuoteCalculator.h"
@@ -30,6 +30,8 @@ private:
 
     // 计算精度
     QSpinBox *m_precisionSpin = nullptr;
+    // 默认计算模式（与参数设置页 Ribbon 共用 optimize/proMode 偏好）
+    QComboBox *m_calcModeCombo = nullptr;
     // 默认打印机
     QComboBox *m_printerCombo = nullptr;
     // 报价参数 - 材料单价
