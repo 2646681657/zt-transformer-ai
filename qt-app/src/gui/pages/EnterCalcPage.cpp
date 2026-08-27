@@ -227,6 +227,22 @@ void EnterCalcPage::buildOptimizeRibbon()
     auto *gMem = m_optimizeRibbon->addGroup(QStringLiteral("学习记忆"));
     auto *memBtn = new RibbonButton(QStringLiteral("打开记忆功能"), ":/icons/memory_on.svg", gMem);
     memBtn->setCheckable(false);
+    // 从记忆库选择方案：应用后立即重新计算（与侧边栏方案库选择同链路）
+    connect(memBtn, &QToolButton::clicked, this, [this]() {
+        QVector<SchemeStore::SchemeEntry> entries =
+            SchemeStore::loadEntries(SchemeStore::memorySchemesPath());
+        if (entries.isEmpty()) {
+            QMessageBox::information(this, QStringLiteral("记忆库为空"),
+                QStringLiteral("暂无使用记录，进入计算后将自动记录方案"));
+            return;
+        }
+        SchemePickDialog dlg(QStringLiteral("从记忆库中选择"), entries,
+                             SchemeStore::memorySchemesPath(), this);
+        if (dlg.exec() == QDialog::Accepted && dlg.hasSelection()) {
+            m_calcInput = dlg.selectedEntry().input;
+            onRunEmCalc();
+        }
+    });
     gMem->addButton(memBtn);
     m_optimizeRibbon->addSeparator();
 
