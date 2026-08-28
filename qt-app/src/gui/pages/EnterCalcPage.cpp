@@ -13,6 +13,7 @@
 #include "RecommendSchemes.h"
 #include "SchemePickDialog.h"
 #include "AiAnalysisDialog.h"
+#include "QuoteCalculator.h"
 #include <QDateTime>
 #include <QDir>
 #include <algorithm>
@@ -551,6 +552,10 @@ void EnterCalcPage::buildPrintRibbon()
     m_printRibbon->addSeparator();
 
     auto *g2 = m_printRibbon->addGroup(QStringLiteral("输出Excel"));
+    auto *docBtn = new RibbonButton(QStringLiteral("导出计算单与成本清单"), ":/icons/excel_export.svg", g2);
+    docBtn->setCheckable(false);
+    connect(docBtn, &QToolButton::clicked, this, &EnterCalcPage::onExportDocuments);
+    g2->addButton(docBtn);
     auto *b4 = new RibbonButton(QStringLiteral("输出外部文件"), ":/icons/excel_export.svg", g2);
     b4->setCheckable(false);
     connect(b4, &QToolButton::clicked, this, &EnterCalcPage::onExportCsv);
@@ -2144,6 +2149,141 @@ void EnterCalcPage::onCalcSheetConfig()
 void EnterCalcPage::onSaveSoftwareSheet()
 {
     onSaveCalcSheet();
+}
+
+// 一键导出《计算单》《成本清单》两份文件（需求4.1最终方案导出）：
+// 以「图号+型号」为唯一标识命名，保存到用户选择的归档目录
+void EnterCalcPage::onExportDocuments()
+{
+    if (!m_hasResult) {
+        onRunEmCalc();
+        if (!m_hasResult) {
+            return;
+        }
+    }
+
+    // ---- 导出对话框：图号 + 型号 + 归档目录 ----
+    QDialog dlg(this);
+    dlg.setWindowTitle(QStringLiteral("导出计算单与成本清单"));
+    dlg.setFixedWidth(420);
+    auto *form = new QFormLayout(&dlg);
+    auto *drawingNoEdit = new QLineEdit(&dlg);
+    drawingNoEdit->setPlaceholderText(QStringLiteral("如 1BT.520.0001"));
+    auto *modelEdit = new QLineEdit(&dlg);
+    // 型号默认取当前方案规格（产品大类-容量/电压等级）
+    modelEdit->setText(QStringLiteral("%1-M-%2-%3")
+                           .arg(m_params.productModel,
+                                QString::number(m_params.capacity_kVA, 'f', 0),
+                                QString::number(m_params.hvRatedVoltage_kV, 'f', 0)));
+    auto *dirEdit = new QLineEdit(&dlg);
+    dirEdit->setReadOnly(true);
+    dirEdit->setText(QDir::homePath());
+    auto *browseBtn = new QPushButton(QStringLiteral("浏览..."), &dlg);
+    auto *dirRow = new QWidget(&dlg);
+    auto *dirLayout = new QHBoxLayout(dirRow);
+    dirLayout->setContentsMargins(0, 0, 0, 0);
+    dirLayout->setSpacing(4);
+    dirLayout->addWidget(dirEdit, 1);
+    dirLayout->addWidget(browseBtn);
+    form->addRow(QStringLiteral("图号："), drawingNoEdit);
+    form->addRow(QStringLiteral("型号："), modelEdit);
+    form->addRow(QStringLiteral("归档目录："), dirRow);
+    auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
+    form->addRow(buttons);
+    connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+    connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+    connect(browseBtn, &QPushButton::clicked, this, [this, dirEdit]() {
+        const QString dir = QFileDialog::getExistingDirectory(
+            this, QStringLiteral("选择归档目录"), dirEdit->text());
+        if (!dir.isEmpty()) {
+            dirEdit->setText(dir);
+        }
+    });
+    if (dlg.exec() != QDialog::Accepted) {
+        return;
+    }
+    const QString drawingNo = drawingNoEdit->text().trimmed();
+    const QString model = modelEdit->text().trimmed();
+    if (drawingNo.isEmpty() || model.isEmpty()) {
+        QMessageBox::warning(this, QStringLiteral("导出计算单与成本清单"),
+                             QStringLiteral("图号和型号不能为空"));
+        return;
+    }
+
+    // ---- 计算单文本：打印表双栏数据逐行输出 ----
+    const QString stamp = QDateTime::currentDateTime().toString(QStringLiteral("yyyy-MM-dd hh:mm"));
+    QString sheetText = QStringLiteral("变压器电磁计算单\n");
+    sheetText += QStringLiteral("========================================\n");
+    sheetText += QStringLiteral("图号：%1　型号：%2\n").arg(drawingNo, model);
+    sheetText += QStringLiteral("导出时间：%1\n").arg(stamp);
+    sheetText += QStringLiteral("========================================\n");
+    const PrintOutputData printData = ElectromagneticEngine::buildPrintOutput(m_lastInput, m_emResult);
+    for (const auto &row : printData.rows) {
+        if (row.isSectionHeader) {
+            sheetText += QStringLiteral("---- %1 ----\n").arg(row.leftName);
+        } else {
+            sheetText += QStringLiteral("%1: %2 %3\t%4: %5 %6\n")
+                             .arg(row.leftName, row.leftValue, row.leftUnit,
+                                  row.rightName, row.rightValue, row.rightUnit);
+        }
+    }
+
+    // ---- 成本清单文本：QuoteCalculator 明细 + 汇总 ----
+    bool paramOk = false;
+    const QuoteParams quoteParams =
+        QuoteParams::loadFromFile(QuoteCalculator::defaultParamsPath(), &paramOk);
+    const QuoteResult quote =
+        QuoteCalculator::calculate(m_params, m_emResult, paramOk ? quoteParams : QuoteParams{});
+    QString costText = QStringLiteral("材料成本清单\n");
+    costText += QStringLiteral("========================================\n");
+    costText += QStringLiteral("图号：%1　型号：%2\n").arg(drawingNo, model);
+    costText += QStringLiteral("导出时间：%1\n").arg(stamp);
+    costText += QStringLiteral("========================================\n");
+    costText += QStringLiteral("项目\t数量\t单位\t单价\t金额(元)\n");
+    for (const QuoteLine &line : quote.lines) {
+        costText += QStringLiteral("%1\t%2\t%3\t%4\t%5\n")
+                        .arg(line.name,
+                             QString::number(line.quantity, 'f', 2),
+                             line.unit,
+                             QString::number(line.unitPrice, 'f', 2),
+                             QString::number(line.amount, 'f', 1));
+    }
+    costText += QStringLiteral("----------------------------------------\n");
+    costText += QStringLiteral("材料成本小计: %1 元\n").arg(QString::number(quote.materialCost, 'f', 1));
+    costText += QStringLiteral("费用小计（外购件+人工+管理）: %1 元\n").arg(QString::number(quote.feeCost, 'f', 1));
+    costText += QStringLiteral("成本合计: %1 元\n").arg(QString::number(quote.costTotal, 'f', 1));
+    costText += QStringLiteral("利润: %1 元\n").arg(QString::number(quote.profit, 'f', 1));
+    costText += QStringLiteral("税额: %1 元\n").arg(QString::number(quote.tax, 'f', 1));
+    costText += QStringLiteral("含税出厂报价: %1 元\n").arg(QString::number(quote.quotePrice, 'f', 1));
+
+    // ---- 写入两份文件（图号+型号命名，UTF-8 BOM 便于 Excel 打开） ----
+    const QString base = QStringLiteral("%1_%2").arg(drawingNo, model);
+    const QString sheetPath = QDir(dirEdit->text()).filePath(base + QStringLiteral("_计算单.txt"));
+    const QString costPath = QDir(dirEdit->text()).filePath(base + QStringLiteral("_成本清单.txt"));
+    const auto writeFile = [this](const QString &path, const QString &text) -> bool {
+        QFile file(path);
+        if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text)) {
+            QMessageBox::warning(this, QStringLiteral("导出计算单与成本清单"),
+                                 QStringLiteral("无法写入文件: %1").arg(path));
+            return false;
+        }
+        file.write("\xEF\xBB\xBF");
+        QTextStream ts(&file);
+        ts.setEncoding(QStringConverter::Utf8);
+        ts << text;
+        file.close();
+        return true;
+    };
+    if (!writeFile(sheetPath, sheetText) || !writeFile(costPath, costText)) {
+        return;
+    }
+    m_statusBar->setText(QStringLiteral("已导出：%1 与 %2")
+                             .arg(QDir::toNativeSeparators(sheetPath),
+                                  QDir::toNativeSeparators(costPath)));
+    QMessageBox::information(this, QStringLiteral("导出计算单与成本清单"),
+        QStringLiteral("导出成功：\n%1\n%2")
+            .arg(QDir::toNativeSeparators(sheetPath),
+                 QDir::toNativeSeparators(costPath)));
 }
 
 void EnterCalcPage::onSaveCustomSheet()
