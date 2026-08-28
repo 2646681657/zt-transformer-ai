@@ -11,6 +11,7 @@
 #include <QComboBox>
 #include <QCheckBox>
 #include <QHash>
+#include <optional>
 #include "TransformerParams.h"
 #include "StructureConfig.h"
 #include "CalcInput.h"
@@ -145,6 +146,13 @@ private:
     void buildPrintRibbon();
     // 初始化设置组按钮的只读查看弹窗（各配置项当前值，修改入口在参数设置页）
     void showInitInfoDialog(int index);
+    // 循环参数编辑对话框（寻优网格范围/步长，QSettings 持久化）；
+    // 返回确认后的设置（取消返回空 optional）
+    std::optional<OptimizationSettings> showLoopParamsDialog();
+    // 读取持久化的寻优设置（未配置过返回默认值）
+    OptimizationSettings loadOptimizeSettings() const;
+    // 持久化寻优设置
+    void saveOptimizeSettings(const OptimizationSettings &settings) const;
     // 当前计算结果映射为方案行，追加进方案表
     void appendScheme(const CalcInput &input, const CalcResult &result);
     // 确认指定行方案：记录基准并跳转输出打印 Tab
@@ -158,6 +166,7 @@ private:
     QWidget *m_ribbonStack;
     RibbonButton *m_pauseBtn = nullptr;   // 暂停/继续 切换按钮
     GridOptimizer *m_optimizer = nullptr; // 网格寻优器（后台线程）
+    OptimizationSettings m_optSettings;   // 寻优网格设置（循环参数对话框可配）
     bool m_optRunning = false;            // 寻优运行中标志
     SchemeTableWidget *m_schemeTable;
     PrintTableWidget *m_printTable;

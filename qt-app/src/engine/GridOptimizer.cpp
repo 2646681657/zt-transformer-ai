@@ -9,14 +9,14 @@
 
 namespace {
 
-// 网格步进与邻域（围绕基准值 ±N 步）：
+// 网格步进与邻域的默认值（OptimizationSettings 缺省即此，保持向后一致）：
 // 直径 ±10mm(步进5) × 直线段 ±5mm(步进5) × 低压匝数 ±1 × 高压每层匝数 ±1 = 135 组合
-const double kDiaStep = 5.0;        // 铁芯直径步进 mm
-const int kDiaRange = 2;            // 直径 ±2 步（5 档）
-const double kStraightStep = 5.0;   // 直线段长步进 mm
-const int kStraightRange = 1;       // 直线段 ±1 步（3 档）
-const int kLvTurnsRange = 1;        // 低压匝数 ±1（3 档）
-const int kHvTplRange = 1;          // 高压每层匝数 ±1（3 档）
+constexpr double kDiaStep = 5.0;
+constexpr int kDiaRange = 2;
+constexpr double kStraightStep = 5.0;
+constexpr int kStraightRange = 1;
+constexpr int kLvTurnsRange = 1;
+constexpr int kHvTplRange = 1;
 
 } // namespace
 
@@ -24,8 +24,9 @@ const int kHvTplRange = 1;          // 高压每层匝数 ±1（3 档）
 class GridOptimizer::Worker : public QObject {
     Q_OBJECT
 public:
-    explicit Worker(const TransformerParams &params, const CalcInput &base)
-        : m_params(params), m_base(base) {}
+    explicit Worker(const TransformerParams &params, const CalcInput &base,
+                    const OptimizationSettings &settings)
+        : m_params(params), m_base(base), m_settings(settings) {}
 
     // 控制接口（互斥锁保护，可从主线程直接调用）
     void pause()
@@ -52,8 +53,19 @@ public:
 public slots:
     void doWork()
     {
-        const int total = (2 * kDiaRange + 1) * (2 * kStraightRange + 1)
-                          * (2 * kLvTurnsRange + 1) * (2 * kHvTplRange + 1);
+        // 网格范围/步长取自设置（对话框可配，默认值与历史行为一致）
+        const double diaStep = m_settings.diaStep_mm > 0 ? m_settings.diaStep_mm : kDiaStep;
+        const int diaRange = m_settings.diaRange >= 0 ? m_settings.diaRange : kDiaRange;
+        const double straightStep = m_settings.straightStep_mm > 0
+                                        ? m_settings.straightStep_mm : kStraightStep;
+        const int straightRange = m_settings.straightRange >= 0
+                                      ? m_settings.straightRange : kStraightRange;
+        const int lvTurnsRange = m_settings.lvTurnsRange >= 0
+                                     ? m_settings.lvTurnsRange : kLvTurnsRange;
+        const int hvTplRange = m_settings.hvTplRange >= 0 ? m_settings.hvTplRange : kHvTplRange;
+
+        const int total = (2 * diaRange + 1) * (2 * straightRange + 1)
+                          * (2 * lvTurnsRange + 1) * (2 * hvTplRange + 1);
         ElectromagneticEngine engine;
         int done = 0;
         int valid = 0;
@@ -61,17 +73,17 @@ public slots:
         bool haveBest = false;
         bool stopped = false;
 
-        for (int di = -kDiaRange; di <= kDiaRange && !stopped; ++di) {
-            for (int si = -kStraightRange; si <= kStraightRange && !stopped; ++si) {
-                for (int li = -kLvTurnsRange; li <= kLvTurnsRange && !stopped; ++li) {
-                    for (int hi = -kHvTplRange; hi <= kHvTplRange && !stopped; ++hi) {
+        for (int di = -diaRange; di <= diaRange && !stopped; ++di) {
+            for (int si = -straightRange; si <= straightRange && !stopped; ++si) {
+                for (int li = -lvTurnsRange; li <= lvTurnsRange && !stopped; ++li) {
+                    for (int hi = -hvTplRange; hi <= hvTplRange && !stopped; ++hi) {
                         if (!waitIfPaused()) {
                             stopped = true;
                             break;
                         }
                         CalcInput in = m_base;
-                        in.coreDiameter_mm += di * kDiaStep;
-                        in.coreStraight_mm += si * kStraightStep;
+                        in.coreDiameter_mm += di * diaStep;
+                        in.coreStraight_mm += si * straightStep;
                         in.lvTurns += li;
                         in.hvTurnsPerLayer += hi;
 
@@ -120,8 +132,9 @@ private:
     QWaitCondition m_cond;
     bool m_paused = false;
     bool m_stopped = false;
-    TransformerParams m_params;   // 性能标准值（后续约束过滤使用）
-    CalcInput m_base;             // 寻优基准设计变量
+    TransformerParams m_params;    // 性能标准值（约束过滤使用）
+    CalcInput m_base;              // 寻优基准设计变量
+    OptimizationSettings m_settings;   // 网格范围/步长（可配置）
 };
 
 GridOptimizer::GridOptimizer(QObject *parent)
@@ -146,12 +159,12 @@ GridOptimizer::~GridOptimizer()
 }
 
 void GridOptimizer::start(const TransformerParams &params, const StructureConfig &,
-                          const CalcInput &baseInput, const OptimizationSettings &)
+                          const CalcInput &baseInput, const OptimizationSettings &settings)
 {
     if (m_thread && m_thread->isRunning()) {
         return;   // 已在寻优中，不重复启动
     }
-    m_worker = new Worker(params, baseInput);
+    m_worker = new Worker(params, baseInput, settings);
     QThread *thread = new QThread();
     m_worker->moveToThread(thread);
 

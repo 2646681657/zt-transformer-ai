@@ -35,6 +35,7 @@
 #include <QInputDialog>
 #include <QDoubleSpinBox>
 #include <QDialogButtonBox>
+#include <QSettings>
 #include <QDialog>
 #include <QLineEdit>
 #include <QMenu>
@@ -50,6 +51,8 @@
 EnterCalcPage::EnterCalcPage(QWidget *parent)
     : QWidget(parent)
 {
+    m_optSettings = loadOptimizeSettings();   // 循环参数（QSettings 持久化）
+
     auto *mainLayout = new QVBoxLayout(this);
     mainLayout->setContentsMargins(0, 0, 0, 0);
     mainLayout->setSpacing(0);
@@ -205,22 +208,41 @@ void EnterCalcPage::buildOptimizeRibbon()
     g0->addButton(aiBtn);
     m_optimizeRibbon->addSeparator();
 
+    // 循环参数（可编辑）：寻优网格范围/步长配置，独立成组（在初始化设置之前）
+    auto *gLoop = m_optimizeRibbon->addGroup(QStringLiteral("循环参数"));
+    auto *loopBtn = new RibbonButton(QStringLiteral("循环参数设置"), ":/icons/loop_param.svg", gLoop);
+    loopBtn->setCheckable(false);
+    connect(loopBtn, &QToolButton::clicked, this, [this]() {
+        if (const auto settings = showLoopParamsDialog()) {
+            m_optSettings = *settings;
+            m_statusBar->setText(QStringLiteral(
+                "循环参数已更新：%1 组合，点击「开始运行计算」生效")
+                .arg(QString::number((2 * settings->diaRange + 1)
+                                     * (2 * settings->straightRange + 1)
+                                     * (2 * settings->lvTurnsRange + 1)
+                                     * (2 * settings->hvTplRange + 1))));
+        }
+    });
+    gLoop->addButton(loopBtn);
+    m_optimizeRibbon->addSeparator();
+
     auto *g1 = m_optimizeRibbon->addGroup(QStringLiteral("初始化设置(从左到右顺序查看)"));
     // 只读查看入口：展示各项配置当前值（编辑入口在参数设置页，寻优前可在此核对）
     const QStringList initButtons = {
         QStringLiteral("产品结构"), QStringLiteral("材料选择"),
-        QStringLiteral("修正参数"), QStringLiteral("循环参数"),
+        QStringLiteral("修正参数"),
         QStringLiteral("约束条件"), QStringLiteral("初始化信息")
     };
     for (int i = 0; i < initButtons.size(); ++i) {
         auto *btn = new RibbonButton(initButtons[i],
             QStringLiteral(":/icons/%1.svg").arg(
                 QStringList{"product", "material", "adjust",
-                            "loop_param", "constraint", "init_info"}[i]), g1);
+                            "constraint", "init_info"}[i]), g1);
         btn->setCheckable(false);
-        const int index = i;
+        // 循环参数按钮已移出（独立成组）：查看索引 0/1/2 顺延，4/5 前移一位
+        const int viewIndex = (i <= 2) ? i : i + 1;
         connect(btn, &QToolButton::clicked, this,
-                [this, index]() { showInitInfoDialog(index); });
+                [this, viewIndex]() { showInitInfoDialog(viewIndex); });
         g1->addButton(btn);
     }
     m_optimizeRibbon->addSeparator();
@@ -732,17 +754,6 @@ void EnterCalcPage::showInitInfoDialog(int index)
         });
         break;
     }
-    case 3: {  // 循环参数（寻优引擎默认设置，暂不可配置）
-        makeDialog(QStringLiteral("循环参数 - 寻优计算设置"), {
-            { QStringLiteral("寻优方式"), QStringLiteral("网格搜索") },
-            { QStringLiteral("搜索维度"),
-              QStringLiteral("直径/直线段/低压匝数/高压每层匝数") },
-            { QStringLiteral("线程数"), QStringLiteral("4") },
-            { QStringLiteral("成本模型"), QStringLiteral("铜+铁+油") },
-            { QStringLiteral("备注"), QStringLiteral("围绕当前设计变量基准搜索") },
-        });
-        break;
-    }
     case 4: {  // 约束条件（性能指标标准值与允许偏差）
         makeDialog(QStringLiteral("约束条件 - 性能指标约束"), {
             { QStringLiteral("空载损耗标准(W)"),
@@ -785,7 +796,7 @@ void EnterCalcPage::showInitInfoDialog(int index)
               QStringLiteral("D%1mm / N2=%2")
                   .arg(QString::number(m_calcInput.coreDiameter_mm),
                        QString::number(m_calcInput.lvTurns)) },
-            { QStringLiteral("寻优方式"), QStringLiteral("网格搜索（4线程）") },
+            { QStringLiteral("寻优方式"), QStringLiteral("网格搜索（范围/步长见「循环参数」组）") },
             { QStringLiteral("约束条件"), QStringLiteral("损耗/阻抗/温升超差剔除") },
             { QStringLiteral("核对结果"), m_hasResult
                   ? QStringLiteral("已有计算结果，可直接寻优或重新核对")
@@ -796,6 +807,127 @@ void EnterCalcPage::showInitInfoDialog(int index)
     default:
         break;
     }
+}
+
+// 循环参数编辑对话框：网格搜索范围/步长（QSettings 持久化，取消不保存）
+std::optional<OptimizationSettings> EnterCalcPage::showLoopParamsDialog()
+{
+    const OptimizationSettings cur = loadOptimizeSettings();
+
+    auto *dlg = new QDialog(this);
+    dlg->setWindowTitle(QStringLiteral("循环参数 - 寻优计算设置"));
+    dlg->setModal(true);
+    auto *layout = new QVBoxLayout(dlg);
+    layout->setContentsMargins(12, 12, 12, 12);
+
+    // 参数表（每行：标签 + 步长编辑 + 范围编辑）
+    auto *form = new QTableWidget(4, 3, dlg);
+    form->setHorizontalHeaderLabels({QStringLiteral("搜索变量"),
+                                     QStringLiteral("步长"), QStringLiteral("范围(±N步)")});
+    form->verticalHeader()->setVisible(false);
+    form->horizontalHeader()->setStretchLastSection(true);
+    form->setColumnWidth(0, 130);
+    form->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    form->setSelectionBehavior(QAbstractItemView::SelectRows);
+    form->setAlternatingRowColors(true);
+
+    const struct {
+        const char *label;
+        double stepValue;
+        int rangeValue;
+    } rows[] = {
+        { "铁芯直径(mm)", cur.diaStep_mm, cur.diaRange },
+        { "直线段长(mm)", cur.straightStep_mm, cur.straightRange },
+        { "低压匝数", 1.0, cur.lvTurnsRange },
+        { "高压每层匝数", 1.0, cur.hvTplRange },
+    };
+    QVector<QDoubleSpinBox *> stepSpins;
+    QVector<QSpinBox *> rangeSpins;
+    for (int i = 0; i < 4; ++i) {
+        form->setItem(i, 0, new QTableWidgetItem(QString::fromUtf8(rows[i].label)));
+
+        if (i < 2) {   // 尺寸类步长可编辑
+            auto *stepSpin = new QDoubleSpinBox(dlg);
+            stepSpin->setDecimals(1);
+            stepSpin->setRange(1.0, 50.0);
+            stepSpin->setSingleStep(0.5);
+            stepSpin->setValue(rows[i].stepValue);
+            stepSpin->setSuffix(QStringLiteral(" mm"));
+            form->setCellWidget(i, 1, stepSpin);
+            stepSpins.append(stepSpin);
+        } else {       // 匝数步长固定为 1（文本展示）
+            form->setItem(i, 1, new QTableWidgetItem(QStringLiteral("1")));
+        }
+
+        auto *rangeSpin = new QSpinBox(dlg);
+        rangeSpin->setRange(0, 5);
+        rangeSpin->setValue(rows[i].rangeValue);
+        form->setCellWidget(i, 2, rangeSpin);
+        rangeSpins.append(rangeSpin);
+    }
+    layout->addWidget(form, 1);
+
+    // 组合数实时预览
+    auto *comboLabel = new QLabel(dlg);
+    const auto updateCombo = [comboLabel, rangeSpins]() {
+        const int total = (2 * rangeSpins[0]->value() + 1) * (2 * rangeSpins[1]->value() + 1)
+                          * (2 * rangeSpins[2]->value() + 1) * (2 * rangeSpins[3]->value() + 1);
+        comboLabel->setText(QStringLiteral("网格组合数：%1（范围越大寻优越慢）").arg(total));
+    };
+    for (auto *spin : rangeSpins) {
+        connect(spin, &QSpinBox::valueChanged, updateCombo);
+    }
+    updateCombo();
+    layout->addWidget(comboLabel, 0, Qt::AlignCenter);
+
+    // 保存/取消
+    auto *btnBox = new QDialogButtonBox(
+        QDialogButtonBox::Ok | QDialogButtonBox::Cancel, dlg);
+    btnBox->button(QDialogButtonBox::Ok)->setText(QStringLiteral("保存"));
+    btnBox->button(QDialogButtonBox::Cancel)->setText(QStringLiteral("取消"));
+    connect(btnBox, &QDialogButtonBox::accepted, dlg, &QDialog::accept);
+    connect(btnBox, &QDialogButtonBox::rejected, dlg, &QDialog::reject);
+    layout->addWidget(btnBox);
+
+    const int rc = dlg->exec();
+    std::optional<OptimizationSettings> result;
+    if (rc == QDialog::Accepted) {
+        OptimizationSettings s = cur;
+        s.diaStep_mm = qobject_cast<QDoubleSpinBox *>(form->cellWidget(0, 1))->value();
+        s.diaRange = rangeSpins[0]->value();
+        s.straightStep_mm = qobject_cast<QDoubleSpinBox *>(form->cellWidget(1, 1))->value();
+        s.straightRange = rangeSpins[1]->value();
+        s.lvTurnsRange = rangeSpins[2]->value();
+        s.hvTplRange = rangeSpins[3]->value();
+        saveOptimizeSettings(s);
+        result = s;
+    }
+    dlg->deleteLater();
+    return result;
+}
+
+OptimizationSettings EnterCalcPage::loadOptimizeSettings() const
+{
+    OptimizationSettings s;   // 默认值即历史硬编码行为
+    QSettings settings("ZTF", "Designer");
+    s.diaStep_mm = settings.value("optimize/diaStep", s.diaStep_mm).toDouble();
+    s.diaRange = settings.value("optimize/diaRange", s.diaRange).toInt();
+    s.straightStep_mm = settings.value("optimize/straightStep", s.straightStep_mm).toDouble();
+    s.straightRange = settings.value("optimize/straightRange", s.straightRange).toInt();
+    s.lvTurnsRange = settings.value("optimize/lvTurnsRange", s.lvTurnsRange).toInt();
+    s.hvTplRange = settings.value("optimize/hvTplRange", s.hvTplRange).toInt();
+    return s;
+}
+
+void EnterCalcPage::saveOptimizeSettings(const OptimizationSettings &s) const
+{
+    QSettings settings("ZTF", "Designer");
+    settings.setValue("optimize/diaStep", s.diaStep_mm);
+    settings.setValue("optimize/diaRange", s.diaRange);
+    settings.setValue("optimize/straightStep", s.straightStep_mm);
+    settings.setValue("optimize/straightRange", s.straightRange);
+    settings.setValue("optimize/lvTurnsRange", s.lvTurnsRange);
+    settings.setValue("optimize/hvTplRange", s.hvTplRange);
 }
 
 // 竖排"程序选择"导航按钮（点击返回主界面），三个 Tab 各自调用创建
@@ -1093,11 +1225,19 @@ void EnterCalcPage::onOptimizeStart()
     if (m_pauseBtn) {
         m_pauseBtn->setText(QStringLiteral("暂停计算"));
     }
-    OptimizationSettings settings;
+    OptimizationSettings settings = m_optSettings;
     m_optimizer->start(m_params, m_config, m_calcInput, settings);
+    const int total = (2 * settings.diaRange + 1) * (2 * settings.straightRange + 1)
+                      * (2 * settings.lvTurnsRange + 1) * (2 * settings.hvTplRange + 1);
     m_statusBar->setText(
-        QStringLiteral("寻优已启动：围绕当前设计变量网格搜索（直径/直线段/低压匝数/高压每层匝数），"
-                       "损耗/阻抗/温升超差方案自动剔除"));
+        QStringLiteral("寻优已启动：围绕当前设计变量网格搜索（直径±%1mm/%2档、直线段±%3mm、"
+                       "低压匝数±%4、高压每层匝数±%5，共%6组合），损耗/阻抗/温升超差方案自动剔除")
+            .arg(QString::number(settings.diaRange * settings.diaStep_mm),
+                 QString::number(2 * settings.diaRange + 1),
+                 QString::number(settings.straightRange * settings.straightStep_mm),
+                 QString::number(settings.lvTurnsRange),
+                 QString::number(settings.hvTplRange),
+                 QString::number(total)));
 }
 
 void EnterCalcPage::onOptimizePause()
