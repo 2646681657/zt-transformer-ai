@@ -17,6 +17,13 @@ struct OptimizationSettings {
     int threadCount = 4;
     enum CostModel { CuFe, CuFeOil };
     CostModel costModel = CuFeOil;
+    // 网格搜索范围（围绕基准设计变量的 ±N 步）与步长
+    double diaStep_mm = 5.0;      // 铁芯直径步进 mm
+    int diaRange = 2;             // 直径 ±2 步（5 档）
+    double straightStep_mm = 5.0; // 直线段长步进 mm
+    int straightRange = 1;        // 直线段 ±1 步（3 档）
+    int lvTurnsRange = 1;         // 低压匝数 ±1（3 档）
+    int hvTplRange = 1;           // 高压每层匝数 ±1（3 档）
 };
 
 // 寻优候选方案：完整输入/输出 + 方案表行数据

@@ -8,6 +8,7 @@
 #include "RecommendSchemes.h"
 #include "SchemePickDialog.h"
 #include "AiSchemeDialog.h"
+#include "BasicParamsImporter.h"
 #include "ElectromagneticEngine.h"
 #include "SchemeConstraints.h"
 #include <QVBoxLayout>
@@ -22,6 +23,8 @@
 #include <QSettings>
 #include <QInputDialog>
 #include <QLineEdit>
+#include <QFileDialog>
+#include <QApplication>
 
 OptimizeCalcPage::OptimizeCalcPage(QWidget *parent)
     : QWidget(parent)
@@ -230,6 +233,10 @@ void OptimizeCalcPage::setupMainArea()
 
     // Left sidebar
     m_sidebar = new SidebarPanel(this);
+    // 导入基础技术参数表（Excel/CSV，独立按钮）
+    auto *importBtn = m_sidebar->addButton(QStringLiteral("导入参数表"), ":/icons/library.svg");
+    importBtn->setToolTip(QStringLiteral("从基础技术参数表（Excel/CSV）导入额定参数"));
+    connect(importBtn, &QToolButton::clicked, this, &OptimizeCalcPage::onImportParamsClicked);
     // AI 方案助手（独立按钮：走 LLM 解析，非方案库链路）
     auto *aiBtn = m_sidebar->addButton(QStringLiteral("AI 方案助手"), ":/icons/recommend.svg");
     connect(aiBtn, &QToolButton::clicked, this, [this]() {
@@ -247,7 +254,8 @@ void OptimizeCalcPage::setupMainArea()
     m_sidebar->addButton(QStringLiteral("采用上一次方案"), ":/icons/undo.svg");
     auto *enterBtn = m_sidebar->addButton(QStringLiteral("进入计算"), ":/icons/enter_calc.svg");
     connect(enterBtn, &QToolButton::clicked, this, &OptimizeCalcPage::onEnterCalcClicked);
-    // 方案按钮分发（0=AI助手(独立连接) 1=推荐 2=保存我的 3=方案库 4=记忆库 5=上次方案 6=进入计算(独立连接)）
+    // 方案按钮分发（0=导入参数表(独立连接) 1=AI助手(独立连接) 2=推荐 3=保存我的
+    // 4=方案库 5=记忆库 6=上次方案 7=进入计算(独立连接)）
     connect(m_sidebar, &SidebarPanel::buttonClicked,
             this, &OptimizeCalcPage::onSchemeButtonClicked);
 
@@ -356,12 +364,12 @@ void OptimizeCalcPage::applySchemeInput(const CalcInput &input)
     m_paramTable->loadParamsForConfig(m_params, m_config, m_input, proMode);
 }
 
-// 侧边栏方案按钮分发（0=AI助手 6=进入计算，均已独立连接，此处忽略；
-// 1=推荐 2=保存我的 3=方案库 4=记忆库 5=上次方案）
+// 侧边栏方案按钮分发（0=导入参数表 1=AI助手 7=进入计算，均已独立连接，此处忽略；
+// 2=推荐 3=保存我的 4=方案库 5=记忆库 6=上次方案）
 void OptimizeCalcPage::onSchemeButtonClicked(int index)
 {
     switch (index) {
-    case 1: {  // 选用推荐方案（内置推荐表，只读无删除）
+    case 2: {  // 选用推荐方案（内置推荐表，只读无删除）
         QVector<SchemeStore::SchemeEntry> entries;
         for (const auto &s : RecommendSchemes::all()) {
             SchemeStore::SchemeEntry e;
@@ -375,7 +383,7 @@ void OptimizeCalcPage::onSchemeButtonClicked(int index)
         }
         break;
     }
-    case 2: {  // 保存为我的方案（命名保存当前设计变量）
+    case 3: {  // 保存为我的方案（命名保存当前设计变量）
         bool ok = false;
         const QString name = QInputDialog::getText(this,
             QStringLiteral("保存为我的方案"),
@@ -413,7 +421,7 @@ void OptimizeCalcPage::onSchemeButtonClicked(int index)
         }
         break;
     }
-    case 3: {  // 从方案库中选择（我的方案库，支持删除所选）
+    case 4: {  // 从方案库中选择（我的方案库，支持删除所选）
         QVector<SchemeStore::SchemeEntry> entries =
             SchemeStore::loadEntries(SchemeStore::mySchemesPath());
         if (entries.isEmpty()) {
@@ -428,7 +436,7 @@ void OptimizeCalcPage::onSchemeButtonClicked(int index)
         }
         break;
     }
-    case 4: {  // 从记忆库中选择（最近使用的方案，支持删除所选）
+    case 5: {  // 从记忆库中选择（最近使用的方案，支持删除所选）
         QVector<SchemeStore::SchemeEntry> entries =
             SchemeStore::loadEntries(SchemeStore::memorySchemesPath());
         if (entries.isEmpty()) {
@@ -443,7 +451,7 @@ void OptimizeCalcPage::onSchemeButtonClicked(int index)
         }
         break;
     }
-    case 5: {  // 采用上一次方案
+    case 6: {  // 采用上一次方案
         CalcInput last;
         if (!SchemeStore::loadLastScheme(last)) {
             QMessageBox::information(this, QStringLiteral("暂无记录"),
@@ -454,8 +462,39 @@ void OptimizeCalcPage::onSchemeButtonClicked(int index)
         break;
     }
     default:
-        break;   // index 0=AI助手、6=进入计算已独立连接
+        break;   // index 0=导入参数表、1=AI助手、7=进入计算已独立连接
     }
+}
+
+// 导入基础技术参数表（需求附件1）：Excel/CSV → 额定参数/性能指标，
+// 命中字段覆盖表格对应值，未命中字段保持当前值；设计变量不受影响
+void OptimizeCalcPage::onImportParamsClicked()
+{
+    const QString path = QFileDialog::getOpenFileName(this,
+        QStringLiteral("导入基础技术参数表"),
+        QString(),
+        QStringLiteral("参数表文件 (*.xlsx *.xlsm *.xls *.csv);;所有文件 (*.*)"));
+    if (path.isEmpty())
+        return;
+
+    // 以当前表格值为基底，导入只覆盖识别到的字段
+    m_params = m_paramTable->getParams();
+    m_paramTable->saveToInput(m_input);
+
+    QString report;
+    QApplication::setOverrideCursor(Qt::WaitCursor);
+    const bool ok = BasicParamsImporter::importFromFile(path, m_params, m_input, &report);
+    QApplication::restoreOverrideCursor();
+    if (!ok) {
+        QMessageBox::warning(this, QStringLiteral("导入失败"), report);
+        return;
+    }
+
+    // 刷新表格显示导入后的参数（设计变量保持 m_input 当前值）
+    const bool proMode = (m_config.calcMode == StructureConfig::Professional);
+    m_paramTable->loadParamsForConfig(m_params, m_config, m_input, proMode);
+    QMessageBox::information(this, QStringLiteral("导入完成"),
+        report + QStringLiteral("\n\n参数表已更新，请核对「一 输入信息」与「二 性能指标」。"));
 }
 
 // Ribbon选项变更时同步更新结构配置并刷新参数表

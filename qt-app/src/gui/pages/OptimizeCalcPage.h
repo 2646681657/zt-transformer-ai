@@ -33,6 +33,7 @@ signals:
 private slots:
     void onEnterCalcClicked();
     void onSelectionChanged();
+    void onImportParamsClicked();   // 导入基础技术参数表（Excel/CSV）
     void onVerifySheetClicked();   // 校验算单：约束预检
 
 private:
