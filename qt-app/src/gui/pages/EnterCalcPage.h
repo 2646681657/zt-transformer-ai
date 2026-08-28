@@ -131,6 +131,8 @@ private slots:
     // 保存为软件计算单 / 自定义计算单
     void onSaveSoftwareSheet();
     void onSaveCustomSheet();
+    // 一键导出《计算单》《成本清单》两份文件（按图号+型号归档）
+    void onExportDocuments();
 
 private:
     void setupOptimizeTab();
