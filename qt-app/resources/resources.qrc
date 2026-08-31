@@ -1,6 +1,7 @@
 <RCC>
     <qresource prefix="/">
         <file>data/design_data.json</file>
+        <file>scripts/solidworks_parametric.ps1</file>
         <file>styles/ztf_theme.qss</file>
         <file>icons/app_icon.svg</file>
         <file>icons/optimize.svg</file>

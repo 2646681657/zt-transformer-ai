@@ -6,6 +6,7 @@
 #include "DataManagementPage.h"
 #include "UserManagementPage.h"
 #include "SettingsPage.h"
+#include "SwParametricDrawingPage.h"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QGridLayout>
@@ -71,6 +72,8 @@ MainDashboardPage::MainDashboardPage(const QString &username, QWidget *parent)
     m_contentStack->addWidget(m_userMgmtPage);               // index 6: 用户管理
     m_settingsPage = new SettingsPage(this);
     m_contentStack->addWidget(m_settingsPage);               // index 7: 系统设置
+    m_swDrawingPage = new SwParametricDrawingPage(this);
+    m_contentStack->addWidget(m_swDrawingPage);              // index 8: SW参数化出图
     m_contentStack->setCurrentIndex(0);
     mainLayout->addWidget(m_contentStack, 1);
 
@@ -178,7 +181,7 @@ QWidget *MainDashboardPage::createOptimizeSubPage()
     connect(calcBtn, &QToolButton::clicked, this, &MainDashboardPage::navigateToOptimizeCalc);
     layout->addWidget(calcBtn);
 
-    // "SW参数化出图" 子按钮（暂未实现）
+    // "SW参数化出图" 子按钮
     auto *swBtn = new QToolButton(page);
     swBtn->setText(QStringLiteral("SW参数化出图"));
     swBtn->setIcon(QIcon(":/icons/tools.svg"));
@@ -189,6 +192,10 @@ QWidget *MainDashboardPage::createOptimizeSubPage()
     swBtn->setStyleSheet(
         "QToolButton { background: transparent; border: none; color: #c0c8d0; font-size: 12px; }"
         "QToolButton:hover { background: rgba(0,188,212,0.15); border-radius: 6px; color: #4dd0e1; }");
+    connect(swBtn, &QToolButton::clicked, this, [this]() {
+        m_subArea->hide();
+        m_contentStack->setCurrentWidget(m_swDrawingPage);
+    });
     layout->addWidget(swBtn);
 
     layout->addStretch();
