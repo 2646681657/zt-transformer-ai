@@ -12,6 +12,7 @@
 #include "SchemeStore.h"
 #include "RecommendSchemes.h"
 #include "SchemePickDialog.h"
+#include "SelfLearnDialog.h"
 #include "AiAnalysisDialog.h"
 #include "QuoteCalculator.h"
 #include <QDateTime>
@@ -267,6 +268,15 @@ void EnterCalcPage::buildOptimizeRibbon()
         }
     });
     gMem->addButton(memBtn);
+
+    // AI 自学习：设计值 vs 试验实测值对比（需求4.5第一步，修正系数待数据积累）
+    auto *learnBtn = new RibbonButton(QStringLiteral("自学习对比"), ":/icons/ai_assist.svg", gMem);
+    learnBtn->setCheckable(false);
+    connect(learnBtn, &QToolButton::clicked, this, [this]() {
+        SelfLearnDialog dlg(this);
+        dlg.exec();
+    });
+    gMem->addButton(learnBtn);
     m_optimizeRibbon->addSeparator();
 
     auto *g2 = m_optimizeRibbon->addGroup(QStringLiteral("寻优计算"));

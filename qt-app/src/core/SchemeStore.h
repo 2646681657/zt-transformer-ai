@@ -258,18 +258,68 @@ inline QVector<CalcInput> loadSchemes(const QString &path, bool *ok = nullptr)
 }
 
 // ---- 带元数据的方案条目（我的方案库/记忆库/上次方案共用）----
+// 试验实测数据（AI 自学习第一步：设计值 vs 实测值对比的数据源）
+struct TestReport {
+    bool hasData = false;          // 是否已录入实测数据
+    QDateTime testedAt;            // 试验日期
+    double noLoadLoss_W = 0.0;     // 实测空载损耗
+    double loadLoss_W = 0.0;       // 实测负载损耗
+    double impedance_pct = 0.0;    // 实测阻抗电压
+    double oilTopRise_K = 0.0;     // 实测油顶层温升
+    double hvWindingRise_K = 0.0;  // 实测高压绕组温升
+    double lvWindingRise_K = 0.0;  // 实测低压绕组温升
+};
+
+// 试验数据 JSON 序列化（空值全部容错，旧方案文件不含此字段即无实测数据）
+inline QJsonObject testReportToJson(const TestReport &t)
+{
+    QJsonObject o;
+    o.insert(QStringLiteral("hasData"), t.hasData);
+    o.insert(QStringLiteral("testedAt"), t.testedAt.toString(Qt::ISODate));
+    o.insert(QStringLiteral("noLoadLoss_W"), t.noLoadLoss_W);
+    o.insert(QStringLiteral("loadLoss_W"), t.loadLoss_W);
+    o.insert(QStringLiteral("impedance_pct"), t.impedance_pct);
+    o.insert(QStringLiteral("oilTopRise_K"), t.oilTopRise_K);
+    o.insert(QStringLiteral("hvWindingRise_K"), t.hvWindingRise_K);
+    o.insert(QStringLiteral("lvWindingRise_K"), t.lvWindingRise_K);
+    return o;
+}
+
+inline TestReport testReportFromJson(const QJsonObject &o)
+{
+    TestReport t;
+    t.hasData = o.value(QStringLiteral("hasData")).toBool(false);
+    t.testedAt = QDateTime::fromString(
+        o.value(QStringLiteral("testedAt")).toString(), Qt::ISODate);
+    const auto num = [&o](const char *key) {
+        const auto v = o.value(QLatin1String(key));
+        return v.isDouble() ? v.toDouble() : 0.0;
+    };
+    t.noLoadLoss_W = num("noLoadLoss_W");
+    t.loadLoss_W = num("loadLoss_W");
+    t.impedance_pct = num("impedance_pct");
+    t.oilTopRise_K = num("oilTopRise_K");
+    t.hvWindingRise_K = num("hvWindingRise_K");
+    t.lvWindingRise_K = num("lvWindingRise_K");
+    return t;
+}
+
 struct SchemeEntry {
     QString name;         // 方案名称（记忆库为自动生成的时间戳名）
     QDateTime savedAt;    // 保存/使用时间
     CalcInput input;      // 设计变量
+    TestReport test;      // 试验实测数据（AI 自学习对比用，可空）
 };
 
-// 条目序列化：设计变量字段之上叠加 name/savedAt 元数据
+// 条目序列化：设计变量字段之上叠加 name/savedAt/实测数据元数据
 inline QJsonObject entryToJson(const SchemeEntry &e)
 {
     QJsonObject o = toJson(e.input);
     o.insert(QStringLiteral("name"), e.name);
     o.insert(QStringLiteral("savedAt"), e.savedAt.toString(Qt::ISODate));
+    if (e.test.hasData) {
+        o.insert(QStringLiteral("test"), testReportToJson(e.test));
+    }
     return o;
 }
 
@@ -280,6 +330,7 @@ inline SchemeEntry entryFromJson(const QJsonObject &o)
     e.savedAt = QDateTime::fromString(
         o.value(QStringLiteral("savedAt")).toString(), Qt::ISODate);
     e.input = fromJson(o);
+    e.test = testReportFromJson(o.value(QStringLiteral("test")).toObject());
     return e;
 }
 
