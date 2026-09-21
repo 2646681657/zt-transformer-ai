@@ -9,6 +9,8 @@
 #include "StructureConfig.h"
 #include "CalcInput.h"
 
+class QComboBox;
+
 class ParamTableWidget : public QTableWidget {
     Q_OBJECT
 public:
@@ -22,7 +24,17 @@ public:
     // 从表格设计变量节读回 CalcInput（未绑定或非法输入的域保持原值）
     void saveToInput(CalcInput &input) const;
 
+signals:
+    // 型号/容量联动：按 GB 20052-2024 叠铁芯标准值自动覆盖损耗/阻抗标准值后发出
+    void stdValuesUpdated(const QString &summary);
+
 private:
+    // 叠铁芯时产品型号/容量改为下拉，切换后按国标表联动标准值
+    void applyModelLinkage();
+    QComboBox *m_modelCombo = nullptr;   // 产品型号（叠铁芯：SB22/SB20/SB13-M）
+    QComboBox *m_capacityCombo = nullptr; // 容量（标准 19 档）
+    bool m_loading = false;               // 加载期间抑制联动信号
+
     void setupTable();
     // advanced=true 时节标题使用琥珀色调，与一~六节（青蓝调）区分高级参数
     void addSectionRow(int row, const QString &title,

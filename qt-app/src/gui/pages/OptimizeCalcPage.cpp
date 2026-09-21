@@ -120,6 +120,15 @@ OptimizeCalcPage::OptimizeCalcPage(QWidget *parent)
 
     mainLayout->addWidget(headerBar);
 
+    // 型号/容量联动结果提示条（叠铁芯时显示国标标准值联动摘要）
+    m_linkStatusLabel = new QLabel(this);
+    m_linkStatusLabel->setFixedHeight(22);
+    m_linkStatusLabel->setStyleSheet(
+        "QLabel { background: #1e2228; color: #4dd0e1; font-size: 11px;"
+        " padding: 2px 8px; border-bottom: 1px solid #3a4050; }");
+    m_linkStatusLabel->hide();
+    mainLayout->addWidget(m_linkStatusLabel);
+
     // Ribbon
     m_ribbon = new RibbonBar(this);
     setupRibbon();
@@ -264,6 +273,17 @@ void OptimizeCalcPage::setupMainArea()
     m_paramTable = new ParamTableWidget(this);
     m_paramTable->loadParamsForConfig(m_params, m_config, m_input,
                                       m_config.calcMode == StructureConfig::Professional);
+    // 叠铁芯型号/容量联动：标准值覆盖结果实时显示在提示条
+    connect(m_paramTable, &ParamTableWidget::stdValuesUpdated, this, [this](const QString &s) {
+        m_linkStatusLabel->setText(s);
+        m_linkStatusLabel->show();
+    });
+    m_linkStatusLabel->setVisible(m_config.coreType == StructureConfig::StackedSilicon);
+    if (m_config.coreType == StructureConfig::StackedSilicon) {
+        m_linkStatusLabel->setText(QStringLiteral(
+            "叠铁芯型号/容量联动已启用：切换后按 GB 20052-2024 自动更新损耗标准值（阻抗标准值保持当前设置）；"
+            "注意容量变更后设计变量仍为原容量基准，请按新容量重新设定"));
+    }
 
     // Help panel（文案随计算模式切换，见 updateHelpPanel）
     m_helpPanel = new QTextEdit(this);
@@ -567,6 +587,14 @@ void OptimizeCalcPage::refreshParamTable()
     m_paramTable->saveToInput(m_input);   // 刷新前保留已编辑的设计变量
     const bool proMode = (m_config.calcMode == StructureConfig::Professional);
     m_paramTable->loadParamsForConfig(m_params, m_config, m_input, proMode);
+    // 联动提示条仅叠铁芯可见
+    const bool stacked = (m_config.coreType == StructureConfig::StackedSilicon);
+    m_linkStatusLabel->setVisible(stacked);
+    if (stacked) {
+        m_linkStatusLabel->setText(QStringLiteral(
+            "叠铁芯型号/容量联动已启用：切换后按 GB 20052-2024 自动更新损耗标准值（阻抗标准值保持当前设置）；"
+            "注意容量变更后设计变量仍为原容量基准，请按新容量重新设定"));
+    }
     saveModePreference();
 }
 

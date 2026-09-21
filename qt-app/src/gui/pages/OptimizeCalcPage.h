@@ -14,6 +14,7 @@ class ParamTableWidget;
 class SidebarPanel;
 class QTextEdit;
 class QPushButton;
+class QLabel;
 
 class OptimizeCalcPage : public QWidget {
     Q_OBJECT
@@ -54,6 +55,7 @@ private:
     SidebarPanel *m_sidebar;
     QTextEdit *m_helpPanel;
     QPushButton *m_navButton;
+    QLabel *m_linkStatusLabel = nullptr;  // 型号/容量联动结果提示
     TransformerParams m_params;
     StructureConfig m_config;
     CalcInput m_input;              // 设计变量（默认即 SB20-M-630-10）

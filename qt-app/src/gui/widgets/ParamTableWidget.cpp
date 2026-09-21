@@ -1,6 +1,8 @@
 #include "ParamTableWidget.h"
+#include "ModelStdTable.h"
 #include <QHeaderView>
 #include <QFont>
+#include <QComboBox>
 
 ParamTableWidget::ParamTableWidget(QWidget *parent)
     : QTableWidget(parent)
@@ -114,8 +116,12 @@ TransformerParams ParamTableWidget::getParams() const
         }
     };
 
-    // 输入信息
-    setDouble("capacity", params.capacity_kVA);
+    // 输入信息（叠铁芯时容量/型号来自下拉控件，其余来自文本单元格）
+    if (m_capacityCombo) {
+        params.capacity_kVA = m_capacityCombo->currentData().toDouble();
+    } else {
+        setDouble("capacity", params.capacity_kVA);
+    }
     setDouble("hvRatedVoltage", params.hvRatedVoltage_kV);
     setDouble("lvRatedVoltage", params.lvRatedVoltage_kV);
     setInt("hvTapStages", params.hvTapStages);
@@ -123,7 +129,13 @@ TransformerParams ParamTableWidget::getParams() const
     setDouble("maxAmbientTemp", params.maxAmbientTemp_C);
     setDouble("maxAltitude", params.maxAltitude_m);
     setString("efficiencyCalcMethod", params.efficiencyCalcMethod);
-    setString("productModel", params.productModel);
+    if (m_modelCombo) {
+        // 完整型号 = 系列 + 容量（如 SB20-M-630），与铭牌命名一致
+        params.productModel = m_modelCombo->currentText() + QStringLiteral("-")
+                              + QString::number((int)params.capacity_kVA);
+    } else {
+        setString("productModel", params.productModel);
+    }
     setString("connectionGroup", params.connectionGroup);
 
     // 性能指标
@@ -147,6 +159,48 @@ TransformerParams ParamTableWidget::getParams() const
     return params;
 }
 
+// 型号/容量联动：查 GB 20052-2024 叠铁芯标准值，覆盖空载/负载/总损耗标准值单元格，
+// 并发出摘要信号；联结组别为 Yyn0 时负载损耗取 Yyn0 列，否则取 Dyn11/Yzn11 列。
+// 阻抗电压为产品铭牌参数（跟随具体计算单/订单，不随能效等级变化），不参与联动覆盖
+void ParamTableWidget::applyModelLinkage()
+{
+    if (m_loading || !m_modelCombo || !m_capacityCombo) {
+        return;
+    }
+    const QString series = m_modelCombo->currentText();
+    const double cap = m_capacityCombo->currentData().toDouble();
+    const ModelStdTable::StdEntry *e = ModelStdTable::lookup(series, cap);
+    if (!e) {
+        return;
+    }
+    const auto cellText = [this](const QString &key) -> QString {
+        const auto it = m_inputRefs.constFind(key);
+        if (it == m_inputRefs.constEnd() || !item(it->first, it->second)) {
+            return QString();
+        }
+        return item(it->first, it->second)->text().trimmed();
+    };
+    const auto setCell = [this](const QString &key, const QString &text) {
+        const auto it = m_inputRefs.constFind(key);
+        if (it != m_inputRefs.constEnd() && item(it->first, it->second)) {
+            item(it->first, it->second)->setText(text);
+        }
+    };
+    // 容差写法（Y,yn0 / Y yn0 等去符号后统一比对）
+    const bool yyn0 = cellText(QStringLiteral("connectionGroup"))
+                          .remove(QLatin1String(","))
+                          .remove(QLatin1String(" "))
+                          .contains(QLatin1String("Yyn0"), Qt::CaseInsensitive);
+    const double loadW = yyn0 ? e->loadYyn0_W : e->loadDyn_W;
+    setCell(QStringLiteral("noLoadLossStd"), QString::number(e->noLoad_W));
+    setCell(QStringLiteral("loadLossStd"), QString::number(loadW));
+    setCell(QStringLiteral("totalLossStd"), QString::number(e->noLoad_W + loadW));
+    emit stdValuesUpdated(QStringLiteral("已联动 %1/%2kVA：空载 %3W、负载 %4W、总损耗 %5W（阻抗标准值保持当前设置）")
+                              .arg(series).arg((int)cap)
+                              .arg(e->noLoad_W).arg(loadW)
+                              .arg(e->noLoad_W + loadW));
+}
+
 // 根据当前结构配置动态生成参数表：不同铁芯/绕组组合显示不同的参数行和分段；
 // 四/五/六节为可编辑设计变量，与 CalcInput 双向同步（saveToInput 读回）；
 // proMode=true 时追加七~十节高级参数（专业模式）
@@ -168,9 +222,47 @@ void ParamTableWidget::loadParamsForConfig(const TransformerParams &params, cons
     // 一 输入信息（所有类型共有；静态行同样绑定 key，getParams 按 key 读取）
     addSectionRow(row++, QStringLiteral("一 输入信息"),
                   QStringLiteral("变压器效率计算方式"), params.efficiencyCalcMethod);
-    addInputRow(row++, "容量(kVA)", QString::number(params.capacity_kVA),
-                "产品型号", modelPrefix + "15-" + QString::number((int)params.capacity_kVA),
-                "capacity", "productModel");
+    // 容量/产品型号：叠铁芯用下拉（标准 19 档容量 + SB 系列型号），
+    // 切换后按 GB 20052-2024 联动覆盖损耗标准值（阻抗为铭牌参数不联动）；
+    // 其他铁芯类型保持原文本展示
+    if (config.coreType == StructureConfig::StackedSilicon) {
+        addParamRow(row, "容量(kVA)", QString::number(params.capacity_kVA),
+                    "产品型号", params.productModel);
+        m_capacityCombo = new QComboBox(this);
+        const QVector<double> caps = ModelStdTable::capacities();
+        for (const double c : caps) {
+            m_capacityCombo->addItem(QString::number((int)c), c);
+        }
+        setCellWidget(row, 2, m_capacityCombo);
+        m_modelCombo = new QComboBox(this);
+        m_modelCombo->addItems({QStringLiteral("SB22-M"), QStringLiteral("SB20-M"),
+                                QStringLiteral("SB13-M")});
+        setCellWidget(row, 4, m_modelCombo);
+        m_loading = true;
+        // 非标准容量（如历史方案 750kVA）追加为额外选项，不静默回落到 630；
+        // 此时 GB 表查不到标准值，applyModelLinkage 自动跳过（不覆盖任何单元格）
+        int ci = m_capacityCombo->findData(params.capacity_kVA);
+        if (ci < 0) {
+            m_capacityCombo->addItem(QString::number((int)params.capacity_kVA), params.capacity_kVA);
+            ci = m_capacityCombo->findData(params.capacity_kVA);
+        }
+        m_capacityCombo->setCurrentIndex(ci);
+        // productModel 可能是完整型号（如 SB20-M-630），取前两段匹配系列
+        const int mi = m_modelCombo->findText(params.productModel.section('-', 0, 1));
+        m_modelCombo->setCurrentIndex(mi >= 0 ? mi : 1);  // 默认 SB20-M
+        m_loading = false;
+        connect(m_capacityCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
+                this, [this](int) { applyModelLinkage(); });
+        connect(m_modelCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
+                this, [this](int) { applyModelLinkage(); });
+        ++row;
+    } else {
+        m_capacityCombo = nullptr;
+        m_modelCombo = nullptr;
+        addInputRow(row++, "容量(kVA)", QString::number(params.capacity_kVA),
+                    "产品型号", modelPrefix + "15-" + QString::number((int)params.capacity_kVA),
+                    "capacity", "productModel");
+    }
     addInputRow(row++, "高压额定电压(kV)", QString::number(params.hvRatedVoltage_kV),
                 "联结组别", params.connectionGroup,
                 "hvRatedVoltage", "connectionGroup");
