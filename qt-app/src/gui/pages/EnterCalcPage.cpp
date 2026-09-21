@@ -15,6 +15,7 @@
 #include "SelfLearnDialog.h"
 #include "AiAnalysisDialog.h"
 #include "QuoteCalculator.h"
+#include "ParamTableWidget.h"
 #include <QDateTime>
 #include <QDir>
 #include <algorithm>
@@ -1052,7 +1053,7 @@ void EnterCalcPage::setupSchemeTab()
     outer->addWidget(createNavButton(tab));
 
     m_schemeTable = new SchemeTableWidget(tab);
-    // 行内「选择」按钮：标记待确认方案（按钮变亮，不跳转）
+    // 行内「选择」按钮：弹出方案参数弹窗，确认后由槽内 markRow 点亮按钮
     connect(m_schemeTable, &SchemeTableWidget::schemeSelected,
             this, &EnterCalcPage::onSchemeSelected);
     outer->addWidget(m_schemeTable, 1);
@@ -1547,12 +1548,124 @@ void EnterCalcPage::onSchemeSelected(int row)
     if (row < 0 || row >= m_schemeTable->rowCount()) {
         return;
     }
-    // 仅标记待确认方案（按钮高亮由表格内部处理），选中该行但不跳转
-    m_schemeTable->selectRow(row);
-    const QString idx = m_schemeTable->item(row, 1)
-                            ? m_schemeTable->item(row, 1)->text() : QString('?');
-    m_statusBar->setText(
-        QStringLiteral("已选择方案 %1，点击\"方案确认\"进入输出打印").arg(idx));
+    const int schemeIdx = m_schemeTable->item(row, 1)
+                              ? m_schemeTable->item(row, 1)->text().toInt() : -1;
+    const auto it = m_schemeData.constFind(schemeIdx);
+    if (schemeIdx < 0 || it == m_schemeData.constEnd()) {
+        return;
+    }
+
+    // 方案参数弹窗：可修改该方案设计变量并重算（仅改这一个方案，
+    // 寻优基准 m_calcInput/参数设置页不受影响）；确认后返回本页并点亮行内按钮
+    const OptimizeCandidate original = it.value();
+    QDialog dlg(this);
+    dlg.setWindowTitle(QStringLiteral("方案参数 - 方案 %1").arg(schemeIdx));
+    dlg.setModal(true);
+    dlg.resize(720, 620);
+    auto *layout = new QVBoxLayout(&dlg);
+    layout->setContentsMargins(12, 12, 12, 12);
+
+    auto *table = new ParamTableWidget(&dlg);
+    const bool proMode = m_config.calcMode == StructureConfig::Professional;
+    table->loadParamsForConfig(m_params, m_config, original.input, proMode);
+    layout->addWidget(table, 1);
+
+    // 工作副本：弹窗内的编辑与重算不直接写回，确认时统一提交
+    CalcInput working = original.input;
+    CalcResult pendingResult = original.result;
+
+    // 结果摘要（计算/确认后刷新）
+    const auto summaryText = [](const CalcResult &r) {
+        if (!r.valid) {
+            return QStringLiteral("尚未计算——点击\"计算\"按钮重算该方案");
+        }
+        return QStringLiteral(
+                   "主材成本 %1 元 | 空载损耗 %2 W | 负载损耗 %3 W | 阻抗电压 %4 % "
+                   "| 油顶层温升 %5 K")
+            .arg(QString::number(r.cost.materialCost, 'f', 0),
+                 QString::number(r.core.noLoadLoss_W, 'f', 1),
+                 QString::number(r.winding.loadLoss_W, 'f', 1),
+                 QString::number(r.impedance.impedance_pct, 'f', 2),
+                 QString::number(r.thermal.oilTopRise_K, 'f', 1));
+    };
+    auto *summary = new QLabel(summaryText(pendingResult), &dlg);
+    summary->setWordWrap(true);
+    summary->setStyleSheet("color: #8a9bb0; font-size: 12px;");
+    layout->addWidget(summary);
+
+    // 表格编辑跟踪（loadParamsForConfig 之后连接，避免初始化误报）
+    bool dirty = false;
+    connect(table, &QTableWidget::itemChanged, table,
+            [&dirty](QTableWidgetItem *) { dirty = true; });
+
+    // 表格当前值重算（计算/确认共用）：失败返回 false 并提示
+    const auto recalc = [&]() -> bool {
+        CalcInput in = working;   // 未绑定/非法输入的域保持原值
+        table->saveToInput(in);
+        CalcResult res;
+        if (!m_engine.calcElectromagnetic(in, res) || !res.valid) {
+            QMessageBox::warning(&dlg, QStringLiteral("方案计算"),
+                                 QStringLiteral("计算失败: %1").arg(res.error));
+            return false;
+        }
+        working = in;
+        pendingResult = res;
+        dirty = false;
+        summary->setText(summaryText(pendingResult));
+        return true;
+    };
+
+    auto *btnRow = new QHBoxLayout;
+    auto *calcBtn = new QPushButton(QStringLiteral("计算"), &dlg);
+    auto *okBtn = new QPushButton(QStringLiteral("确认"), &dlg);
+    auto *cancelBtn = new QPushButton(QStringLiteral("取消"), &dlg);
+    calcBtn->setCursor(Qt::PointingHandCursor);
+    okBtn->setCursor(Qt::PointingHandCursor);
+    cancelBtn->setCursor(Qt::PointingHandCursor);
+    calcBtn->setStyleSheet(
+        "QPushButton { background: #00bcd4; color: #1a1d23; font-size: 12px;"
+        " padding: 5px 18px; border: none; border-radius: 4px; font-weight: bold; }"
+        "QPushButton:hover { background: #4dd0e1; }");
+    okBtn->setStyleSheet(
+        "QPushButton { background: #2e75b6; color: #ffffff; font-size: 12px;"
+        " padding: 5px 18px; border: none; border-radius: 4px; font-weight: bold; }"
+        "QPushButton:hover { background: #3f8ad0; }");
+    cancelBtn->setStyleSheet(
+        "QPushButton { background: rgba(255,255,255,0.08); color: #8a9bb0;"
+        " font-size: 12px; padding: 5px 18px; border: 1px solid #3a4050;"
+        " border-radius: 4px; }"
+        "QPushButton:hover { background: rgba(255,255,255,0.15); }");
+    btnRow->addWidget(calcBtn);
+    btnRow->addStretch(1);
+    btnRow->addWidget(okBtn);
+    btnRow->addWidget(cancelBtn);
+    layout->addLayout(btnRow);
+
+    connect(calcBtn, &QPushButton::clicked, this, [&]() { recalc(); });
+
+    connect(okBtn, &QPushButton::clicked, this, [&]() {
+        // 有未重算的编辑时先重算，保证确认提交的是当前输入的结果
+        if (dirty && !recalc()) {
+            return;
+        }
+        OptimizeCandidate updated = original;
+        updated.input = working;
+        updated.result = pendingResult;
+        updated.scheme = makeScheme(schemeIdx, working, pendingResult);
+        m_schemeData.insert(schemeIdx, updated);
+        m_schemeTable->updateResult(row, updated.scheme);
+        m_schemeTable->markRow(row);
+        m_schemeTable->selectRow(row);
+        m_statusBar->setText(
+            QStringLiteral("已选择方案 %1（主材成本 %2 元），点击\"方案确认\"进入输出打印")
+                .arg(schemeIdx)
+                .arg(QString::number(pendingResult.cost.materialCost, 'f', 0)));
+        dlg.accept();
+    });
+
+    connect(cancelBtn, &QPushButton::clicked, &dlg, &QDialog::reject);
+
+    dlg.exec();
 }
 
 void EnterCalcPage::onSaveSchemes()

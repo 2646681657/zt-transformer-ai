@@ -128,14 +128,13 @@ void SchemeTableWidget::addResult(const OptimizationResult &r)
     int row = rowCount();
     insertRow(row);
 
-    // 第 0 列：行内「选择」按钮。点击仅标记该方案（按钮变亮，其余行取消标记），
-    // 确认动作由 Ribbon「方案确认」按钮触发；排序后按钮随行移动，
+    // 第 0 列：行内「选择」按钮。点击请求打开方案参数弹窗（不发确认跳转），
+    // 弹窗确认后由外部调用 markRow 点亮；排序后按钮随行移动，
     // 回调时按 cellWidget 反查实际行号
     auto *btn = new QPushButton(QStringLiteral("选择"), this);
     btn->setCursor(Qt::PointingHandCursor);
     applyButtonStyle(btn, false);
     connect(btn, &QPushButton::clicked, this, [this, btn]() {
-        markButton(btn);
         for (int i = 0; i < rowCount(); ++i) {
             if (cellWidget(i, 0) == btn) {
                 emit schemeSelected(i);
@@ -145,6 +144,11 @@ void SchemeTableWidget::addResult(const OptimizationResult &r)
     });
     setCellWidget(row, 0, btn);
 
+    fillRowItems(row, r);
+}
+
+void SchemeTableWidget::fillRowItems(int row, const OptimizationResult &r)
+{
     // 数值列用数值类型存储（非文本），保证升序/降序/取消排序
     // 都按数值比较而非字符串字典序（否则 "10" < "2"）
     const auto numItem = [](double v) {
@@ -152,6 +156,7 @@ void SchemeTableWidget::addResult(const OptimizationResult &r)
         it->setData(Qt::DisplayRole, v);
         return it;
     };
+
     const auto intItem = [](int v) {
         auto *it = new QTableWidgetItem;
         it->setData(Qt::DisplayRole, v);
@@ -177,6 +182,24 @@ void SchemeTableWidget::addResult(const OptimizationResult &r)
     setItem(row, col++, intItem(r.lvHalfOilDucts));
     setItem(row, col++, intItem(r.hvHalfOilDucts));
     setItem(row, col++, numItem(r.lvHalfDist));
+}
+
+void SchemeTableWidget::updateResult(int row, const OptimizationResult &result)
+{
+    if (row < 0 || row >= rowCount()) {
+        return;
+    }
+    fillRowItems(row, result);
+}
+
+void SchemeTableWidget::markRow(int row)
+{
+    if (row < 0 || row >= rowCount()) {
+        return;
+    }
+    if (auto *btn = qobject_cast<QPushButton *>(cellWidget(row, 0))) {
+        markButton(btn);
+    }
 }
 
 void SchemeTableWidget::markButton(QPushButton *btn)
