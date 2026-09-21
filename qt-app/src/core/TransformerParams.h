@@ -17,11 +17,11 @@ struct TransformerParams {
     // 性能指标（标准值取自 SB20-M-630-10 计算单基准：空载 529W、
     // 负载 5206W、总损 5735W、阻抗 6.93%、空载电流 0.6%）
     double noLoadLossStd_W = 530.0;
-    double noLoadLossMaxDev_pct = 0.0;
+    double noLoadLossMaxDev_pct = 10.0;   // 国标制造公差惯例 +10%
     double loadLossStd_W = 5210.0;
-    double loadLossMaxDev_pct = 0.0;
+    double loadLossMaxDev_pct = 10.0;
     double totalLossStd_W = 5740.0;
-    double totalLossMaxDev_pct = 0.0;
+    double totalLossMaxDev_pct = 10.0;
     double impedanceVoltageStd_pct = 6.93;
     double impedanceVoltageMaxDev_pct = 10.0;
     double impedanceVoltageMinDev_pct = -10.0;
