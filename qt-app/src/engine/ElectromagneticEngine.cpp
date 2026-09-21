@@ -231,7 +231,21 @@ void calcCoreGeometry(EmCtx &c)
         } else {
             cand = std::sqrt((D / 2.0) * (D / 2.0) - halfW * halfW) + Ls / 2.0;
         }
+        // 几何无解防护：sqrt 负参时两个分支都会得到 NaN——片宽塞不进椭圆，
+        // 典型原因是直径与直线段长/叠积表严重失配（如直径改得过小）
+        if (!std::isfinite(cand)) {
+            c.fail(QStringLiteral("第 %1 级叠积片宽 %2 mm 超出椭圆几何范围："
+                                  "铁芯直径 %3 mm 与直线段长 %4 mm 不匹配，请调整")
+                      .arg(i + 1).arg(c.lamWidth[i]).arg(D).arg(Ls));
+            return;
+        }
         const double d = excelRound(cand - acc, 0);
+        if (d < -0.5) {   // 容差 0.5 防四舍五入误报；负叠厚物理不可行
+            c.fail(QStringLiteral("第 %1 级叠厚为负（%2 mm）：椭圆几何随叠积级数收缩，"
+                                  "请检查铁芯直径 %3 mm 与直线段长 %4 mm 的匹配")
+                      .arg(i + 1).arg(d).arg(D).arg(Ls));
+            return;
+        }
         c.stack[i] = d;
         acc += d;
     }
@@ -1050,6 +1064,19 @@ bool ElectromagneticEngine::calcElectromagnetic(const CalcInput &input, CalcResu
     calcImpedance(ctx);
     calcThermal(ctx);
     calcMassCost(ctx);
+
+    // NaN 兜底防护：关键输出出现非有限值即判失败，
+    // 避免几何/绕组参数失配的 NaN 一路传播到界面（如成本显示 nan）
+    if (!ctx.failed) {
+        const auto finite = [](double v) { return std::isfinite(v); };
+        if (!finite(result.cost.materialCost) || !finite(result.core.noLoadLoss_W)
+                || !finite(result.winding.loadLoss_W)
+                || !finite(result.impedance.impedance_pct)
+                || !finite(result.thermal.oilTopRise_K)) {
+            ctx.fail(QStringLiteral("计算结果包含无效数值，请检查设计变量组合"
+                                     "（铁芯直径/直线段长/匝数/线规等参数是否可行）"));
+        }
+    }
 
     result.valid = !ctx.failed;
     result.error = ctx.error;
