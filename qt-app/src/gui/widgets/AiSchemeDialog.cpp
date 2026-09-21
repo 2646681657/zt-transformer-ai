@@ -122,7 +122,7 @@ void AiSchemeDialog::onSubmit()
     // 构造消息：system 约束输出格式 + user 携带需求与当前基准值
     QVector<LlmMessage> msgs;
     msgs.append({QStringLiteral("system"), QStringLiteral(
-        "你是变压器电磁设计助手。根据用户的设计需求，推荐干式变压器的设计变量。"
+        "你是变压器电磁设计助手。根据用户的设计需求，推荐油浸式变压器的设计变量。"
         "只输出一个 JSON 对象，不要输出任何解释文字、markdown 代码块标记。"
         "JSON 字段及合法范围：capacity_kVA(30-4000), hvRated_kV(3-40), "
         "lvRated_kV(0.1-1), coreDiameter_mm(80-400), coreStraight_mm(40-300), "
