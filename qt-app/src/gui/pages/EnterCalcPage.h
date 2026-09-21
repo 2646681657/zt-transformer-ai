@@ -101,7 +101,8 @@ private slots:
     void onSchemeIndexChanged(int value);
     // 校验选中方案后跳转输出打印 Tab
     void onConfirmScheme();
-    // 行内「选择」按钮点击：仅标记该方案（按钮变亮），不跳转
+    // 行内「选择」按钮点击：弹出方案参数弹窗（可修改重算），
+    // 确认后点亮该行按钮并停留在方案选择 Tab
     void onSchemeSelected(int row);
     // ---- 方案库存储 ----
     // 批量保存当前方案表全部方案（设计变量 JSON 文件）

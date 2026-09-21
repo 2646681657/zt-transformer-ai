@@ -16,17 +16,23 @@ public:
     // 追加一个优化方案到表格末尾
     void addResult(const OptimizationResult &result);
     void clearResults();
+    // 重算后刷新指定行数值列（保留行内「选择」按钮）
+    void updateResult(int row, const OptimizationResult &result);
+    // 点亮指定行的「选择」按钮（方案参数弹窗确认后调用）
+    void markRow(int row);
 
     // 行内「选择」按钮当前标记的行（未标记返回 -1；
     // 按钮随排序移动，按控件指针反查实际行号）
     int markedRow() const;
 
 signals:
-    // 行内「选择」按钮点击：仅标记该行方案（按钮变亮），不触发确认跳转
+    // 行内「选择」按钮点击：请求打开方案参数弹窗（确认后由 markRow 点亮按钮）
     void schemeSelected(int row);
 
 private:
     void setupColumns();
+    // 按列填充数值单元格（addResult/updateResult 共用）
+    void fillRowItems(int row, const OptimizationResult &result);
     // 高亮指定按钮并取消其余行的标记
     void markButton(QPushButton *btn);
 
