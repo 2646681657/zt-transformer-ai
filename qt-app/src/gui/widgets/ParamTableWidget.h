@@ -9,7 +9,7 @@
 #include "StructureConfig.h"
 #include "CalcInput.h"
 
-class QComboBox;
+class QLineEdit;
 
 class ParamTableWidget : public QTableWidget {
     Q_OBJECT
@@ -29,10 +29,15 @@ signals:
     void stdValuesUpdated(const QString &summary);
 
 private:
-    // 叠铁芯时产品型号/容量改为下拉，切换后按国标表联动标准值
+    // 复合产品型号：型号-M-容量/高压额定电压-低压额定电压
+    bool parseCompositeModel(const QString &text, bool commitLowVoltage);
     void applyModelLinkage();
-    QComboBox *m_modelCombo = nullptr;   // 产品型号（叠铁芯：SB22/SB20/SB13-M）
-    QComboBox *m_capacityCombo = nullptr; // 容量（标准 19 档）
+    QLineEdit *m_productModelEdit = nullptr;
+    QString m_modelSeries;
+    double m_modelCapacity_kVA = 630.0;
+    double m_modelHvRated_kV = 10.0;
+    double m_modelLvRated_kV = 0.4;
+    QString m_lastLinkageKey;
     bool m_loading = false;               // 加载期间抑制联动信号
 
     void setupTable();
