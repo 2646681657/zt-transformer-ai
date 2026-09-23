@@ -50,3 +50,24 @@ set_target_properties(ztf-designer PROPERTIES
     OUTPUT_NAME "ZTBLD-Designer"
     WIN32_EXECUTABLE TRUE
 )
+
+include(CTest)
+if(BUILD_TESTING)
+    qt_add_executable(test-enter-calc-page
+        tests/enter_calc_page_test.cpp
+        ${CORE_SOURCES}
+        ${ENGINE_SOURCES}
+        ${ADAPTER_SOURCES}
+        ${GUI_SOURCES}
+        resources/resources.qrc
+    )
+    set_target_properties(test-enter-calc-page PROPERTIES EXCLUDE_FROM_ALL TRUE)
+    target_include_directories(test-enter-calc-page PRIVATE
+        src src/core src/engine src/adapter src/gui src/gui/pages src/gui/widgets src/gui/dialogs
+    )
+    target_link_libraries(test-enter-calc-page PRIVATE
+        Qt6::Core Qt6::Widgets Qt6::Gui Qt6::Concurrent Qt6::PrintSupport Qt6::Network
+    )
+    add_test(NAME enter-calc-page-state COMMAND test-enter-calc-page)
+    set_tests_properties(enter-calc-page-state PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+endif()
