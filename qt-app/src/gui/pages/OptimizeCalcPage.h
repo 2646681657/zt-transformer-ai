@@ -41,6 +41,7 @@ private:
     void setupRibbon();
     void setupMainArea();
     void updateConfigFromRibbon();
+    bool ensureSupportedCoreShape();
     void refreshParamTable();
     // 帮助面板文案随计算模式切换（正常/专业）
     void updateHelpPanel();

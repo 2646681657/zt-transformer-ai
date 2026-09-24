@@ -180,11 +180,11 @@ void OptimizeCalcPage::setupRibbon()
     g3->setExclusive(true);
     g3->addButton(new RibbonButton(QStringLiteral("圆形"), ":/icons/shape_circle.svg", g3));
     g3->addButton(new RibbonButton(QStringLiteral("长圆形"), ":/icons/shape_long_round.svg", g3));
-    g3->addButton(new RibbonButton(QStringLiteral("椭圆形"), ":/icons/shape_ellipse.svg", g3));
+    auto *ellipseBtn = new RibbonButton(QStringLiteral("椭圆形"), ":/icons/shape_ellipse.svg", g3);
+    ellipseBtn->setActive(true);
+    g3->addButton(ellipseBtn);
     g3->addButton(new RibbonButton(QStringLiteral("半椭圆形"), ":/icons/shape_half_ellipse.svg", g3));
-    auto *elBtn = new RibbonButton(QStringLiteral("类椭圆型"), ":/icons/shape_ellipse_like.svg", g3);
-    elBtn->setActive(true);
-    g3->addButton(elBtn);
+    g3->addButton(new RibbonButton(QStringLiteral("类椭圆型"), ":/icons/shape_ellipse_like.svg", g3));
     m_ribbon->addSeparator();
 
     // Group 4: 绕组方式 (互斥)
@@ -304,6 +304,8 @@ void OptimizeCalcPage::onEnterCalcClicked()
             return;
         }
     }
+    if (!ensureSupportedCoreShape())
+        return;
     if (!m_paramTable->hasSupportedConnectionGroup()) {
         QMessageBox::warning(this, QStringLiteral("联结组别暂不支持"),
             QStringLiteral("当前版本仅支持 Dyn11（可填 Dyn）和 Yyn0。其他联结形式尚无对应的标准损耗值，请修改联结组别后再计算。"));
@@ -331,6 +333,8 @@ void OptimizeCalcPage::onEnterCalcClicked()
 // 弹窗报告超差项，进入计算前预知方案可行性（不跳转、不记录方案）
 void OptimizeCalcPage::onVerifySheetClicked()
 {
+    if (!ensureSupportedCoreShape())
+        return;
     if (!m_paramTable->hasSupportedConnectionGroup()) {
         QMessageBox::warning(this, QStringLiteral("联结组别暂不支持"),
             QStringLiteral("当前版本仅支持 Dyn11（可填 Dyn）和 Yyn0。其他联结形式尚无对应的标准损耗值，请修改联结组别后再校验。"));
@@ -387,6 +391,15 @@ void OptimizeCalcPage::onVerifySheetClicked()
                       .arg(check.violations.join(QStringLiteral("\n")));
         QMessageBox::warning(this, QStringLiteral("校验算单（约束预检）"), report);
     }
+}
+
+bool OptimizeCalcPage::ensureSupportedCoreShape()
+{
+    if (m_selectGroups[2]->selectedIndex() == 2)
+        return true;
+    QMessageBox::warning(this, QStringLiteral("铁芯结构暂不支持"),
+        QStringLiteral("当前计算引擎仅支持计算单中的「椭圆形」铁芯截面。请改选「椭圆形」后再计算。"));
+    return false;
 }
 
 // 应用方案设计变量到参数表：直接重建表格（不经 refreshParamTable，
