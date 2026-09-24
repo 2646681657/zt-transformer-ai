@@ -171,6 +171,15 @@ void EmResultPanel::loadResult(const CalcResult &result)
     fillPage(m_massTab, groups[4].second);
 }
 
+void EmResultPanel::clearResult()
+{
+    for (int i = 0; i < count(); ++i) {
+        if (auto *page = qobject_cast<QTableWidget *>(widget(i))) {
+            page->setRowCount(0);
+        }
+    }
+}
+
 QString EmResultPanel::resultText(const CalcResult &result)
 {
     QString text;

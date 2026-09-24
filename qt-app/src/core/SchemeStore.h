@@ -14,6 +14,9 @@
 #include <QFileInfo>
 #include <QStandardPaths>
 #include <QDir>
+#include <cmath>
+#include <algorithm>
+#include <numeric>
 #include "CalcInput.h"
 
 namespace SchemeStore {
@@ -26,6 +29,9 @@ inline QJsonObject toJson(const CalcInput &in)
     o.insert(QStringLiteral("capacity_kVA"), in.capacity_kVA);
     o.insert(QStringLiteral("hvRated_kV"), in.hvRated_kV);
     o.insert(QStringLiteral("lvRated_kV"), in.lvRated_kV);
+    o.insert(QStringLiteral("hvTapPlusSteps"), in.hvTapPlusSteps);
+    o.insert(QStringLiteral("hvTapMinusSteps"), in.hvTapMinusSteps);
+    o.insert(QStringLiteral("hvTapStep_pct"), in.hvTapStep_pct);
     o.insert(QStringLiteral("hvTapMax_pct"), in.hvTapMax_pct);
     o.insert(QStringLiteral("hvTapMin_pct"), in.hvTapMin_pct);
     o.insert(QStringLiteral("hvDeltaConnected"), in.hvDeltaConnected);
@@ -57,6 +63,7 @@ inline QJsonObject toJson(const CalcInput &in)
     o.insert(QStringLiteral("hvTurnsPerLayer"), in.hvTurnsPerLayer);
     o.insert(QStringLiteral("hvLayerInsul_mm"), in.hvLayerInsul_mm);
     o.insert(QStringLiteral("hvWireInsulAdd_mm"), in.hvWireInsulAdd_mm);
+    o.insert(QStringLiteral("hvCopperWire"), in.hvCopperWire);
     o.insert(QStringLiteral("hvCoilFormIdx"), in.hvCoilFormIdx);
     QJsonArray dws, dhs;
     for (double v : in.hvDuctWidthSide) {
@@ -121,6 +128,30 @@ inline CalcInput fromJson(const QJsonObject &o)
     in.lvRated_kV = num("lvRated_kV", in.lvRated_kV);
     in.hvTapMax_pct = num("hvTapMax_pct", in.hvTapMax_pct);
     in.hvTapMin_pct = num("hvTapMin_pct", in.hvTapMin_pct);
+    if (o.value(QStringLiteral("hvTapPlusSteps")).isDouble()
+        && o.value(QStringLiteral("hvTapMinusSteps")).isDouble()
+        && o.value(QStringLiteral("hvTapStep_pct")).isDouble()) {
+        in.hvTapPlusSteps = integ("hvTapPlusSteps", in.hvTapPlusSteps);
+        in.hvTapMinusSteps = integ("hvTapMinusSteps", in.hvTapMinusSteps);
+        in.hvTapStep_pct = num("hvTapStep_pct", in.hvTapStep_pct);
+    } else {
+        // 旧方案只保存调压上下限：优先按常用每级 2.5% 还原。
+        const double plus = std::max(0.0, in.hvTapMax_pct);
+        const double minus = std::max(0.0, -in.hvTapMin_pct);
+        const double step = in.hvTapStep_pct;
+        const bool standardStep = std::abs(std::round(plus / step) * step - plus) < 0.0005
+            && std::abs(std::round(minus / step) * step - minus) < 0.0005;
+        if (!standardStep) {
+            const auto plusUnits = std::llround(plus * 1000.0);
+            const auto minusUnits = std::llround(minus * 1000.0);
+            const auto commonUnits = std::gcd(plusUnits, minusUnits);
+            if (commonUnits > 0) {
+                in.hvTapStep_pct = double(commonUnits) / 1000.0;
+            }
+        }
+        in.hvTapPlusSteps = int(std::llround(plus / in.hvTapStep_pct));
+        in.hvTapMinusSteps = int(std::llround(minus / in.hvTapStep_pct));
+    }
     in.hvDeltaConnected = o.value(QStringLiteral("hvDeltaConnected")).toBool(in.hvDeltaConnected);
     in.lvStarConnected = o.value(QStringLiteral("lvStarConnected")).toBool(in.lvStarConnected);
 
@@ -168,6 +199,8 @@ inline CalcInput fromJson(const QJsonObject &o)
     in.lvLayerInsul_mm = num("lvLayerInsul_mm", in.lvLayerInsul_mm);
     in.lvEndInsul_mm = num("lvEndInsul_mm", in.lvEndInsul_mm);
     in.lvCopperFoil = o.value(QStringLiteral("lvCopperFoil")).toBool(in.lvCopperFoil);
+    // 旧方案只有低压材料标志，旧版也用它控制高压导线重量；据此迁移高压材料。
+    in.hvCopperWire = o.value(QStringLiteral("hvCopperWire")).toBool(in.lvCopperFoil);
     const QJsonArray lws = o.value(QStringLiteral("lvDuctWidthSide")).toArray();
     const QJsonArray lhs = o.value(QStringLiteral("lvDuctHeightSide")).toArray();
     for (int i = 0; i < 5; ++i) {

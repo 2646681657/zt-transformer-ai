@@ -38,6 +38,7 @@ private:
     // 报价参数编辑（单价 + 费用系数）
     QDoubleSpinBox *m_steelPrice = nullptr;
     QDoubleSpinBox *m_cuPrice = nullptr;
+    QDoubleSpinBox *m_alPrice = nullptr;
     QDoubleSpinBox *m_oilPrice = nullptr;
     QDoubleSpinBox *m_tankPrice = nullptr;
     QDoubleSpinBox *m_purchasedSpin = nullptr;

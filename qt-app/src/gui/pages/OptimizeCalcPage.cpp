@@ -120,6 +120,15 @@ OptimizeCalcPage::OptimizeCalcPage(QWidget *parent)
 
     mainLayout->addWidget(headerBar);
 
+    // 型号/容量联动结果提示条（叠铁芯时显示国标标准值联动摘要）
+    m_linkStatusLabel = new QLabel(this);
+    m_linkStatusLabel->setFixedHeight(22);
+    m_linkStatusLabel->setStyleSheet(
+        "QLabel { background: #1e2228; color: #4dd0e1; font-size: 11px;"
+        " padding: 2px 8px; border-bottom: 1px solid #3a4050; }");
+    m_linkStatusLabel->hide();
+    mainLayout->addWidget(m_linkStatusLabel);
+
     // Ribbon
     m_ribbon = new RibbonBar(this);
     setupRibbon();
@@ -264,6 +273,17 @@ void OptimizeCalcPage::setupMainArea()
     m_paramTable = new ParamTableWidget(this);
     m_paramTable->loadParamsForConfig(m_params, m_config, m_input,
                                       m_config.calcMode == StructureConfig::Professional);
+    // 叠铁芯型号/容量联动：标准值覆盖结果实时显示在提示条
+    connect(m_paramTable, &ParamTableWidget::stdValuesUpdated, this, [this](const QString &s) {
+        m_linkStatusLabel->setText(s);
+        m_linkStatusLabel->show();
+    });
+    m_linkStatusLabel->setVisible(m_config.coreType == StructureConfig::StackedSilicon);
+    if (m_config.coreType == StructureConfig::StackedSilicon) {
+        m_linkStatusLabel->setText(QStringLiteral(
+            "叠铁芯型号/容量联动已启用：切换后按 GB 20052-2024 自动更新损耗标准值（阻抗标准值保持当前设置）；"
+            "注意容量变更后设计变量仍为原容量基准，请按新容量重新设定"));
+    }
 
     // Help panel（文案随计算模式切换，见 updateHelpPanel）
     m_helpPanel = new QTextEdit(this);
@@ -284,6 +304,16 @@ void OptimizeCalcPage::onEnterCalcClicked()
             return;
         }
     }
+    if (!m_paramTable->hasSupportedConnectionGroup()) {
+        QMessageBox::warning(this, QStringLiteral("联结组别暂不支持"),
+            QStringLiteral("当前版本仅支持 Dyn11（可填 Dyn）和 Yyn0。其他联结形式尚无对应的标准损耗值，请修改联结组别后再计算。"));
+        return;
+    }
+    if (!m_paramTable->hasValidSteelGrade()) {
+        QMessageBox::warning(this, QStringLiteral("硅钢片牌号不可用"),
+            QStringLiteral("请从下拉列表选择数据库已收录的硅钢片牌号；未收录牌号不能用于计算。"));
+        return;
+    }
     m_params = m_paramTable->getParams();
     m_paramTable->saveToInput(m_input);   // 收集表格中编辑的设计变量
     // 表格「一 输入信息」节编辑的额定值同步回 CalcInput（保持两体系一致）
@@ -301,6 +331,16 @@ void OptimizeCalcPage::onEnterCalcClicked()
 // 弹窗报告超差项，进入计算前预知方案可行性（不跳转、不记录方案）
 void OptimizeCalcPage::onVerifySheetClicked()
 {
+    if (!m_paramTable->hasSupportedConnectionGroup()) {
+        QMessageBox::warning(this, QStringLiteral("联结组别暂不支持"),
+            QStringLiteral("当前版本仅支持 Dyn11（可填 Dyn）和 Yyn0。其他联结形式尚无对应的标准损耗值，请修改联结组别后再校验。"));
+        return;
+    }
+    if (!m_paramTable->hasValidSteelGrade()) {
+        QMessageBox::warning(this, QStringLiteral("硅钢片牌号不可用"),
+            QStringLiteral("请从下拉列表选择数据库已收录的硅钢片牌号；未收录牌号不能用于计算。"));
+        return;
+    }
     // 收集当前表格参数与设计变量（与进入计算同链路，但不记忆/不跳转）
     const TransformerParams params = m_paramTable->getParams();
     CalcInput input = m_input;
@@ -360,6 +400,17 @@ void OptimizeCalcPage::applySchemeInput(const CalcInput &input)
     m_params.capacity_kVA = input.capacity_kVA;
     m_params.hvRatedVoltage_kV = input.hvRated_kV;
     m_params.lvRatedVoltage_kV = input.lvRated_kV;
+    // 方案中的接线方式也必须回显，否则重进计算时表格旧值会覆盖方案。
+    if (input.lvStarConnected) {
+        m_params.connectionGroup = input.hvDeltaConnected
+            ? QStringLiteral("Dyn11") : QStringLiteral("Yyn0");
+    } else {
+        m_params.connectionGroup = input.hvDeltaConnected
+            ? QStringLiteral("Dd（暂不支持）") : QStringLiteral("Yd（暂不支持）");
+    }
+    m_params.hvTapPlusSteps = input.hvTapPlusSteps;
+    m_params.hvTapMinusSteps = input.hvTapMinusSteps;
+    m_params.hvTapVoltagePercent = input.hvTapStep_pct;
     const bool proMode = (m_config.calcMode == StructureConfig::Professional);
     m_paramTable->loadParamsForConfig(m_params, m_config, m_input, proMode);
 }
@@ -384,6 +435,16 @@ void OptimizeCalcPage::onSchemeButtonClicked(int index)
         break;
     }
     case 3: {  // 保存为我的方案（命名保存当前设计变量）
+        if (!m_paramTable->hasSupportedConnectionGroup()) {
+            QMessageBox::warning(this, QStringLiteral("联结组别暂不支持"),
+                QStringLiteral("当前版本仅支持 Dyn11（可填 Dyn）和 Yyn0，请修改联结组别后再保存方案。"));
+            return;
+        }
+        if (!m_paramTable->hasValidSteelGrade()) {
+            QMessageBox::warning(this, QStringLiteral("硅钢片牌号不可用"),
+                QStringLiteral("请从下拉列表选择数据库已收录的硅钢片牌号；未收录牌号不能用于计算。"));
+            return;
+        }
         bool ok = false;
         const QString name = QInputDialog::getText(this,
             QStringLiteral("保存为我的方案"),
@@ -567,6 +628,14 @@ void OptimizeCalcPage::refreshParamTable()
     m_paramTable->saveToInput(m_input);   // 刷新前保留已编辑的设计变量
     const bool proMode = (m_config.calcMode == StructureConfig::Professional);
     m_paramTable->loadParamsForConfig(m_params, m_config, m_input, proMode);
+    // 联动提示条仅叠铁芯可见
+    const bool stacked = (m_config.coreType == StructureConfig::StackedSilicon);
+    m_linkStatusLabel->setVisible(stacked);
+    if (stacked) {
+        m_linkStatusLabel->setText(QStringLiteral(
+            "叠铁芯型号/容量联动已启用：切换后按 GB 20052-2024 自动更新损耗标准值（阻抗标准值保持当前设置）；"
+            "注意容量变更后设计变量仍为原容量基准，请按新容量重新设定"));
+    }
     saveModePreference();
 }
 

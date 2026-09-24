@@ -742,8 +742,10 @@ void EnterCalcPage::showInitInfoDialog(int index)
             { QStringLiteral("硅钢片牌号"), m_calcInput.steelGrade },
             { QStringLiteral("硅钢片厚度(mm)"),
               QString::number(m_calcInput.steelThickness_mm) },
-            { QStringLiteral("低压线圈材料"), QStringLiteral("铜（箔绕）") },
-            { QStringLiteral("高压线圈材料"), QStringLiteral("铜") },
+            { QStringLiteral("低压线圈材料"), m_calcInput.lvCopperFoil
+                  ? QStringLiteral("铜箔") : QStringLiteral("铝箔") },
+            { QStringLiteral("高压线圈材料"), m_calcInput.hvCopperWire
+                  ? QStringLiteral("铜导线") : QStringLiteral("铝导线") },
             { QStringLiteral("材料单价"),
               QStringLiteral("见系统设置页「报价参数」") },
         });
@@ -1078,12 +1080,25 @@ void EnterCalcPage::setupPrintTab()
 
 void EnterCalcPage::setCalcInput(const CalcInput &input)
 {
+    if (m_optRunning) {
+        m_discardOptimizationResults = true;
+        m_optimizer->stop();
+    }
     m_calcInput = input;
+    m_lastInput = CalcInput{};
+    m_emResult = CalcResult{};
+    m_hasResult = false;
+    m_confirmedSchemeIdx = -1;
+    m_schemeData.clear();
+    m_schemeTable->clearResults();
+    m_emResultPanel->clearResult();
+    m_statusBar->setText(QStringLiteral("已加载新参数，请重新计算"));
     // 进入计算页时刷新打印表初始计算单（当前设计变量的计算结果；
     // 快速计算/寻优完成后会由 onRunEmCalc 等用最新结果覆盖）
     if (!m_printTable) {
         return;   // 构造期间 Tab 未建完（正常流程不会发生）
     }
+    m_printTable->setRowCount(0);
     CalcResult initResult;
     if (m_engine.calcElectromagnetic(m_calcInput, initResult) && initResult.valid) {
         m_printTable->loadData(
@@ -1280,11 +1295,17 @@ void EnterCalcPage::onOptimizeStop()
 
 void EnterCalcPage::onOptimizeProgress(int percent)
 {
+    if (m_discardOptimizationResults) {
+        return;
+    }
     m_statusBar->setText(QStringLiteral("寻优进行中：%1%").arg(percent));
 }
 
 void EnterCalcPage::onOptimizeCandidate(const OptimizeCandidate &candidate)
 {
+    if (m_discardOptimizationResults) {
+        return;
+    }
     OptimizationResult scheme = candidate.scheme;
     scheme.schemeIdx = m_schemeTable->rowCount() + 1;   // 序号按入库顺序编排
     m_schemeTable->addResult(scheme);
@@ -1298,6 +1319,12 @@ void EnterCalcPage::onOptimizeFinished(bool stopped, const OptimizeCandidate &be
                                        int total, int valid)
 {
     m_optRunning = false;
+    if (m_discardOptimizationResults) {
+        m_discardOptimizationResults = false;
+        m_pauseBtn->setText(QStringLiteral("暂停计算"));
+        m_statusBar->setText(QStringLiteral("旧参数寻优已停止，可按新参数重新运行"));
+        return;
+    }
     if (m_pauseBtn) {
         m_pauseBtn->setText(QStringLiteral("暂停计算"));
     }
@@ -2496,7 +2523,8 @@ void EnterCalcPage::onExportDocuments()
     const QuoteParams quoteParams =
         QuoteParams::loadFromFile(QuoteCalculator::defaultParamsPath(), &paramOk);
     const QuoteResult quote =
-        QuoteCalculator::calculate(m_params, m_emResult, paramOk ? quoteParams : QuoteParams{});
+        QuoteCalculator::calculate(m_params, m_calcInput, m_emResult,
+                                   paramOk ? quoteParams : QuoteParams{});
     QString costText = QStringLiteral("材料成本清单\n");
     costText += QStringLiteral("========================================\n");
     costText += QStringLiteral("图号：%1　型号：%2\n").arg(drawingNo, model);
