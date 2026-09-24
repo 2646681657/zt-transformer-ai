@@ -571,12 +571,16 @@ void OptimizeCalcPage::onImportParamsClicked()
         report + QStringLiteral("\n\n参数表已更新，请核对「一 输入信息」与「二 性能指标」。"));
 }
 
-// Ribbon选项变更时同步更新结构配置并刷新参数表
+// Ribbon 选型变化时只重建受影响的参数表，避免无关选项触发整表闪烁
 void OptimizeCalcPage::onSelectionChanged()
 {
+    const auto oldMode = m_config.calcMode;
+    const auto oldCoreType = m_config.coreType;
     updateConfigFromRibbon();
-    refreshParamTable();
-    updateHelpPanel();
+    if (m_config.calcMode != oldMode || m_config.coreType != oldCoreType)
+        refreshParamTable();
+    if (m_config.calcMode != oldMode)
+        updateHelpPanel();
 }
 
 // 帮助面板文案随计算模式切换（正常/专业）
@@ -639,6 +643,8 @@ void OptimizeCalcPage::refreshParamTable()
 {
     m_params = m_paramTable->getParams();
     m_paramTable->saveToInput(m_input);   // 刷新前保留已编辑的设计变量
+    const bool wasUpdatesEnabled = updatesEnabled();
+    setUpdatesEnabled(false);
     const bool proMode = (m_config.calcMode == StructureConfig::Professional);
     m_paramTable->loadParamsForConfig(m_params, m_config, m_input, proMode);
     // 联动提示条仅叠铁芯可见
@@ -650,6 +656,7 @@ void OptimizeCalcPage::refreshParamTable()
             "注意容量变更后设计变量仍为原容量基准，请按新容量重新设定"));
     }
     saveModePreference();
+    setUpdatesEnabled(wasUpdatesEnabled);
 }
 
 // 记住上次的计算模式选择（正常/专业）
