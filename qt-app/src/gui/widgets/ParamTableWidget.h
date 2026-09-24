@@ -10,6 +10,9 @@
 #include "CalcInput.h"
 
 class QLineEdit;
+class QSpinBox;
+class QDoubleSpinBox;
+class QComboBox;
 
 class ParamTableWidget : public QTableWidget {
     Q_OBJECT
@@ -21,6 +24,8 @@ public:
     void loadParamsForConfig(const TransformerParams &params, const StructureConfig &config,
                              const CalcInput &input, bool proMode = false);
     TransformerParams getParams() const;
+    // 当前联结组别是否能同时用于电磁计算与现有标准损耗表。
+    bool hasSupportedConnectionGroup() const;
     // 从表格设计变量节读回 CalcInput（未绑定或非法输入的域保持原值）
     void saveToInput(CalcInput &input) const;
 
@@ -33,6 +38,11 @@ private:
     bool parseCompositeModel(const QString &text, bool commitLowVoltage);
     void applyModelLinkage();
     QLineEdit *m_productModelEdit = nullptr;
+    QSpinBox *m_tapPlusSpin = nullptr;
+    QSpinBox *m_tapMinusSpin = nullptr;
+    QDoubleSpinBox *m_tapStepSpin = nullptr;
+    QComboBox *m_hvMaterialCombo = nullptr;
+    QComboBox *m_lvMaterialCombo = nullptr;
     QString m_modelSeries;
     double m_modelCapacity_kVA = 630.0;
     double m_modelHvRated_kV = 10.0;

@@ -86,7 +86,7 @@ struct EmCtx {
     int hvTurnsMin = 0;           // AA8
     int segLayers[3] = {0, 0, 0}; // W9/W10/W11 三段层数
     int segTurnsPerLayer = 0;     // Y9 每层匝数
-    int ductLayerIdx[5] = {0};    // Z30..Z34 油道层序（缓存值语义）
+    int ductLayerIdx[5] = {0};    // Z30..Z34 高压油道层序
     double x42Sheets = 0.0;       // X42 层间绝缘张数
     double x41Sheets = 0.0;       // X41
     double hvInsWidth_mm = 0.0;   // X14 绝缘线宽
@@ -102,6 +102,7 @@ struct EmCtx {
     // ---- 低压绕组布局 ----
     double lvRadial_mm = 0.0;     // AK23 低压辐向厚
     double lvWireSection_mm2 = 0.0; // AH15
+    int lvSegmentTurns[5] = {0};  // AF10..AJ10 低压油道前的分段匝数
 
     // ---- 主空道 / 几何链 ----
     double mainDuct_mm = 0.0;     // AK43
@@ -326,11 +327,27 @@ void calcWindingLayout(EmCtx &c)
     c.segLayers[2] = 1;                                       // W11 手输 1
     c.segLayers[1] = w12 - c.segLayers[0] - c.segLayers[2];   // W10
 
-    // 油道层序（Z30..Z34）：采用计算单缓存值语义（工艺分段），从输入读取
-    const int ductIdx[5] = {1, 1, 2, 2, 1};
-    for (int i = 0; i < 5; ++i) {
-        c.ductLayerIdx[i] = ductIdx[i];
-    }
+    // 高压油道层序（Z30..Z34）：按油道高的停用状态重算。
+    // Z33 所引用的 Y35 在计算单中为空，因此最后一支按 INT(W12/6) 处理。
+    const auto &hvDuct = in.hvDuctHeightSide;
+    c.ductLayerIdx[0] = (hvDuct[0] == 0.0) ? w12 - 1
+        : (hvDuct[1] == 0.0 || hvDuct[2] == 0.0) ? excelInt(w12 / 3.0) - 1
+        : (hvDuct[3] == 0.0) ? excelInt(w12 / 4.0) - 1
+        : (hvDuct[4] == 0.0) ? excelInt(w12 / 5.0) - 1
+        : excelInt(w12 / 6.0) - 1;
+    c.ductLayerIdx[1] = (hvDuct[1] == 0.0) ? 0
+        : (hvDuct[2] == 0.0) ? excelInt(w12 / 3.0) - 1
+        : (hvDuct[3] == 0.0) ? excelInt(w12 / 4.0) - 1
+        : (hvDuct[4] == 0.0) ? excelInt(w12 / 5.0) - 1
+        : excelInt(w12 / 6.0) - 1;
+    c.ductLayerIdx[2] = (hvDuct[2] == 0.0) ? 0
+        : (hvDuct[3] == 0.0) ? excelInt(w12 / 4.0)
+        : (hvDuct[4] == 0.0) ? excelInt(w12 / 5.0)
+        : excelInt(w12 / 6.0);
+    c.ductLayerIdx[3] = (hvDuct[3] == 0.0) ? 0
+        : (hvDuct[4] == 0.0) ? excelInt(w12 / 5.0)
+        : excelInt(w12 / 6.0);
+    c.ductLayerIdx[4] = (hvDuct[4] == 0.0) ? 0 : excelInt(w12 / 8.0);
 
     // 绝缘线尺寸（X14/Z14）：QZB 漆包 +0.15 / ZB-0.3 +0.35 / ZB-0.45 +0.5
     const double add = in.hvWireInsulAdd_mm;
@@ -403,14 +420,32 @@ void calcWindingLayout(EmCtx &c)
     const double aa30 = c.hvAxial_mm + aa29;                      // AA30
     c.ac30_mm = excelRound(aa30 - c.hvAxialPerWire_mm, 2);        // AC30
 
-    // 低压分匝段（AF10..AJ10）：各油道间匝数
-    // 油道均设时按 INT(AH8/6) 分段（计算单语义）
-    int lvDuctActive = 0;
-    for (int i = 0; i < 5; ++i) {
-        if (in.lvDuctHeightSide[i] > 0.0) {
-            ++lvDuctActive;
-        }
-    }
+    // 低压分匝段（AF10..AJ10）：空白项以 0 参与 R40 的累计匝数。
+    // 计算单 AI10 用 AH32="" 而非 AH32=0；数值输入 0 时该段仍按 /6。
+    const auto &lvDuct = in.lvDuctHeightSide;
+    const int turns = in.lvTurns;
+    c.lvSegmentTurns[0] = (lvDuct[0] == 0.0) ? turns
+        : (lvDuct[1] == 0.0) ? excelInt(turns / 2.0)
+        : (lvDuct[2] == 0.0) ? excelInt(turns / 3.0)
+        : (lvDuct[3] == 0.0) ? excelInt(turns / 4.0)
+        : (lvDuct[4] == 0.0) ? excelInt(turns / 5.0)
+        : excelInt(turns / 6.0);
+    c.lvSegmentTurns[1] = (lvDuct[0] == 0.0 || lvDuct[1] == 0.0) ? 0
+        : (lvDuct[2] == 0.0) ? excelInt(turns / 3.0)
+        : (lvDuct[3] == 0.0) ? excelInt(turns / 4.0)
+        : (lvDuct[4] == 0.0) ? excelInt(turns / 5.0)
+        : excelInt(turns / 6.0);
+    c.lvSegmentTurns[2] = (lvDuct[0] == 0.0 || lvDuct[1] == 0.0 || lvDuct[2] == 0.0) ? 0
+        : (lvDuct[3] == 0.0) ? excelInt(turns / 4.0)
+        : (lvDuct[4] == 0.0) ? excelInt(turns / 5.0)
+        : excelInt(turns / 6.0);
+    c.lvSegmentTurns[3] = (lvDuct[0] == 0.0 || lvDuct[1] == 0.0
+                            || lvDuct[2] == 0.0 || lvDuct[3] == 0.0)
+        ? 0 : excelInt(turns / 6.0);
+    c.lvSegmentTurns[4] = (lvDuct[0] == 0.0 || lvDuct[1] == 0.0
+                            || lvDuct[2] == 0.0 || lvDuct[3] == 0.0
+                            || lvDuct[4] == 0.0)
+        ? 0 : excelInt(turns / 6.0);
     // 平均匝长几何（AB36/AB39/AK33/AK34/AK36/AK39）
     // P12/S12 为角度分数（144/180、36/180）：Excel 弧长 = π×半径×角度/180
     const double P12 = c.majorAngle_deg / 180.0;
@@ -655,7 +690,7 @@ void calcWindingLosses(EmCtx &c)
     const double ah18 = excelRound(in.lvTurns * c.lvMeanTurn_m + 0.5, 1);
 
     // 电阻 75℃（X19/AH19）
-    const double x19 = excelRound(0.02135 * z18
+    const double x19 = excelRound((in.hvCopperWire ? 0.02135 : 0.0357) * z18
             / (c.hvWireSection_mm2 * in.hvParallelCount), 6);
     const double ah19 = excelRound(
         (in.lvCopperFoil ? 0.02207 : 0.0357) * ah18 / c.lvWireSection_mm2, 6);
@@ -673,11 +708,11 @@ void calcWindingLosses(EmCtx &c)
     c.out->winding.lvCopperLoss_W = ah20;
 
     // 导线重（W21/Z21/AH21）
-    const double rhoHv = in.lvCopperFoil ? 8.9 : 2.7;   // 高压材质由低压标志同源（全铜/全铝）
+    const double rhoHv = in.hvCopperWire ? 8.9 : 2.7;
     const double w21 = excelRound(3.0 * w18 * c.hvWireSection_mm2
             * in.hvParallelCount * rhoHv / 1000.0, 0);
     const double z21 = excelRound(
-        3.825 * (in.hvBareWidth_mm + in.hvBareThick_mm + 0.354)
+        (in.hvCopperWire ? 3.825 : 12.6) * (in.hvBareWidth_mm + in.hvBareThick_mm + 0.354)
             / c.hvWireSection_mm2 / 100.0 * w21 + w21, 0);
     const double ah21 = excelRound(
         ah18 * c.lvWireSection_mm2 * (in.lvCopperFoil ? 8.9 : 2.7) * 3.0 / 1000.0, 0);
@@ -697,7 +732,8 @@ void calcLoadLoss(EmCtx &c, double lambda_mm, double hx_mm)
     // 高压附加损耗 %（AA45）与 W（AC45）
     const double roundCoef = excelRound(1.0 - lambda_mm / (hx_mm * M_PI), 2);
     const double aa45 = excelRound(
-        3.8e-7 * std::pow(50.0 * c.hvTurnsMax * in.hvBareWidth_mm
+        (in.hvCopperWire ? 3.8e-7 : 1.4e-7)
+            * std::pow(50.0 * c.hvTurnsMax * in.hvBareWidth_mm
                               * c.hvWireSection_mm2 * roundCoef / c.ac30_mm, 2.0), 2);
     const double ac45 = excelRound(y20 * aa45 / 100.0, 0);
     const double aj45 = in.lvExtraLoss_W;
@@ -731,15 +767,12 @@ void calcImpedance(EmCtx &c)
     }
     c.lambda_mm = excelRound(m39, 2);
 
-    // 低压分匝段匝数（AF10..AJ10，油道全设时 INT(AH8/6)）
-    const double nSeg = std::floor(double(in.lvTurns) / 6.0);   // 3
-
     // a2（R40）：低压油道折算厚（段匝比²加权）
     // 各项匝比为累计段匝 AF10/AH8、(AF10+AG10)/AH8、…（先累计再求比）
     double acc2 = c.lvRadial_mm / 3.0;
     double cumSeg = 0.0;
     for (int i = 0; i < 5; ++i) {
-        cumSeg += nSeg;
+        cumSeg += c.lvSegmentTurns[i];
         acc2 += c.m29_33[i] * std::pow(cumSeg / in.lvTurns, 2.0);
     }
     const double a2 = excelRound(acc2, 2);
@@ -994,14 +1027,15 @@ void calcMassCost(EmCtx &c)
     const double hvW = c.out->winding.hvWireWeight_kg;
     const double lvW = c.out->winding.lvWireWeight_kg;
     const double c21 = excelRound(
-        steelW / 7.8 + (in.lvCopperFoil ? hvW / 4.5 : hvW / 1.85)
+        steelW / 7.8 + (in.hvCopperWire ? hvW / 4.5 : hvW / 1.85)
             + (in.lvCopperFoil ? lvW / 4.5 : lvW / 1.85), 0);
     const double c22 = excelRound(
         6.0 * S46 * S45 * 0.9 * (S48 + S49) * 2.0 / 1e6, 0);
     const double oilWeight = c20 - c21 + c22;   // C24
 
     // 器身重与总重（C11/C25）
-    const double ratio = in.lvCopperFoil ? 1.15 : 1.20;   // 全铜 1.15
+    const double ratio = in.hvCopperWire == in.lvCopperFoil
+        ? (in.hvCopperWire ? 1.15 : 1.20) : 1.16;
     const double activePart = excelRound(
         ratio * (steelW + c.out->winding.wireWeightTotal_kg), 0);
     const double totalWeight = tankWeight + oilWeight + activePart;
@@ -1013,9 +1047,13 @@ void calcMassCost(EmCtx &c)
 
     // 材料成本（成本测算表，单价按计算单默认）
     const double cuPrice = 60.0;
+    const double alPrice = 60.0;  // 计算单成本测算表 E6/E7 的默认基价
     c.out->cost.steelCost = excelRound(steelW * 1.05, 0) * 17.0;
-    c.out->cost.hvWireCost = excelRound(hvW * 1.05, 0) * (cuPrice + 3.3);
-    c.out->cost.lvWireCost = excelRound(lvW * 1.08, 0) * (cuPrice * 1.05 + 6.5);
+    const double hvPrice = in.hvCopperWire ? cuPrice + 3.3
+        : alPrice + (in.hvBareWidth_mm == in.hvBareThick_mm ? 6.0 : 8.5);
+    const double lvPrice = in.lvCopperFoil ? cuPrice * 1.05 + 6.5 : alPrice + 6.0;
+    c.out->cost.hvWireCost = excelRound(hvW * 1.05, 0) * hvPrice;
+    c.out->cost.lvWireCost = excelRound(lvW * 1.08, 0) * lvPrice;
     c.out->cost.oilCost = excelRound(oilWeight * 1.1, 0) * 10.0;
     c.out->cost.tankCost = (excelRound(tankWeight * 1.05, 0) + 200.0) * 9.0;
     c.out->cost.materialCost = c.out->cost.steelCost + c.out->cost.hvWireCost

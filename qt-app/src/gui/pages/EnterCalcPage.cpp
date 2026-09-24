@@ -742,8 +742,10 @@ void EnterCalcPage::showInitInfoDialog(int index)
             { QStringLiteral("硅钢片牌号"), m_calcInput.steelGrade },
             { QStringLiteral("硅钢片厚度(mm)"),
               QString::number(m_calcInput.steelThickness_mm) },
-            { QStringLiteral("低压线圈材料"), QStringLiteral("铜（箔绕）") },
-            { QStringLiteral("高压线圈材料"), QStringLiteral("铜") },
+            { QStringLiteral("低压线圈材料"), m_calcInput.lvCopperFoil
+                  ? QStringLiteral("铜箔") : QStringLiteral("铝箔") },
+            { QStringLiteral("高压线圈材料"), m_calcInput.hvCopperWire
+                  ? QStringLiteral("铜导线") : QStringLiteral("铝导线") },
             { QStringLiteral("材料单价"),
               QStringLiteral("见系统设置页「报价参数」") },
         });
@@ -2521,7 +2523,8 @@ void EnterCalcPage::onExportDocuments()
     const QuoteParams quoteParams =
         QuoteParams::loadFromFile(QuoteCalculator::defaultParamsPath(), &paramOk);
     const QuoteResult quote =
-        QuoteCalculator::calculate(m_params, m_emResult, paramOk ? quoteParams : QuoteParams{});
+        QuoteCalculator::calculate(m_params, m_calcInput, m_emResult,
+                                   paramOk ? quoteParams : QuoteParams{});
     QString costText = QStringLiteral("材料成本清单\n");
     costText += QStringLiteral("========================================\n");
     costText += QStringLiteral("图号：%1　型号：%2\n").arg(drawingNo, model);

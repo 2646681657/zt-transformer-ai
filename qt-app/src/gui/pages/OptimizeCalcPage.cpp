@@ -304,6 +304,11 @@ void OptimizeCalcPage::onEnterCalcClicked()
             return;
         }
     }
+    if (!m_paramTable->hasSupportedConnectionGroup()) {
+        QMessageBox::warning(this, QStringLiteral("联结组别暂不支持"),
+            QStringLiteral("当前版本仅支持 Dyn11（可填 Dyn）和 Yyn0。其他联结形式尚无对应的标准损耗值，请修改联结组别后再计算。"));
+        return;
+    }
     m_params = m_paramTable->getParams();
     m_paramTable->saveToInput(m_input);   // 收集表格中编辑的设计变量
     // 表格「一 输入信息」节编辑的额定值同步回 CalcInput（保持两体系一致）
@@ -321,6 +326,11 @@ void OptimizeCalcPage::onEnterCalcClicked()
 // 弹窗报告超差项，进入计算前预知方案可行性（不跳转、不记录方案）
 void OptimizeCalcPage::onVerifySheetClicked()
 {
+    if (!m_paramTable->hasSupportedConnectionGroup()) {
+        QMessageBox::warning(this, QStringLiteral("联结组别暂不支持"),
+            QStringLiteral("当前版本仅支持 Dyn11（可填 Dyn）和 Yyn0。其他联结形式尚无对应的标准损耗值，请修改联结组别后再校验。"));
+        return;
+    }
     // 收集当前表格参数与设计变量（与进入计算同链路，但不记忆/不跳转）
     const TransformerParams params = m_paramTable->getParams();
     CalcInput input = m_input;
@@ -380,6 +390,17 @@ void OptimizeCalcPage::applySchemeInput(const CalcInput &input)
     m_params.capacity_kVA = input.capacity_kVA;
     m_params.hvRatedVoltage_kV = input.hvRated_kV;
     m_params.lvRatedVoltage_kV = input.lvRated_kV;
+    // 方案中的接线方式也必须回显，否则重进计算时表格旧值会覆盖方案。
+    if (input.lvStarConnected) {
+        m_params.connectionGroup = input.hvDeltaConnected
+            ? QStringLiteral("Dyn11") : QStringLiteral("Yyn0");
+    } else {
+        m_params.connectionGroup = input.hvDeltaConnected
+            ? QStringLiteral("Dd（暂不支持）") : QStringLiteral("Yd（暂不支持）");
+    }
+    m_params.hvTapPlusSteps = input.hvTapPlusSteps;
+    m_params.hvTapMinusSteps = input.hvTapMinusSteps;
+    m_params.hvTapVoltagePercent = input.hvTapStep_pct;
     const bool proMode = (m_config.calcMode == StructureConfig::Professional);
     m_paramTable->loadParamsForConfig(m_params, m_config, m_input, proMode);
 }
@@ -404,6 +425,11 @@ void OptimizeCalcPage::onSchemeButtonClicked(int index)
         break;
     }
     case 3: {  // 保存为我的方案（命名保存当前设计变量）
+        if (!m_paramTable->hasSupportedConnectionGroup()) {
+            QMessageBox::warning(this, QStringLiteral("联结组别暂不支持"),
+                QStringLiteral("当前版本仅支持 Dyn11（可填 Dyn）和 Yyn0，请修改联结组别后再保存方案。"));
+            return;
+        }
         bool ok = false;
         const QString name = QInputDialog::getText(this,
             QStringLiteral("保存为我的方案"),

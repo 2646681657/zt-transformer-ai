@@ -143,10 +143,12 @@ void QuotePage::setupUi()
 
     m_steelPrice = makeSpin(0.0, 999.0, m_quoteParams.steelPrice, QStringLiteral(" 元/kg"));
     m_cuPrice = makeSpin(0.0, 999.0, m_quoteParams.cuPrice, QStringLiteral(" 元/kg"));
+    m_alPrice = makeSpin(0.0, 999.0, m_quoteParams.alPrice, QStringLiteral(" 元/kg"));
     m_oilPrice = makeSpin(0.0, 999.0, m_quoteParams.oilPrice, QStringLiteral(" 元/kg"));
     m_tankPrice = makeSpin(0.0, 999.0, m_quoteParams.tankPrice, QStringLiteral(" 元/kg"));
     priceForm->addRow(QStringLiteral("硅钢片"), m_steelPrice);
     priceForm->addRow(QStringLiteral("铜导线"), m_cuPrice);
+    priceForm->addRow(QStringLiteral("铝导线"), m_alPrice);
     priceForm->addRow(QStringLiteral("绝缘油"), m_oilPrice);
     priceForm->addRow(QStringLiteral("油箱钢材"), m_tankPrice);
     paramLayout->addWidget(priceGroup);
@@ -253,6 +255,7 @@ void QuotePage::onParamsChanged()
     // 从控件回填参数并重算
     m_quoteParams.steelPrice = m_steelPrice->value();
     m_quoteParams.cuPrice = m_cuPrice->value();
+    m_quoteParams.alPrice = m_alPrice->value();
     m_quoteParams.oilPrice = m_oilPrice->value();
     m_quoteParams.tankPrice = m_tankPrice->value();
     m_quoteParams.purchasedParts_pct = m_purchasedSpin->value();
@@ -348,7 +351,7 @@ void QuotePage::recalc()
         return;
     }
 
-    m_quote = QuoteCalculator::calculate(m_params, m_result, m_quoteParams);
+    m_quote = QuoteCalculator::calculate(m_params, m_input, m_result, m_quoteParams);
     if (!m_quote.valid) {
         m_summaryLabel->setText(QStringLiteral("报价计算失败"));
         return;

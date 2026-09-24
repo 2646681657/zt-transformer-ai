@@ -4,11 +4,41 @@
 #include <QFont>
 #include <QLineEdit>
 #include <QRegularExpression>
+#include <QSpinBox>
+#include <QDoubleSpinBox>
+#include <QComboBox>
+#include <QHBoxLayout>
+#include <QLabel>
+
+namespace {
+enum class SupportedConnection { Invalid, Dyn11, Yyn0 };
+
+SupportedConnection connectionType(QString value)
+{
+    value.remove(QRegularExpression(QStringLiteral("[\\s,/]+")));
+    if (value.compare(QLatin1String("Dyn"), Qt::CaseInsensitive) == 0 ||
+        value.compare(QLatin1String("Dyn11"), Qt::CaseInsensitive) == 0) {
+        return SupportedConnection::Dyn11;
+    }
+    if (value.compare(QLatin1String("Yyn"), Qt::CaseInsensitive) == 0 ||
+        value.compare(QLatin1String("Yyn0"), Qt::CaseInsensitive) == 0) {
+        return SupportedConnection::Yyn0;
+    }
+    return SupportedConnection::Invalid;
+}
+}
 
 ParamTableWidget::ParamTableWidget(QWidget *parent)
     : QTableWidget(parent)
 {
     setupTable();
+    connect(this, &QTableWidget::itemChanged, this, [this](QTableWidgetItem *changed) {
+        const auto it = m_inputRefs.constFind(QStringLiteral("connectionGroup"));
+        if (!m_loading && it != m_inputRefs.constEnd() &&
+            changed->row() == it->first && changed->column() == it->second) {
+            applyModelLinkage();
+        }
+    });
 }
 
 void ParamTableWidget::setupTable()
@@ -41,16 +71,23 @@ void ParamTableWidget::addSectionRow(int row, const QString &title,
     item->setForeground(advanced ? QColor("#ffb74d") : QColor("#e0e6ed"));
     auto *numItem = new QTableWidgetItem(QString::number(row + 1));
     numItem->setTextAlignment(Qt::AlignCenter);
+    numItem->setFlags(numItem->flags() & ~Qt::ItemIsEditable);
     setItem(row, 0, numItem);
     setItem(row, 1, item);
-    setItem(row, 2, new QTableWidgetItem(""));
+    auto *emptyValueItem = new QTableWidgetItem("");
+    emptyValueItem->setFlags(emptyValueItem->flags() & ~Qt::ItemIsEditable);
+    setItem(row, 2, emptyValueItem);
     auto *optNameItem = new QTableWidgetItem(optName);
+    optNameItem->setFlags(optNameItem->flags() & ~Qt::ItemIsEditable);
     optNameItem->setBackground(advanced ? QColor("#4a3210") : QColor("#1a3a4a"));
     setItem(row, 3, optNameItem);
     auto *optValItem = new QTableWidgetItem(optValue);
+    optValItem->setFlags(optValItem->flags() & ~Qt::ItemIsEditable);
     optValItem->setBackground(advanced ? QColor("#4a3210") : QColor("#1a3a4a"));
     setItem(row, 4, optValItem);
-    setItem(row, 5, new QTableWidgetItem(""));
+    auto *noteItem = new QTableWidgetItem("");
+    noteItem->setFlags(noteItem->flags() & ~Qt::ItemIsEditable);
+    setItem(row, 5, noteItem);
 }
 
 void ParamTableWidget::addParamRow(int row, const QString &name, const QString &value,
@@ -59,20 +96,34 @@ void ParamTableWidget::addParamRow(int row, const QString &name, const QString &
     insertRow(row);
     auto *numItem = new QTableWidgetItem(QString::number(row + 1));
     numItem->setTextAlignment(Qt::AlignCenter);
+    numItem->setFlags(numItem->flags() & ~Qt::ItemIsEditable);
     setItem(row, 0, numItem);
-    setItem(row, 1, new QTableWidgetItem(name));
+    auto *nameItem = new QTableWidgetItem(name);
+    nameItem->setFlags(nameItem->flags() & ~Qt::ItemIsEditable);
+    setItem(row, 1, nameItem);
     auto *valItem = new QTableWidgetItem(value);
     setItem(row, 2, valItem);
-    setItem(row, 3, new QTableWidgetItem(optName));
+    auto *optNameItem = new QTableWidgetItem(optName);
+    optNameItem->setFlags(optNameItem->flags() & ~Qt::ItemIsEditable);
+    setItem(row, 3, optNameItem);
     auto *optItem = new QTableWidgetItem(optValue);
+    if (optName.isEmpty() && optValue.isEmpty()) {
+        optItem->setFlags(optItem->flags() & ~Qt::ItemIsEditable);
+    }
     setItem(row, 4, optItem);
-    setItem(row, 5, new QTableWidgetItem(""));
+    auto *noteItem = new QTableWidgetItem("");
+    noteItem->setFlags(noteItem->flags() & ~Qt::ItemIsEditable);
+    setItem(row, 5, noteItem);
 }
 
 void ParamTableWidget::bindInput(const QString &key, int row, int col)
 {
     if (!key.isEmpty()) {
         m_inputRefs.insert(key, { row, col });
+        // 部分数值（如阻抗最小偏差）位于通常展示选项名称的列。
+        if (auto *valueItem = item(row, col)) {
+            valueItem->setFlags(valueItem->flags() | Qt::ItemIsEditable);
+        }
     }
 }
 
@@ -121,8 +172,13 @@ TransformerParams ParamTableWidget::getParams() const
     params.capacity_kVA = m_modelCapacity_kVA;
     params.hvRatedVoltage_kV = m_modelHvRated_kV;
     params.lvRatedVoltage_kV = m_modelLvRated_kV;
-    setInt("hvTapStages", params.hvTapStages);
-    setDouble("hvTapVoltagePercent", params.hvTapVoltagePercent);
+    if (m_tapPlusSpin && m_tapMinusSpin && m_tapStepSpin) {
+        params.hvTapPlusSteps = m_tapPlusSpin->value();
+        params.hvTapMinusSteps = m_tapMinusSpin->value();
+        params.hvTapVoltagePercent = m_tapStepSpin->value();
+    }
+    setString("environmentGrade", params.environmentGrade);
+    setDouble("calcRefTemp", params.calcRefTemp_C);
     setDouble("maxAmbientTemp", params.maxAmbientTemp_C);
     setDouble("maxAltitude", params.maxAltitude_m);
     setString("efficiencyCalcMethod", params.efficiencyCalcMethod);
@@ -150,6 +206,13 @@ TransformerParams ParamTableWidget::getParams() const
     setDouble("lvCoilTempRise", params.lvCoilTempRise_K);
 
     return params;
+}
+
+bool ParamTableWidget::hasSupportedConnectionGroup() const
+{
+    const auto it = m_inputRefs.constFind(QStringLiteral("connectionGroup"));
+    return it != m_inputRefs.constEnd() && item(it->first, it->second) &&
+           connectionType(item(it->first, it->second)->text()) != SupportedConnection::Invalid;
 }
 
 // 型号/容量联动：查 GB 20052-2024 叠铁芯标准值，覆盖空载/负载/总损耗标准值单元格，
@@ -227,11 +290,13 @@ void ParamTableWidget::applyModelLinkage()
             item(it->first, it->second)->setText(text);
         }
     };
-    // 容差写法（Y,yn0 / Y yn0 等去符号后统一比对）
-    const bool yyn0 = cellText(QStringLiteral("connectionGroup"))
-                          .remove(QLatin1String(","))
-                          .remove(QLatin1String(" "))
-                          .contains(QLatin1String("Yyn0"), Qt::CaseInsensitive);
+    // 当前标准表只包含 Dyn11 和 Yyn0；其他接线不能套用 Dyn 的标准损耗。
+    const SupportedConnection connection = connectionType(cellText(QStringLiteral("connectionGroup")));
+    if (connection == SupportedConnection::Invalid) {
+        emit stdValuesUpdated(QStringLiteral("当前联结组别暂无对应标准损耗；首版支持 Dyn11、Yyn0"));
+        return;
+    }
+    const bool yyn0 = connection == SupportedConnection::Yyn0;
     const double loadW = yyn0 ? e->loadYyn0_W : e->loadDyn_W;
     setCell(QStringLiteral("noLoadLossStd"), QString::number(e->noLoad_W));
     setCell(QStringLiteral("loadLossStd"), QString::number(loadW));
@@ -248,6 +313,11 @@ void ParamTableWidget::applyModelLinkage()
 void ParamTableWidget::loadParamsForConfig(const TransformerParams &params, const StructureConfig &config,
                                            const CalcInput &input, bool proMode)
 {
+    m_tapPlusSpin = nullptr;
+    m_tapMinusSpin = nullptr;
+    m_tapStepSpin = nullptr;
+    m_hvMaterialCombo = nullptr;
+    m_lvMaterialCombo = nullptr;
     setRowCount(0);
     m_inputRefs.clear();
     int row = 0;
@@ -314,12 +384,42 @@ void ParamTableWidget::loadParamsForConfig(const TransformerParams &params, cons
     addInputRow(row++, "联结组别", params.connectionGroup,
                 "频率(Hz)", QString::number(params.frequency_Hz),
                 "connectionGroup", {});
-    addInputRow(row++, "高压调压级数", QString::number(params.hvTapStages),
-                "环境等级", params.environmentGrade,
-                "hvTapStages", {});
-    addInputRow(row++, "高压调压级电压±(%)", QString::number(params.hvTapVoltagePercent),
+    // 正向级数、负向级数和每级百分比在同一行独立输入。
+    addParamRow(row, QStringLiteral("高压调压级电压"), QString());
+    item(row, 5)->setText(QStringLiteral("（+级数，-级数）× 每级%"));
+    auto *tapEditor = new QWidget(this);
+    auto *tapLayout = new QHBoxLayout(tapEditor);
+    tapLayout->setContentsMargins(2, 0, 2, 0);
+    tapLayout->setSpacing(4);
+    tapLayout->addWidget(new QLabel(QStringLiteral("（"), tapEditor));
+    m_tapPlusSpin = new QSpinBox(tapEditor);
+    m_tapPlusSpin->setRange(0, 10000);
+    m_tapPlusSpin->setPrefix(QStringLiteral("+"));
+    m_tapPlusSpin->setValue(params.hvTapPlusSteps);
+    m_tapPlusSpin->setToolTip(QStringLiteral("正向调压级数"));
+    tapLayout->addWidget(m_tapPlusSpin);
+    tapLayout->addWidget(new QLabel(QStringLiteral("，"), tapEditor));
+    m_tapMinusSpin = new QSpinBox(tapEditor);
+    m_tapMinusSpin->setRange(0, 10000);
+    m_tapMinusSpin->setPrefix(QStringLiteral("-"));
+    m_tapMinusSpin->setValue(params.hvTapMinusSteps);
+    m_tapMinusSpin->setToolTip(QStringLiteral("负向调压级数"));
+    tapLayout->addWidget(m_tapMinusSpin);
+    tapLayout->addWidget(new QLabel(QStringLiteral("）×"), tapEditor));
+    m_tapStepSpin = new QDoubleSpinBox(tapEditor);
+    m_tapStepSpin->setRange(0.001, 100.0);
+    m_tapStepSpin->setDecimals(3);
+    m_tapStepSpin->setSuffix(QStringLiteral("%"));
+    m_tapStepSpin->setValue(params.hvTapVoltagePercent);
+    m_tapStepSpin->setToolTip(QStringLiteral("每级调压电压百分比"));
+    tapLayout->addWidget(m_tapStepSpin);
+    tapLayout->addStretch();
+    setSpan(row, 2, 1, 3);
+    setCellWidget(row, 2, tapEditor);
+    ++row;
+    addInputRow(row++, "环境等级", params.environmentGrade,
                 "计算折算温度(℃)", QString::number(params.calcRefTemp_C),
-                "hvTapVoltagePercent", {});
+                "environmentGrade", "calcRefTemp");
     addInputRow(row++, "最高环境温度(℃)", QString::number(params.maxAmbientTemp_C),
                 "铁心截面计算方式", params.coreSectionCalcMethod,
                 "maxAmbientTemp", {});
@@ -377,6 +477,17 @@ void ParamTableWidget::loadParamsForConfig(const TransformerParams &params, cons
 
     // 五 绕组参数（设计变量，初值取自 CalcInput）
     addSectionRow(row++, QStringLiteral("五 绕组参数"));
+    addParamRow(row, QStringLiteral("高压导线材料"), QString(),
+                QStringLiteral("低压箔材料"), QString());
+    m_hvMaterialCombo = new QComboBox(this);
+    m_hvMaterialCombo->addItems({QStringLiteral("铜"), QStringLiteral("铝")});
+    m_hvMaterialCombo->setCurrentIndex(input.hvCopperWire ? 0 : 1);
+    m_lvMaterialCombo = new QComboBox(this);
+    m_lvMaterialCombo->addItems({QStringLiteral("铜箔"), QStringLiteral("铝箔")});
+    m_lvMaterialCombo->setCurrentIndex(input.lvCopperFoil ? 0 : 1);
+    setCellWidget(row, 2, m_hvMaterialCombo);
+    setCellWidget(row, 4, m_lvMaterialCombo);
+    ++row;
     addInputRow(row++, "低压匝数", QString::number(input.lvTurns),
                 "低压箔厚(mm)", QString::number(input.lvFoilThick_mm),
                 "lvTurns", "lvFoilThick");
@@ -408,6 +519,25 @@ void ParamTableWidget::loadParamsForConfig(const TransformerParams &params, cons
 // 从表格设计变量节读回 CalcInput：空值/非法值保持原字段不变
 void ParamTableWidget::saveToInput(CalcInput &input) const
 {
+    if (m_hvMaterialCombo && m_lvMaterialCombo) {
+        input.hvCopperWire = (m_hvMaterialCombo->currentIndex() == 0);
+        input.lvCopperFoil = (m_lvMaterialCombo->currentIndex() == 0);
+    }
+    const auto connection = m_inputRefs.constFind(QStringLiteral("connectionGroup"));
+    if (connection != m_inputRefs.constEnd() && item(connection->first, connection->second)) {
+        const SupportedConnection type = connectionType(item(connection->first, connection->second)->text());
+        if (type != SupportedConnection::Invalid) {
+            input.hvDeltaConnected = (type == SupportedConnection::Dyn11);
+            input.lvStarConnected = true;
+        }
+    }
+    if (m_tapPlusSpin && m_tapMinusSpin && m_tapStepSpin) {
+        input.hvTapPlusSteps = m_tapPlusSpin->value();
+        input.hvTapMinusSteps = m_tapMinusSpin->value();
+        input.hvTapStep_pct = m_tapStepSpin->value();
+        input.hvTapMax_pct = input.hvTapPlusSteps * input.hvTapStep_pct;
+        input.hvTapMin_pct = -input.hvTapMinusSteps * input.hvTapStep_pct;
+    }
     const auto cellText = [this](const QString &key) -> QString {
         const auto it = m_inputRefs.constFind(key);
         if (it == m_inputRefs.constEnd() || !item(it->first, it->second)) {

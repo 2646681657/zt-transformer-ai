@@ -9,7 +9,8 @@ struct TransformerParams {
     double capacity_kVA = 630.0;
     double hvRatedVoltage_kV = 10.0;
     double lvRatedVoltage_kV = 0.4;
-    int hvTapStages = 4;
+    int hvTapPlusSteps = 2;
+    int hvTapMinusSteps = 2;
     double hvTapVoltagePercent = 2.5;
     double maxAmbientTemp_C = 40.0;
     double maxAltitude_m = 1000.0;
