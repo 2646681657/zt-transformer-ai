@@ -26,6 +26,7 @@ public:
     TransformerParams getParams() const;
     // 当前联结组别是否能同时用于电磁计算与现有标准损耗表。
     bool hasSupportedConnectionGroup() const;
+    bool hasValidSteelGrade() const;
     // 从表格设计变量节读回 CalcInput（未绑定或非法输入的域保持原值）
     void saveToInput(CalcInput &input) const;
 
@@ -37,10 +38,13 @@ private:
     // 复合产品型号：型号-M-容量/高压额定电压-低压额定电压
     bool parseCompositeModel(const QString &text, bool commitLowVoltage);
     void applyModelLinkage();
+    QString selectedSteelGrade() const;
+    void updateSteelThickness();
     QLineEdit *m_productModelEdit = nullptr;
     QSpinBox *m_tapPlusSpin = nullptr;
     QSpinBox *m_tapMinusSpin = nullptr;
     QDoubleSpinBox *m_tapStepSpin = nullptr;
+    QComboBox *m_steelGradeCombo = nullptr;
     QComboBox *m_hvMaterialCombo = nullptr;
     QComboBox *m_lvMaterialCombo = nullptr;
     QString m_modelSeries;

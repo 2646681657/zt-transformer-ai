@@ -4,9 +4,21 @@
 // 默认值即 SB20-M-630-10 计算单的取值，可作为寻优变量空间
 
 #include <QString>
+#include <QRegularExpression>
 #include <QVector>
 
 struct CalcInput {
+    // 线圈型式!J17：牌号前两位代表硅钢片厚度的百分之一毫米。
+    static double thicknessFromSteelGrade(const QString &grade)
+    {
+        static const QRegularExpression pattern(QStringLiteral("^[0-9]{2}[A-Za-z0-9]+$"));
+        const QString value = grade.trimmed();
+        if (!pattern.match(value).hasMatch()) {
+            return 0.0;
+        }
+        return value.left(2).toInt() / 100.0;
+    }
+
     // ---- 额定值 ----
     double capacity_kVA = 630.0;      // H1 容量
     double hvRated_kV = 10.0;         // J1 高压

@@ -1070,6 +1070,14 @@ bool ElectromagneticEngine::calcElectromagnetic(const CalcInput &input, CalcResu
 {
     result = CalcResult();
 
+    // 厚度由牌号决定；旧方案保存的独立片厚值不能覆盖该联动。
+    CalcInput normalizedInput = input;
+    normalizedInput.steelThickness_mm = CalcInput::thicknessFromSteelGrade(input.steelGrade);
+    if (normalizedInput.steelThickness_mm <= 0.0) {
+        result.error = QStringLiteral("硅钢片牌号格式无效：应以两位数字开头，例如 18SQGD065");
+        return false;
+    }
+
     // 基础数据表（硅钢曲线/叠积表/线规）懒加载：首次调用时从 qrc 资源读取
     DesignDatabase &db = DesignDatabase::instance();
     if (!db.isLoaded() && !db.load()) {
@@ -1078,7 +1086,7 @@ bool ElectromagneticEngine::calcElectromagnetic(const CalcInput &input, CalcResu
     }
 
     EmCtx ctx;
-    ctx.in = &input;
+    ctx.in = &normalizedInput;
     ctx.out = &result;
 
     calcElectrical(ctx);

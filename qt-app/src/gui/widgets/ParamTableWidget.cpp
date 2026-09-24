@@ -1,5 +1,6 @@
 #include "ParamTableWidget.h"
 #include "ModelStdTable.h"
+#include "DesignDatabase.h"
 #include <QHeaderView>
 #include <QFont>
 #include <QLineEdit>
@@ -9,6 +10,7 @@
 #include <QComboBox>
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QSignalBlocker>
 
 namespace {
 enum class SupportedConnection { Invalid, Dyn11, Yyn0 };
@@ -48,7 +50,7 @@ void ParamTableWidget::setupTable()
     horizontalHeader()->setStretchLastSection(true);
     setColumnWidth(0, 40);
     setColumnWidth(1, 160);
-    setColumnWidth(2, 80);
+    setColumnWidth(2, 125);
     setColumnWidth(3, 180);
     setColumnWidth(4, 120);
     verticalHeader()->setVisible(false);
@@ -215,6 +217,35 @@ bool ParamTableWidget::hasSupportedConnectionGroup() const
            connectionType(item(it->first, it->second)->text()) != SupportedConnection::Invalid;
 }
 
+bool ParamTableWidget::hasValidSteelGrade() const
+{
+    const QString grade = selectedSteelGrade();
+    const DesignDatabase &db = DesignDatabase::instance();
+    return db.isLoaded() && db.steelGradeExists(grade) &&
+           CalcInput::thicknessFromSteelGrade(grade) > 0.0;
+}
+
+QString ParamTableWidget::selectedSteelGrade() const
+{
+    return m_steelGradeCombo ? m_steelGradeCombo->currentData().toString().trimmed() : QString();
+}
+
+void ParamTableWidget::updateSteelThickness()
+{
+    const auto thickness = m_inputRefs.constFind(QStringLiteral("steelThickness"));
+    if (thickness == m_inputRefs.constEnd()) {
+        return;
+    }
+    auto *thicknessItem = item(thickness->first, thickness->second);
+    if (!thicknessItem) {
+        return;
+    }
+    const double value = hasValidSteelGrade()
+        ? CalcInput::thicknessFromSteelGrade(selectedSteelGrade()) : 0.0;
+    const QSignalBlocker blocker(this);
+    thicknessItem->setText(value > 0.0 ? QString::number(value) : QString());
+}
+
 // 型号/容量联动：查 GB 20052-2024 叠铁芯标准值，覆盖空载/负载/总损耗标准值单元格，
 // 并发出摘要信号；联结组别为 Yyn0 时负载损耗取 Yyn0 列，否则取 Dyn11/Yzn11 列。
 // 阻抗电压为产品铭牌参数（跟随具体计算单/订单，不随能效等级变化），不参与联动覆盖
@@ -316,6 +347,7 @@ void ParamTableWidget::loadParamsForConfig(const TransformerParams &params, cons
     m_tapPlusSpin = nullptr;
     m_tapMinusSpin = nullptr;
     m_tapStepSpin = nullptr;
+    m_steelGradeCombo = nullptr;
     m_hvMaterialCombo = nullptr;
     m_lvMaterialCombo = nullptr;
     setRowCount(0);
@@ -468,9 +500,46 @@ void ParamTableWidget::loadParamsForConfig(const TransformerParams &params, cons
     addInputRow(row++, "直线段长(mm)", QString::number(input.coreStraight_mm),
                 "椭圆角(°)", QString::number(input.ellipseAngle_deg),
                 "coreStraight", "ellipseAngle");
-    addInputRow(row++, "硅钢片牌号", input.steelGrade,
-                "硅钢片厚(mm)", QString::number(input.steelThickness_mm),
-                "steelGrade", "steelThickness");
+    addInputRow(row++, "硅钢片牌号", QString(),
+                "硅钢片厚(mm)", QString(), {}, "steelThickness");
+    auto *gradeItem = item(row - 1, 2);
+    gradeItem->setFlags(gradeItem->flags() & ~Qt::ItemIsEditable);
+    auto *thicknessItem = item(row - 1, 4);
+    thicknessItem->setFlags(thicknessItem->flags() & ~Qt::ItemIsEditable);
+    thicknessItem->setToolTip(QStringLiteral("由硅钢片牌号前两位自动计算"));
+    m_steelGradeCombo = new QComboBox(this);
+    const QString currentGrade = input.steelGrade.trimmed();
+    DesignDatabase &db = DesignDatabase::instance();
+    const bool loaded = db.isLoaded() || db.load();
+    int selectedIndex = -1;
+    if (loaded) {
+        for (const SteelCurve &curve : db.steelCurves()) {
+            if (CalcInput::thicknessFromSteelGrade(curve.grade) <= 0.0) {
+                continue;
+            }
+            const int index = m_steelGradeCombo->count();
+            m_steelGradeCombo->addItem(curve.grade, curve.grade);
+            if (curve.grade.compare(currentGrade, Qt::CaseInsensitive) == 0) {
+                selectedIndex = index;
+            }
+        }
+    }
+    if (selectedIndex < 0) {
+        const QString label = !loaded ? QStringLiteral("牌号数据加载失败")
+            : currentGrade.isEmpty() ? QStringLiteral("请选择硅钢片牌号")
+            : QStringLiteral("未收录：%1").arg(currentGrade);
+        m_steelGradeCombo->insertItem(0, label, currentGrade);
+        selectedIndex = 0;
+    }
+    m_steelGradeCombo->setCurrentIndex(selectedIndex);
+    if (!loaded) {
+        m_steelGradeCombo->setEnabled(false);
+        m_steelGradeCombo->setToolTip(db.lastError());
+    }
+    setCellWidget(row - 1, 2, m_steelGradeCombo);
+    connect(m_steelGradeCombo, &QComboBox::currentIndexChanged,
+            this, [this](int) { updateSteelThickness(); });
+    updateSteelThickness();
     addInputRow(row++, "铁损工艺系数", QString::number(input.coreLossCraftCoef),
                 "接缝数", QString::number(input.seamCount),
                 "coreLossCraftCoef", "seamCount");
@@ -565,13 +634,11 @@ void ParamTableWidget::saveToInput(CalcInput &input) const
     setDouble("stackFactor", input.stackFactor);
     setDouble("coreStraight", input.coreStraight_mm);
     setDouble("ellipseAngle", input.ellipseAngle_deg);
-    setDouble("steelThickness", input.steelThickness_mm);
     setDouble("coreLossCraftCoef", input.coreLossCraftCoef);
     setInt("seamCount", input.seamCount);
-    const QString grade = cellText("steelGrade");
-    if (!grade.isEmpty()) {
-        input.steelGrade = grade;
-    }
+    const QString grade = selectedSteelGrade();
+    input.steelGrade = grade;
+    input.steelThickness_mm = CalcInput::thicknessFromSteelGrade(grade);
 
     // 低压绕组
     setInt("lvTurns", input.lvTurns);
