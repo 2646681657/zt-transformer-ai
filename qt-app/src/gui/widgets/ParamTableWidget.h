@@ -48,6 +48,12 @@ private:
     QString standardUnavailableReason() const;
     QString selectedSteelGrade() const;
     void updateSteelThickness();
+    void updateWireInsulation();
+    void updateLvTurnsRecommendation();
+    CalcInput m_recommendationBaseInput;
+    int m_recommendationRow = -1;
+    QComboBox *m_wireInsulationCombo = nullptr;
+    double m_customWireInsulAdd_mm = 0.15;
     QLineEdit *m_productModelEdit = nullptr;
     QSpinBox *m_tapPlusSpin = nullptr;
     QSpinBox *m_tapMinusSpin = nullptr;

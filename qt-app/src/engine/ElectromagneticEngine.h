@@ -15,6 +15,10 @@ public:
     // 任意方案的计算结果 → 打印双栏行（确认方案后刷新打印表用）
     static PrintOutputData buildPrintOutput(const CalcInput &input, const CalcResult &result);
 
+    // 仅复用椭圆叠积几何和AN8推荐式，不运行绕组/损耗/温升或修改实际匝数。
+    // 适用范围与主引擎一致，调用界面须保证已支持的结构及50Hz配置。
+    static LvTurnsRecommendation recommendLvTurns(const CalcInput &input);
+
     // 电磁计算全链路：CalcInput（默认即 SB20-M-630-10）→ CalcResult
     bool calcElectromagnetic(const CalcInput &input, CalcResult &result) override;
 

@@ -6,8 +6,19 @@
 #include <QString>
 #include <QVector>
 
+// AM8→AN8，仅建议，不参与实际匝数的写回。
+struct LvTurnsRecommendation {
+    double referenceFlux_T = 0.0;
+    double coreArea_cm2 = 0.0;
+    double phaseVoltage_V = 0.0;
+    double referenceTurnVoltage_V = 0.0;
+    int turns = 0; // 0表示不可用，原因见error
+    QString error;
+};
+
 // ---- 铁芯（叠积/磁密/空载）----
 struct CoreResult {
+    LvTurnsRecommendation lvTurnsRecommendation;
     double turnVoltage_V = 0.0;        // AC4 匝电压
     // 椭圆几何
     double majorRadius_mm = 0.0;       // M20 大圆半径
@@ -46,6 +57,10 @@ struct WindingResult {
     int layerCount = 0;                // Y9 每段层数
     int ductLayerIdx[6] = {0, 0, 0, 0, 0, 0};  // Z30..Z34 前油道层序（0=无）
     // 导线
+    QString hvWireInsulation;
+    double hvWireInsulAdd_mm = 0.0;
+    double hvInsWidth_mm = 0.0;        // X14 绝缘导线宽
+    double hvInsThick_mm = 0.0;        // Z14 绝缘导线厚
     double hvWireSection_mm2 = 0.0;    // U15 高压单根导线截面（保留原字段口径）
     double hvEffectiveSection_mm2 = 0.0; // AA15 单根截面×并绕×叠绕
     double lvWireSection_mm2 = 0.0;    // AH15 低压箔截面
