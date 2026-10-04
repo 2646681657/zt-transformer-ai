@@ -91,7 +91,8 @@ struct EmCtx {
     double x41Sheets = 0.0;       // X41
     double hvInsWidth_mm = 0.0;   // X14 绝缘线宽
     double hvInsThick_mm = 0.0;   // Z14 绝缘线厚
-    double hvWireSection_mm2 = 0.0;// U15/AA15
+    double hvWireSection_mm2 = 0.0;// U15 单根截面
+    double hvEffectiveSection_mm2 = 0.0; // AA15 总有效截面
     double hvAxialPerWire_mm = 0.0; // AA22 = Z14×AB13
     double hvLayerInsulTotal_mm = 0.0;  // X25 层间绝缘总厚
     double hvRadial_mm = 0.0;     // W28 高压辐向厚
@@ -360,13 +361,21 @@ void calcWindingLayout(EmCtx &c)
                      : (in.hvBareWidth_mm < 4.0) ? 0.8 : 1.0;
     c.hvWireSection_mm2 = excelRound(
         in.hvBareWidth_mm * in.hvBareThick_mm - 0.8584 * r * r, 3);
+    // Y15=AB13*AB14，AA15=U15*Y15；先按原表舍入单根截面，再乘根数。
+    c.hvEffectiveSection_mm2 = c.hvWireSection_mm2
+        * static_cast<double>(in.hvParallelCount) * static_cast<double>(in.hvStackCount);
+    if (!std::isfinite(c.hvEffectiveSection_mm2) || c.hvEffectiveSection_mm2 <= 0.0) {
+        c.fail(QStringLiteral("高压导线有效截面无效，请检查裸线尺寸和并绕/叠绕根数"));
+        return;
+    }
     c.lvWireSection_mm2 = in.lvFoilThick_mm * in.lvFoilWidth_mm;   // AH15
     c.out->winding.hvWireSection_mm2 = c.hvWireSection_mm2;
+    c.out->winding.hvEffectiveSection_mm2 = c.hvEffectiveSection_mm2;
     c.out->winding.lvWireSection_mm2 = c.lvWireSection_mm2;
 
     // 电密（X16/AH16）
     c.out->winding.hvCurrentDensity = excelRound(
-        c.hvPhaseCurrent_A / (c.hvWireSection_mm2 * in.hvParallelCount), 3);
+        c.hvPhaseCurrent_A / c.hvEffectiveSection_mm2, 3);
     c.out->winding.lvCurrentDensity = excelRound(
         c.lvPhaseCurrent_A / c.lvWireSection_mm2, 3);
 
@@ -691,7 +700,7 @@ void calcWindingLosses(EmCtx &c)
 
     // 电阻 75℃（X19/AH19）
     const double x19 = excelRound((in.hvCopperWire ? 0.02135 : 0.0357) * z18
-            / (c.hvWireSection_mm2 * in.hvParallelCount), 6);
+            / c.hvEffectiveSection_mm2, 6);
     const double ah19 = excelRound(
         (in.lvCopperFoil ? 0.02207 : 0.0357) * ah18 / c.lvWireSection_mm2, 6);
 
@@ -709,13 +718,14 @@ void calcWindingLosses(EmCtx &c)
 
     // 导线重（W21/Z21/AH21）
     const double rhoHv = in.hvCopperWire ? 8.9 : 2.7;
-    const double w21 = excelRound(3.0 * w18 * c.hvWireSection_mm2
-            * in.hvParallelCount * rhoHv / 1000.0, 0);
+    const double w21 = excelRound(3.0 * w18 * c.hvEffectiveSection_mm2 * rhoHv / 1000.0, 0);
+    // Z21绝缘增重仍按U15单根截面计算，不可替换为AA15总截面。
     const double z21 = excelRound(
         (in.hvCopperWire ? 3.825 : 12.6) * (in.hvBareWidth_mm + in.hvBareThick_mm + 0.354)
             / c.hvWireSection_mm2 / 100.0 * w21 + w21, 0);
     const double ah21 = excelRound(
         ah18 * c.lvWireSection_mm2 * (in.lvCopperFoil ? 8.9 : 2.7) * 3.0 / 1000.0, 0);
+    c.out->winding.hvBareWireWeight_kg = w21;
     c.out->winding.hvWireWeight_kg = z21;
     c.out->winding.lvWireWeight_kg = ah21;
     c.out->winding.wireWeightTotal_kg = z21 + ah21;   // C10
@@ -734,7 +744,7 @@ void calcLoadLoss(EmCtx &c, double lambda_mm, double hx_mm)
     const double aa45 = excelRound(
         (in.hvCopperWire ? 3.8e-7 : 1.4e-7)
             * std::pow(50.0 * c.hvTurnsMax * in.hvBareWidth_mm
-                              * c.hvWireSection_mm2 * roundCoef / c.ac30_mm, 2.0), 2);
+                              * c.hvEffectiveSection_mm2 * roundCoef / c.ac30_mm, 2.0), 2);
     const double ac45 = excelRound(y20 * aa45 / 100.0, 0);
     const double aj45 = in.lvExtraLoss_W;
 
@@ -1069,6 +1079,11 @@ void calcMassCost(EmCtx &c)
 bool ElectromagneticEngine::calcElectromagnetic(const CalcInput &input, CalcResult &result)
 {
     result = CalcResult();
+    const QString wireError = input.highVoltageWireError();
+    if (!wireError.isEmpty()) {
+        result.error = wireError;
+        return false;
+    }
 
     // 厚度由牌号决定；旧方案保存的独立片厚值不能覆盖该联动。
     CalcInput normalizedInput = input;
@@ -1100,6 +1115,10 @@ bool ElectromagneticEngine::calcElectromagnetic(const CalcInput &input, CalcResu
         return false;
     }
     calcWindingLayout(ctx);
+    if (ctx.failed) {
+        result.error = ctx.error;
+        return false;
+    }
     calcTankGeometry(ctx);
     calcCoreWeights(ctx);
     if (ctx.failed) {
@@ -1178,6 +1197,18 @@ PrintOutputData ElectromagneticEngine::buildPrintOutput(const CalcInput &input,
            QStringLiteral("W"),
            QStringLiteral("阻抗电压"), QString::number(result.impedance.impedance_pct, 'f', 2),
            QStringLiteral("%"));
+    addRow(QStringLiteral("高压单根截面 U15"), QString::number(result.winding.hvWireSection_mm2, 'f', 3),
+           QStringLiteral("mm²"), QStringLiteral("高压总有效截面 AA15"),
+           QString::number(result.winding.hvEffectiveSection_mm2, 'f', 3), QStringLiteral("mm²"));
+    addRow(QStringLiteral("高压电密 X16"), QString::number(result.winding.hvCurrentDensity, 'f', 3),
+           QStringLiteral("A/mm²"), QStringLiteral("高压电阻 X19（75℃）"),
+           QString::number(result.winding.hvResistance_ohm, 'f', 6), QStringLiteral("Ω"));
+    addRow(QStringLiteral("高压裸导线重 W21"), QString::number(result.winding.hvBareWireWeight_kg, 'f', 0),
+           QStringLiteral("kg"), QStringLiteral("高压绝缘导线重 Z21"),
+           QString::number(result.winding.hvWireWeight_kg, 'f', 0), QStringLiteral("kg"));
+    addRow(QStringLiteral("高压附加损耗率 AA45"), QString::number(result.winding.hvExtraLossPct, 'f', 2),
+           QStringLiteral("%"), QStringLiteral("高压附加损耗 AC45"),
+           QString::number(result.winding.hvExtraLoss_W, 'f', 0), QStringLiteral("W"));
     addRow(QStringLiteral("油面温升"), QString::number(result.thermal.oilRise_K, 'f', 1),
            QStringLiteral("K"),
            QStringLiteral("高压绕组温升"),

@@ -736,12 +736,14 @@ void ParamTableWidget::loadParamsForConfig(const TransformerParams &params, cons
     addInputRow(row++, "高压裸线宽(mm)", QString::number(input.hvBareWidth_mm),
                 "高压裸线厚(mm)", QString::number(input.hvBareThick_mm),
                 "hvBareWidth", "hvBareThick");
+    item(row - 1, 5)->setText(QStringLiteral("仅支持扁导线；宽=厚的圆线暂不支持"));
     addInputRow(row++, "高压每层匝数", QString::number(input.hvTurnsPerLayer),
                 "层间绝缘厚(mm)", QString::number(input.hvLayerInsul_mm),
                 "hvTurnsPerLayer", "hvLayerInsul");
     addInputRow(row++, "高压并绕根数", QString::number(input.hvParallelCount),
                 "高压叠绕根数", QString::number(input.hvStackCount),
                 "hvParallelCount", "hvStackCount");
+    item(row - 1, 5)->setText(QStringLiteral("总有效截面=单根截面×并绕×叠绕"));
 
     // 六 主空道（设计变量，初值取自 CalcInput）
     addSectionRow(row++, QStringLiteral("六 主空道"));

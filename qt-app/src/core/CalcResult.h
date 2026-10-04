@@ -46,7 +46,8 @@ struct WindingResult {
     int layerCount = 0;                // Y9 每段层数
     int ductLayerIdx[6] = {0, 0, 0, 0, 0, 0};  // Z30..Z34 前油道层序（0=无）
     // 导线
-    double hvWireSection_mm2 = 0.0;    // AA15 高压导线截面
+    double hvWireSection_mm2 = 0.0;    // U15 高压单根导线截面（保留原字段口径）
+    double hvEffectiveSection_mm2 = 0.0; // AA15 单根截面×并绕×叠绕
     double lvWireSection_mm2 = 0.0;    // AH15 低压箔截面
     double hvCurrentDensity = 0.0;     // X16 高压电密
     double lvCurrentDensity = 0.0;     // AH16 低压电密
@@ -72,6 +73,7 @@ struct WindingResult {
     double hvExtraLoss_W = 0.0;        // AC45 高压附加损耗 W
     double loadLoss_W = 0.0;           // L10 负载损耗
     // 导线重
+    double hvBareWireWeight_kg = 0.0;  // W21 高压裸导线重（三相合计）
     double hvWireWeight_kg = 0.0;      // Z21 高压导线重
     double lvWireWeight_kg = 0.0;      // AH21 低压导线重
     double wireWeightTotal_kg = 0.0;   // C10 导线总重
