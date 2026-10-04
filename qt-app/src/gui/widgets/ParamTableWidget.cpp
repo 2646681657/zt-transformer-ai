@@ -2,6 +2,7 @@
 #include "ModelStdTable.h"
 #include "DesignDatabase.h"
 #include "CalculationApplicability.h"
+#include "ElectromagneticEngine.h"
 #include <QHeaderView>
 #include <QFont>
 #include <QLineEdit>
@@ -53,6 +54,7 @@ ParamTableWidget::ParamTableWidget(QWidget *parent)
             applyModelLinkage();
             break;
         }
+        updateLvTurnsRecommendation();
     });
 }
 
@@ -370,6 +372,7 @@ void ParamTableWidget::updateSteelThickness()
         ? CalcInput::thicknessFromSteelGrade(selectedSteelGrade()) : 0.0;
     const QSignalBlocker blocker(this);
     thicknessItem->setText(value > 0.0 ? QString::number(value) : QString());
+    updateLvTurnsRecommendation();
 }
 
 // 型号/容量联动：查 GB 20052-2024 叠铁芯标准值，覆盖空载/负载/总损耗标准值单元格，
@@ -500,6 +503,41 @@ void ParamTableWidget::applyModelLinkage()
         item(ref.first, ref.second)->setToolTip(m_standardStatus);
     }
     emit stdValuesUpdated(m_standardStatus);
+    updateLvTurnsRecommendation();
+}
+
+void ParamTableWidget::updateLvTurnsRecommendation()
+{
+    if (m_loading || m_recommendationRow < 0) return;
+    const QSignalBlocker blocker(this);
+    auto *recommended = item(m_recommendationRow, 4);
+    QString error;
+    CalcInput preview = m_recommendationBaseInput;
+    saveToInput(preview);
+    preview.lvRated_kV = m_modelLvRated_kV;
+    // 不让正在编辑的非法值回退为原值后给出看似有效的推荐。
+    for (const QString &key : {QStringLiteral("refFluxDens"), QStringLiteral("coreDiameter"),
+                              QStringLiteral("coreStraight"), QStringLiteral("ellipseAngle"),
+                              QStringLiteral("stackFactor"), QStringLiteral("yokePiece1Stack"),
+                              QStringLiteral("yokePiece2Stack"), QStringLiteral("yokePiece3Stack")}) {
+        const auto it = m_inputRefs.constFind(key);
+        if (it == m_inputRefs.constEnd()) continue;
+        bool ok = false;
+        const double value = item(it->first, it->second)->text().toDouble(&ok);
+        if (!ok || !std::isfinite(value)) { error = QStringLiteral("推荐所需输入尚未有效填写"); break; }
+    }
+    const auto freqRef = m_inputRefs.value(QStringLiteral("frequency"));
+    if (m_config.coreShape != StructureConfig::Ellipse || m_config.coreType != StructureConfig::StackedSilicon
+            || item(freqRef.first, freqRef.second)->text().toInt() != 50 || !hasSupportedConnectionGroup())
+        error = QStringLiteral("当前推荐仅适用于已支持的椭圆叠铁芯、50Hz和联结组别");
+    const auto r = error.isEmpty() ? ElectromagneticEngine::recommendLvTurns(preview) : LvTurnsRecommendation();
+    if (error.isEmpty()) error = r.error;
+    recommended->setText(error.isEmpty() ? QString::number(r.turns) : QStringLiteral("不可用"));
+    recommended->setToolTip(error.isEmpty()
+        ? QStringLiteral("AN8：相电压%1V ÷ 参考匝电压%2V（先取4位），取整数；心柱截面%3cm²。仅建议，不改实际匝数。")
+              .arg(r.phaseVoltage_V).arg(r.referenceTurnVoltage_V, 0, 'f', 4).arg(r.coreArea_cm2, 0, 'f', 2)
+        : error);
+    item(m_recommendationRow, 5)->setText(error.isEmpty() ? QStringLiteral("仅建议；实际计算使用手填低压匝数") : error);
 }
 
 void ParamTableWidget::updateWireInsulation()
@@ -534,6 +572,8 @@ void ParamTableWidget::loadParamsForConfig(const TransformerParams &params, cons
                                            const CalcInput &input, bool proMode)
 {
     m_loading = true;
+    m_recommendationBaseInput = input;
+    m_recommendationRow = -1;
     m_baseParams = params;
     m_config = config;
     m_lossStandardsManual = params.lossStandardsManual;
@@ -743,6 +783,10 @@ void ParamTableWidget::loadParamsForConfig(const TransformerParams &params, cons
 
     // 五 绕组参数（设计变量，初值取自 CalcInput）
     addSectionRow(row++, QStringLiteral("五 绕组参数"));
+    m_recommendationRow = row;
+    addInputRow(row++, "低压参考磁密(T)", QString::number(input.refFluxDens_T, 'g', 15),
+                "推荐低压匝数", QString(), "refFluxDens", {});
+    item(m_recommendationRow, 4)->setFlags(item(m_recommendationRow, 4)->flags() & ~Qt::ItemIsEditable);
     addParamRow(row, QStringLiteral("高压导线材料"), QString(),
                 QStringLiteral("低压箔材料"), QString());
     m_hvMaterialCombo = new QComboBox(this);
@@ -862,6 +906,7 @@ void ParamTableWidget::saveToInput(CalcInput &input) const
 
     // 低压绕组
     setInt("lvTurns", input.lvTurns);
+    setDouble("refFluxDens", input.refFluxDens_T);
     setDouble("lvFoilThick", input.lvFoilThick_mm);
     setDouble("lvFoilWidth", input.lvFoilWidth_mm);
     setDouble("lvEndInsul", input.lvEndInsul_mm);
@@ -920,7 +965,6 @@ void ParamTableWidget::saveToInput(CalcInput &input) const
     setInt("waveHeight", input.waveHeight_mm);
     setInt("wavePitch", input.wavePitch_mm);
     setDouble("phaseGapBase", input.phaseGapBase_mm);
-    setDouble("refFluxDens", input.refFluxDens_T);
 }
 
 // 专业模式追加的高级参数节（七~十）：铁芯工艺 / 绕组油道 / 损耗系数 / 油箱结构，
@@ -993,7 +1037,4 @@ void ParamTableWidget::addProModeSections(int &row, const CalcInput &input)
     addInputRow(row++, "波纹节距(mm)", QString::number(input.wavePitch_mm),
                 "相间距基础(mm)", QString::number(input.phaseGapBase_mm),
                 "wavePitch", "phaseGapBase");
-    addInputRow(row++, "低压参考磁密(T)", QString::number(input.refFluxDens_T),
-                "", "",
-                "refFluxDens", {});
 }

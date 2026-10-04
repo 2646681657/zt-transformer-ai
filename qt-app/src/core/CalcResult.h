@@ -6,8 +6,19 @@
 #include <QString>
 #include <QVector>
 
+// AM8→AN8，仅建议，不参与实际匝数的写回。
+struct LvTurnsRecommendation {
+    double referenceFlux_T = 0.0;
+    double coreArea_cm2 = 0.0;
+    double phaseVoltage_V = 0.0;
+    double referenceTurnVoltage_V = 0.0;
+    int turns = 0; // 0表示不可用，原因见error
+    QString error;
+};
+
 // ---- 铁芯（叠积/磁密/空载）----
 struct CoreResult {
+    LvTurnsRecommendation lvTurnsRecommendation;
     double turnVoltage_V = 0.0;        // AC4 匝电压
     // 椭圆几何
     double majorRadius_mm = 0.0;       // M20 大圆半径

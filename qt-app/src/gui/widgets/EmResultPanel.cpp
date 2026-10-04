@@ -71,7 +71,11 @@ QVector<QPair<QString, QVector<QStringList>>> EmResultPanel::buildGroups(const C
     winding << row(QStringLiteral("高压匝数（额定）"), double(w.hvTurnsRated), 0, QString())
             << row(QStringLiteral("高压匝数（最大分接）"), double(w.hvTurnsMax), 0, QString())
             << row(QStringLiteral("高压匝数（最小分接）"), double(w.hvTurnsMin), 0, QString())
-            << row(QStringLiteral("低压匝数"), double(w.lvTurns), 0, QString())
+            << row(QStringLiteral("低压实际匝数（参与计算）"), double(w.lvTurns), 0, QString())
+            << row(QStringLiteral("低压参考磁密 AM8（仅推荐用）"), r.core.lvTurnsRecommendation.referenceFlux_T, 3, QStringLiteral("T"))
+            << QStringList{QStringLiteral("推荐低压匝数 AN8（未自动采用）"),
+                           r.core.lvTurnsRecommendation.error.isEmpty() ? QString::number(r.core.lvTurnsRecommendation.turns)
+                               : QStringLiteral("不可用：%1").arg(r.core.lvTurnsRecommendation.error), QString()}
             << row(QStringLiteral("每段层数"), double(w.layerCount), 0, QString())
             << QStringList{QStringLiteral("高压导线绝缘种类"),
                            w.hvWireInsulation == QLatin1String("Custom") ? QStringLiteral("自定义") : w.hvWireInsulation,

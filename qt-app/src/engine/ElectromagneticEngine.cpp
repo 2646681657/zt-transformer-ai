@@ -3,6 +3,7 @@
 #include <QtMath>
 #include <QCoreApplication>
 #include <QDebug>
+#include <limits>
 
 #include "DesignDatabase.h"
 
@@ -22,6 +23,33 @@ double excelRound(double x, int n)
 int excelInt(double x)
 {
     return static_cast<int>(std::floor(x));
+}
+
+LvTurnsRecommendation recommendationForArea(const CalcInput &in, double area)
+{
+    LvTurnsRecommendation r;
+    r.referenceFlux_T = in.refFluxDens_T;
+    r.coreArea_cm2 = area;
+    if (!std::isfinite(in.refFluxDens_T) || in.refFluxDens_T <= 0.0
+            || !std::isfinite(area) || area <= 0.0
+            || !std::isfinite(in.lvRated_kV) || in.lvRated_kV <= 0.0) {
+        r.error = QStringLiteral("参考磁密、心柱截面和低压电压必须为正数");
+        return r;
+    }
+    const double lineVoltage = in.lvRated_kV * 1000.0;
+    r.phaseVoltage_V = in.lvStarConnected ? excelRound(lineVoltage / std::sqrt(3.0), 0) : lineVoltage;
+    r.referenceTurnVoltage_V = excelRound(in.refFluxDens_T * area * 10.0 / 450.0, 4);
+    if (!std::isfinite(r.referenceTurnVoltage_V) || r.referenceTurnVoltage_V <= 0.0) {
+        r.error = QStringLiteral("参考匝电压取整后无效，无法推荐匝数");
+        return r;
+    }
+    const double turns = excelRound(r.phaseVoltage_V / r.referenceTurnVoltage_V, 0);
+    if (!std::isfinite(turns) || turns < 1.0 || turns > std::numeric_limits<int>::max()) {
+        r.error = QStringLiteral("推荐匝数超出有效整数范围");
+        return r;
+    }
+    r.turns = static_cast<int>(turns);
+    return r;
 }
 
 // Excel CEILING(x, sig)：向上取整到 sig 的倍数（sig>0）
@@ -1099,6 +1127,40 @@ void calcMassCost(EmCtx &c)
 // ============================================================================
 // 对外接口
 // ============================================================================
+LvTurnsRecommendation ElectromagneticEngine::recommendLvTurns(const CalcInput &input)
+{
+    LvTurnsRecommendation unavailable;
+    unavailable.referenceFlux_T = input.refFluxDens_T;
+    if (!std::isfinite(input.coreDiameter_mm) || input.coreDiameter_mm <= 0.0
+            || !std::isfinite(input.coreStraight_mm) || input.coreStraight_mm < 0.0
+            || !std::isfinite(input.ellipseAngle_deg) || input.ellipseAngle_deg <= 0.0 || input.ellipseAngle_deg >= 90.0
+            || !std::isfinite(input.stackFactor) || input.stackFactor <= 0.0 || input.stackFactor > 1.0) {
+        unavailable.error = QStringLiteral("铁芯几何或叠片系数无效，无法推荐匝数");
+        return unavailable;
+    }
+    DesignDatabase &db = DesignDatabase::instance();
+    if (!db.isLoaded() && !db.load()) {
+        unavailable.error = QStringLiteral("基础数据表加载失败：%1").arg(db.lastError());
+        return unavailable;
+    }
+    for (double thickness : {input.yokePiece1Stack_mm, input.yokePiece2Stack_mm, input.yokePiece3Stack_mm}) {
+        if (!std::isfinite(thickness) || thickness < 0.0) {
+            unavailable.error = QStringLiteral("T形轭补充片叠厚必须为非负有效数值");
+            return unavailable;
+        }
+    }
+    CalcResult geometry;
+    EmCtx ctx;
+    ctx.in = &input;
+    ctx.out = &geometry;
+    calcCoreGeometry(ctx);
+    if (ctx.failed) {
+        unavailable.error = ctx.error;
+        return unavailable;
+    }
+    return recommendationForArea(input, ctx.coreArea_cm2);
+}
+
 bool ElectromagneticEngine::calcElectromagnetic(const CalcInput &input, CalcResult &result)
 {
     result = CalcResult();
@@ -1137,6 +1199,7 @@ bool ElectromagneticEngine::calcElectromagnetic(const CalcInput &input, CalcResu
         result.error = ctx.error;
         return false;
     }
+    result.core.lvTurnsRecommendation = recommendationForArea(normalizedInput, ctx.coreArea_cm2);
     calcWindingLayout(ctx);
     if (ctx.failed) {
         result.error = ctx.error;
@@ -1223,6 +1286,15 @@ PrintOutputData ElectromagneticEngine::buildPrintOutput(const CalcInput &input,
     addRow(QStringLiteral("高压单根截面 U15"), QString::number(result.winding.hvWireSection_mm2, 'f', 3),
            QStringLiteral("mm²"), QStringLiteral("高压总有效截面 AA15"),
            QString::number(result.winding.hvEffectiveSection_mm2, 'f', 3), QStringLiteral("mm²"));
+    const auto &recommendation = result.core.lvTurnsRecommendation;
+    addRow(QStringLiteral("低压实际匝数（参与计算）"), QString::number(result.winding.lvTurns), QString(),
+           QStringLiteral("推荐低压匝数 AN8（未自动采用）"),
+           recommendation.error.isEmpty() ? QString::number(recommendation.turns)
+               : QStringLiteral("不可用：%1").arg(recommendation.error), QString());
+    addRow(QStringLiteral("参考磁密 AM8（仅推荐用）"), QString::number(recommendation.referenceFlux_T, 'g', 15),
+           QStringLiteral("T"), QStringLiteral("参考匝电压（取4位）"),
+           recommendation.error.isEmpty() ? QString::number(recommendation.referenceTurnVoltage_V, 'f', 4)
+               : QStringLiteral("不可用"), QStringLiteral("V"));
     addRow(QStringLiteral("高压导线绝缘种类"),
            result.winding.hvWireInsulation == QLatin1String("Custom") ? QStringLiteral("自定义") : result.winding.hvWireInsulation,
            QString(), QStringLiteral("绝缘总增厚"),
