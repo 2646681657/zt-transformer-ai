@@ -750,6 +750,7 @@ void ParamTableWidget::loadParamsForConfig(const TransformerParams &params, cons
     addInputRow(row++, "主空道宽(mm)", QString::number(input.mainDuctWidth_mm),
                 "纸板厚(mm)", QString::number(input.mainDuctInsul_mm),
                 "mainDuctWidth", "mainDuctInsul");
+    item(row - 1, 5)->setText(QStringLiteral("第二油道AG43自动联动：高压>12kV为5mm，否则0；>24kV另加1.5+5mm"));
 
     // 七~十 高级参数（仅专业模式）
     if (proMode) {
