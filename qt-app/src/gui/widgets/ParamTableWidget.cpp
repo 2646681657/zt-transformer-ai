@@ -793,12 +793,13 @@ void ParamTableWidget::loadParamsForConfig(const TransformerParams &params, cons
                 "", QString::number(params.noLoadCurrentMaxDev_pct),
                 "noLoadCurrentStd", "noLoadCurrentMaxDev");
 
-    // 三 温升限值（根据铁芯类型不同）
+    // 三 温升限值：油顶层限值参与所有方案校核，不应随铁芯类型隐藏。
     addSectionRow(row++, QStringLiteral("三 温升限值"));
-    if (config.coreType == StructureConfig::PlanarAmorphous) {
-        addParamRow(row++, "油顶层温升限值(K)", QString::number(params.oilTopTempRise_K));
-        bindInput("oilTopTempRise", row - 1, 2);
-    }
+    addParamRow(row++, "油顶层温升限值(K)", QString::number(params.oilTopTempRise_K));
+    bindInput("oilTopTempRise", row - 1, 2);
+    item(row - 1, 5)->setText(QStringLiteral("方案校核上限；≤0不校核"));
+    item(row - 1, 2)->setToolTip(QStringLiteral(
+        "比较计算结果中的油顶层温升，不是油面温升。仅影响方案校核和筛选，不改变温升计算公式；沿用原规则，限值≤0时不校核此项。"));
     addParamRow(row++, "高压线圈温升限值(K)", QString::number(params.hvCoilTempRise_K));
     bindInput("hvCoilTempRise", row - 1, 2);
     addParamRow(row++, "低压线圈温升限值(K)", QString::number(params.lvCoilTempRise_K));

@@ -794,7 +794,7 @@ void EnterCalcPage::showInitInfoDialog(int index)
             { QStringLiteral("空载电流允许偏差(%)"),
               QString::number(m_params.noLoadCurrentMaxDev_pct) },
             { QStringLiteral("温升限值(K)"),
-              QStringLiteral("油面 %1 / 高压 %2 / 低压 %3")
+              QStringLiteral("油顶层 %1 / 高压 %2 / 低压 %3")
                   .arg(QString::number(m_params.oilTopTempRise_K),
                        QString::number(m_params.hvCoilTempRise_K),
                        QString::number(m_params.lvCoilTempRise_K)) },
