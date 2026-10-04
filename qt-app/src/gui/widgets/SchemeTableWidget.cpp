@@ -60,15 +60,15 @@ protected:
 private:
     // 配色与 ztf_theme.qss 的 QHeaderView::section 保持一致
     static void paintThemeSection(QPainter *p, const QRect &rect, const QString &text) {
-        p->fillRect(rect, QColor(0x2a, 0x2f, 0x38));
-        p->setPen(QColor(0x3a, 0x40, 0x50));
+        p->fillRect(rect, QColor("#EDF3EF"));
+        p->setPen(QColor("#D3DDD6"));
         p->drawLine(rect.topRight(), rect.bottomRight());
         p->drawLine(rect.bottomLeft(), rect.bottomRight());
         QFont f = p->font();
         f.setPixelSize(11);
         f.setBold(true);
         p->setFont(f);
-        p->setPen(QColor(0x8a, 0x9b, 0xb0));
+        p->setPen(QColor("#607368"));
         p->drawText(rect, Qt::AlignCenter, text);
     }
 };
@@ -78,15 +78,15 @@ void applyButtonStyle(QPushButton *btn, bool marked)
 {
     if (marked) {
         btn->setStyleSheet(
-            "QPushButton { background: #00bcd4; color: #0d1117;"
-            "border: 1px solid #00bcd4; border-radius: 3px; font-size: 11px;"
+            "QPushButton { background: #217346; color: #FFFFFF;"
+            "border: 1px solid #217346; border-radius: 3px; font-size: 11px;"
             "padding: 2px 10px; font-weight: bold; }"
-            "QPushButton:hover { background: #00a5bf; }");
+            "QPushButton:hover { background: #1A633C; }");
     } else {
         btn->setStyleSheet(
-            "QPushButton { background: rgba(0,188,212,0.15); color: #4dd0e1;"
-            "border: 1px solid #3a4050; border-radius: 3px; font-size: 11px; padding: 2px 10px; }"
-            "QPushButton:hover { background: #00bcd4; color: #0d1117; }");
+            "QPushButton { background: rgba(33, 115, 70,0.15); color: #185C37;"
+            "border: 1px solid #D3DDD6; border-radius: 3px; font-size: 11px; padding: 2px 10px; }"
+            "QPushButton:hover { background: #217346; color: #FFFFFF; }");
     }
 }
 

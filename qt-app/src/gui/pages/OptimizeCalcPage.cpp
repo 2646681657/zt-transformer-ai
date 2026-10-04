@@ -44,8 +44,8 @@ OptimizeCalcPage::OptimizeCalcPage(QWidget *parent)
     auto *backBtn = new QPushButton(QStringLiteral("< 返回"), titleWidget);
     backBtn->setFlat(true);
     backBtn->setCursor(Qt::PointingHandCursor);
-    backBtn->setStyleSheet("QPushButton { color: #8a9bb0; font-size: 11px; border: none; padding: 2px 8px; }"
-                           "QPushButton:hover { background: rgba(0,188,212,0.2); border-radius: 3px; color: #4dd0e1; }");
+    backBtn->setStyleSheet("QPushButton { color: #FFFFFF; background: transparent; font-size: 11px; border: none; padding: 2px 8px; }"
+                           "QPushButton:hover { background: rgba(255,255,255,0.15); border-radius: 3px; color: #FFFFFF; }");
     connect(backBtn, &QPushButton::clicked, this, &OptimizeCalcPage::navigateBack);
     titleLayout->addWidget(backBtn);
 
@@ -53,7 +53,7 @@ OptimizeCalcPage::OptimizeCalcPage(QWidget *parent)
         QStringLiteral("中天伯乐达变压器电磁计算AI寻优软件 V2.0"), titleWidget);
     titleLabel->setObjectName("pageTitleLabel");
     titleLabel->setAlignment(Qt::AlignCenter);
-    titleLabel->setStyleSheet("color: #e0e6ed; font-size: 12px;");
+    titleLabel->setStyleSheet("color: #FFFFFF; background: transparent; font-size: 12px;");
     titleLayout->addWidget(titleLabel, 1);
 
     mainLayout->addWidget(titleWidget);
@@ -63,7 +63,7 @@ OptimizeCalcPage::OptimizeCalcPage(QWidget *parent)
     headerBar->setFixedHeight(28);
     headerBar->setObjectName("RibbonHeaderBar");
     headerBar->setStyleSheet(
-        "QWidget#RibbonHeaderBar { background: #2a2f38; border-bottom: 1px solid #3a4050; }");
+        "QWidget#RibbonHeaderBar { background: #EDF3EF; border-bottom: 1px solid #D3DDD6; }");
     auto *headerLayout = new QHBoxLayout(headerBar);
     headerLayout->setContentsMargins(4, 2, 4, 2);
     headerLayout->setSpacing(4);
@@ -74,9 +74,9 @@ OptimizeCalcPage::OptimizeCalcPage(QWidget *parent)
     schemeBtn->setPopupMode(QToolButton::InstantPopup);
     schemeBtn->setToolButtonStyle(Qt::ToolButtonTextOnly);
     schemeBtn->setStyleSheet(
-        "QToolButton { background: rgba(0,188,212,0.15); color: #4dd0e1;"
-        "border: 1px solid #3a4050; border-radius: 4px; font-size: 11px; padding: 4px 16px; }"
-        "QToolButton:hover { background: #00bcd4; color: #0d1117; border-color: #00bcd4; }"
+        "QToolButton { background: rgba(33, 115, 70,0.15); color: #185C37;"
+        "border: 1px solid #D3DDD6; border-radius: 4px; font-size: 11px; padding: 4px 16px; }"
+        "QToolButton:hover { background: #217346; color: #FFFFFF; border-color: #217346; }"
         "QToolButton::menu-indicator { subcontrol-origin: padding; subcontrol-position: right center; width: 8px; }");
     auto *schemeMenu = new QMenu(schemeBtn);
     // 菜单弹出前从我的方案库动态填充（保存/删除后自动同步）
@@ -112,13 +112,22 @@ OptimizeCalcPage::OptimizeCalcPage(QWidget *parent)
     designInputBtn->setEnabled(false);
     designInputBtn->setStyleSheet(
         "QPushButton { background: qlineargradient(x1:0, y1:0, x2:0, y2:1,"
-        "stop:0 #00bcd4, stop:1 #0097a7); color: #ffffff;"
+        "stop:0 #217346, stop:1 #185C37); color: #ffffff;"
         "border: none; font-size: 12px; font-weight: bold; padding: 4px 12px; }"
         "QPushButton:disabled { background: qlineargradient(x1:0, y1:0, x2:0, y2:1,"
-        "stop:0 #00bcd4, stop:1 #0097a7); color: #ffffff; }");
+        "stop:0 #217346, stop:1 #185C37); color: #ffffff; }");
     headerLayout->addWidget(designInputBtn, 1);
 
     mainLayout->addWidget(headerBar);
+
+    // 型号/容量联动结果提示条（叠铁芯时显示国标标准值联动摘要）
+    m_linkStatusLabel = new QLabel(this);
+    m_linkStatusLabel->setFixedHeight(22);
+    m_linkStatusLabel->setStyleSheet(
+        "QLabel { background: #F7FAF8; color: #185C37; font-size: 11px;"
+        " padding: 2px 8px; border-bottom: 1px solid #D3DDD6; }");
+    m_linkStatusLabel->hide();
+    mainLayout->addWidget(m_linkStatusLabel);
 
     // Ribbon
     m_ribbon = new RibbonBar(this);
@@ -171,11 +180,11 @@ void OptimizeCalcPage::setupRibbon()
     g3->setExclusive(true);
     g3->addButton(new RibbonButton(QStringLiteral("圆形"), ":/icons/shape_circle.svg", g3));
     g3->addButton(new RibbonButton(QStringLiteral("长圆形"), ":/icons/shape_long_round.svg", g3));
-    g3->addButton(new RibbonButton(QStringLiteral("椭圆形"), ":/icons/shape_ellipse.svg", g3));
+    auto *ellipseBtn = new RibbonButton(QStringLiteral("椭圆形"), ":/icons/shape_ellipse.svg", g3);
+    ellipseBtn->setActive(true);
+    g3->addButton(ellipseBtn);
     g3->addButton(new RibbonButton(QStringLiteral("半椭圆形"), ":/icons/shape_half_ellipse.svg", g3));
-    auto *elBtn = new RibbonButton(QStringLiteral("类椭圆型"), ":/icons/shape_ellipse_like.svg", g3);
-    elBtn->setActive(true);
-    g3->addButton(elBtn);
+    g3->addButton(new RibbonButton(QStringLiteral("类椭圆型"), ":/icons/shape_ellipse_like.svg", g3));
     m_ribbon->addSeparator();
 
     // Group 4: 绕组方式 (互斥)
@@ -225,10 +234,10 @@ void OptimizeCalcPage::setupMainArea()
     m_navButton->setToolTip(QStringLiteral("返回主界面"));
     m_navButton->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Expanding);
     m_navButton->setStyleSheet(
-        "QPushButton { background: rgba(0,188,212,0.15); color: #4dd0e1;"
-        "border: none; border-right: 1px solid #3a4050; border-radius: 0px;"
+        "QPushButton { background: rgba(33, 115, 70,0.15); color: #185C37;"
+        "border: none; border-right: 1px solid #D3DDD6; border-radius: 0px;"
         "font-size: 12px; padding: 4px; }"
-        "QPushButton:hover { background: #00bcd4; color: #0d1117; }");
+        "QPushButton:hover { background: #217346; color: #FFFFFF; }");
     connect(m_navButton, &QPushButton::clicked, this, &OptimizeCalcPage::navigateBack);
 
     // Left sidebar
@@ -264,13 +273,24 @@ void OptimizeCalcPage::setupMainArea()
     m_paramTable = new ParamTableWidget(this);
     m_paramTable->loadParamsForConfig(m_params, m_config, m_input,
                                       m_config.calcMode == StructureConfig::Professional);
+    // 叠铁芯型号/容量联动：标准值覆盖结果实时显示在提示条
+    connect(m_paramTable, &ParamTableWidget::stdValuesUpdated, this, [this](const QString &s) {
+        m_linkStatusLabel->setText(s);
+        m_linkStatusLabel->show();
+    });
+    m_linkStatusLabel->setVisible(m_config.coreType == StructureConfig::StackedSilicon);
+    if (m_config.coreType == StructureConfig::StackedSilicon) {
+        m_linkStatusLabel->setText(QStringLiteral(
+            "叠铁芯型号/容量联动已启用：切换后按 GB 20052-2024 自动更新损耗标准值（阻抗标准值保持当前设置）；"
+            "注意容量变更后设计变量仍为原容量基准，请按新容量重新设定"));
+    }
 
     // Help panel（文案随计算模式切换，见 updateHelpPanel）
     m_helpPanel = new QTextEdit(this);
     m_helpPanel->setFixedWidth(200);
     m_helpPanel->setReadOnly(true);
-    m_helpPanel->setStyleSheet("QTextEdit { background: #1e2228; border-left: 1px solid #3a4050;"
-                               "color: #8a9bb0; }");
+    m_helpPanel->setStyleSheet("QTextEdit { background: #F7FAF8; border-left: 1px solid #D3DDD6;"
+                               "color: #607368; }");
     updateHelpPanel();
 }
 
@@ -283,6 +303,18 @@ void OptimizeCalcPage::onEnterCalcClicked()
                 QString("请先选择「%1」选项").arg(groupNames[i]));
             return;
         }
+    }
+    if (!ensureSupportedCoreShape())
+        return;
+    if (!m_paramTable->hasSupportedConnectionGroup()) {
+        QMessageBox::warning(this, QStringLiteral("联结组别暂不支持"),
+            QStringLiteral("当前版本仅支持 Dyn11（可填 Dyn）和 Yyn0。其他联结形式尚无对应的标准损耗值，请修改联结组别后再计算。"));
+        return;
+    }
+    if (!m_paramTable->hasValidSteelGrade()) {
+        QMessageBox::warning(this, QStringLiteral("硅钢片牌号不可用"),
+            QStringLiteral("请从下拉列表选择数据库已收录的硅钢片牌号；未收录牌号不能用于计算。"));
+        return;
     }
     m_params = m_paramTable->getParams();
     m_paramTable->saveToInput(m_input);   // 收集表格中编辑的设计变量
@@ -301,6 +333,18 @@ void OptimizeCalcPage::onEnterCalcClicked()
 // 弹窗报告超差项，进入计算前预知方案可行性（不跳转、不记录方案）
 void OptimizeCalcPage::onVerifySheetClicked()
 {
+    if (!ensureSupportedCoreShape())
+        return;
+    if (!m_paramTable->hasSupportedConnectionGroup()) {
+        QMessageBox::warning(this, QStringLiteral("联结组别暂不支持"),
+            QStringLiteral("当前版本仅支持 Dyn11（可填 Dyn）和 Yyn0。其他联结形式尚无对应的标准损耗值，请修改联结组别后再校验。"));
+        return;
+    }
+    if (!m_paramTable->hasValidSteelGrade()) {
+        QMessageBox::warning(this, QStringLiteral("硅钢片牌号不可用"),
+            QStringLiteral("请从下拉列表选择数据库已收录的硅钢片牌号；未收录牌号不能用于计算。"));
+        return;
+    }
     // 收集当前表格参数与设计变量（与进入计算同链路，但不记忆/不跳转）
     const TransformerParams params = m_paramTable->getParams();
     CalcInput input = m_input;
@@ -349,6 +393,15 @@ void OptimizeCalcPage::onVerifySheetClicked()
     }
 }
 
+bool OptimizeCalcPage::ensureSupportedCoreShape()
+{
+    if (m_selectGroups[2]->selectedIndex() == 2)
+        return true;
+    QMessageBox::warning(this, QStringLiteral("铁芯结构暂不支持"),
+        QStringLiteral("当前计算引擎仅支持计算单中的「椭圆形」铁芯截面。请改选「椭圆形」后再计算。"));
+    return false;
+}
+
 // 应用方案设计变量到参数表：直接重建表格（不经 refreshParamTable，
 // 避免其先把旧表格值存回 m_input 覆盖方案值）
 void OptimizeCalcPage::applySchemeInput(const CalcInput &input)
@@ -360,6 +413,17 @@ void OptimizeCalcPage::applySchemeInput(const CalcInput &input)
     m_params.capacity_kVA = input.capacity_kVA;
     m_params.hvRatedVoltage_kV = input.hvRated_kV;
     m_params.lvRatedVoltage_kV = input.lvRated_kV;
+    // 方案中的接线方式也必须回显，否则重进计算时表格旧值会覆盖方案。
+    if (input.lvStarConnected) {
+        m_params.connectionGroup = input.hvDeltaConnected
+            ? QStringLiteral("Dyn11") : QStringLiteral("Yyn0");
+    } else {
+        m_params.connectionGroup = input.hvDeltaConnected
+            ? QStringLiteral("Dd（暂不支持）") : QStringLiteral("Yd（暂不支持）");
+    }
+    m_params.hvTapPlusSteps = input.hvTapPlusSteps;
+    m_params.hvTapMinusSteps = input.hvTapMinusSteps;
+    m_params.hvTapVoltagePercent = input.hvTapStep_pct;
     const bool proMode = (m_config.calcMode == StructureConfig::Professional);
     m_paramTable->loadParamsForConfig(m_params, m_config, m_input, proMode);
 }
@@ -384,6 +448,16 @@ void OptimizeCalcPage::onSchemeButtonClicked(int index)
         break;
     }
     case 3: {  // 保存为我的方案（命名保存当前设计变量）
+        if (!m_paramTable->hasSupportedConnectionGroup()) {
+            QMessageBox::warning(this, QStringLiteral("联结组别暂不支持"),
+                QStringLiteral("当前版本仅支持 Dyn11（可填 Dyn）和 Yyn0，请修改联结组别后再保存方案。"));
+            return;
+        }
+        if (!m_paramTable->hasValidSteelGrade()) {
+            QMessageBox::warning(this, QStringLiteral("硅钢片牌号不可用"),
+                QStringLiteral("请从下拉列表选择数据库已收录的硅钢片牌号；未收录牌号不能用于计算。"));
+            return;
+        }
         bool ok = false;
         const QString name = QInputDialog::getText(this,
             QStringLiteral("保存为我的方案"),
@@ -497,12 +571,16 @@ void OptimizeCalcPage::onImportParamsClicked()
         report + QStringLiteral("\n\n参数表已更新，请核对「一 输入信息」与「二 性能指标」。"));
 }
 
-// Ribbon选项变更时同步更新结构配置并刷新参数表
+// Ribbon 选型变化时只重建受影响的参数表，避免无关选项触发整表闪烁
 void OptimizeCalcPage::onSelectionChanged()
 {
+    const auto oldMode = m_config.calcMode;
+    const auto oldCoreType = m_config.coreType;
     updateConfigFromRibbon();
-    refreshParamTable();
-    updateHelpPanel();
+    if (m_config.calcMode != oldMode || m_config.coreType != oldCoreType)
+        refreshParamTable();
+    if (m_config.calcMode != oldMode)
+        updateHelpPanel();
 }
 
 // 帮助面板文案随计算模式切换（正常/专业）
@@ -565,9 +643,20 @@ void OptimizeCalcPage::refreshParamTable()
 {
     m_params = m_paramTable->getParams();
     m_paramTable->saveToInput(m_input);   // 刷新前保留已编辑的设计变量
+    const bool wasUpdatesEnabled = updatesEnabled();
+    setUpdatesEnabled(false);
     const bool proMode = (m_config.calcMode == StructureConfig::Professional);
     m_paramTable->loadParamsForConfig(m_params, m_config, m_input, proMode);
+    // 联动提示条仅叠铁芯可见
+    const bool stacked = (m_config.coreType == StructureConfig::StackedSilicon);
+    m_linkStatusLabel->setVisible(stacked);
+    if (stacked) {
+        m_linkStatusLabel->setText(QStringLiteral(
+            "叠铁芯型号/容量联动已启用：切换后按 GB 20052-2024 自动更新损耗标准值（阻抗标准值保持当前设置）；"
+            "注意容量变更后设计变量仍为原容量基准，请按新容量重新设定"));
+    }
     saveModePreference();
+    setUpdatesEnabled(wasUpdatesEnabled);
 }
 
 // 记住上次的计算模式选择（正常/专业）

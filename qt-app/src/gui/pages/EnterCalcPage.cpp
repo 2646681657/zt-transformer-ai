@@ -70,15 +70,15 @@ EnterCalcPage::EnterCalcPage(QWidget *parent)
     auto *backBtn = new QPushButton(QStringLiteral("< 返回"), titleWidget);
     backBtn->setFlat(true);
     backBtn->setCursor(Qt::PointingHandCursor);
-    backBtn->setStyleSheet("QPushButton { color: #8a9bb0; font-size: 11px; border: none; padding: 2px 8px; }"
-                           "QPushButton:hover { background: rgba(0,188,212,0.2); border-radius: 3px; color: #4dd0e1; }");
+    backBtn->setStyleSheet("QPushButton { color: #FFFFFF; background: transparent; font-size: 11px; border: none; padding: 2px 8px; }"
+                           "QPushButton:hover { background: rgba(255,255,255,0.15); border-radius: 3px; color: #FFFFFF; }");
     connect(backBtn, &QPushButton::clicked, this, &EnterCalcPage::navigateBack);
     titleLayout->addWidget(backBtn);
 
     auto *titleLabel = new QLabel(
         QStringLiteral("中天伯乐达变压器电磁计算AI寻优软件 V2.0"), titleWidget);
     titleLabel->setAlignment(Qt::AlignCenter);
-    titleLabel->setStyleSheet("color: #e0e6ed; font-size: 12px;");
+    titleLabel->setStyleSheet("color: #FFFFFF; background: transparent; font-size: 12px;");
     titleLayout->addWidget(titleLabel, 1);
 
     mainLayout->addWidget(titleWidget);
@@ -92,13 +92,13 @@ EnterCalcPage::EnterCalcPage(QWidget *parent)
     m_tabBar->setDrawBase(false);
     m_tabBar->setFixedHeight(30);
     m_tabBar->setStyleSheet(
-        "QTabBar { background: #22262e; border-bottom: 1px solid #3a4050; }"
+        "QTabBar { background: #FFFFFF; border-bottom: 1px solid #D3DDD6; }"
         "QTabBar::pane { border: none; }"
-        "QTabBar::tab { background: #2a2f38; color: #8a9bb0; border: 1px solid #3a4050;"
+        "QTabBar::tab { background: #EDF3EF; color: #607368; border: 1px solid #D3DDD6;"
         "border-bottom: none; padding: 6px 18px; margin-right: 2px; font-size: 12px; }"
-        "QTabBar::tab:selected { background: #0d1117; color: #4dd0e1;"
-        "border-color: #00bcd4; border-bottom: 2px solid #00bcd4; }"
-        "QTabBar::tab:hover:!selected { background: #3a4050; color: #e0e6ed; }");
+        "QTabBar::tab:selected { background: #FFFFFF; color: #185C37;"
+        "border-color: #217346; border-bottom: 2px solid #217346; }"
+        "QTabBar::tab:hover:!selected { background: #D3DDD6; color: #24362B; }");
     mainLayout->addWidget(m_tabBar);
 
     // Ribbon stack (shows different ribbon per tab)
@@ -129,8 +129,8 @@ EnterCalcPage::EnterCalcPage(QWidget *parent)
     // Status bar
     m_statusBar = new QLabel(QStringLiteral("就绪"), this);
     m_statusBar->setFixedHeight(22);
-    m_statusBar->setStyleSheet("background: #22262e; padding-left: 8px; font-size: 11px;"
-                               "color: #8a9bb0; border-top: 1px solid #3a4050;");
+    m_statusBar->setStyleSheet("background: #FFFFFF; padding-left: 8px; font-size: 11px;"
+                               "color: #607368; border-top: 1px solid #D3DDD6;");
     mainLayout->addWidget(m_statusBar);
 
     // 网格寻优器（后台线程执行，候选方案与进度经信号回主线程）
@@ -308,7 +308,7 @@ void EnterCalcPage::buildOptimizeRibbon()
 // 显示选项 | 排序与筛选 | 合并模式 | 方案库比较 | 方案选择
 void EnterCalcPage::buildSchemeRibbon()
 {
-    const QString chkStyle = QStringLiteral("QCheckBox { color: #e0e6ed; font-size: 11px; spacing: 4px; }");
+    const QString chkStyle = QStringLiteral("QCheckBox { color: #24362B; font-size: 11px; spacing: 4px; }");
 
     // ---- 组1 显示选项：两行（勾选+标签+控件）----
     auto *g1 = m_schemeRibbon->addGroup(QStringLiteral("显示选项"));
@@ -681,9 +681,9 @@ void EnterCalcPage::showInitInfoDialog(int index)
         auto *closeBtn = new QPushButton(QStringLiteral("关闭"), dlg);
         closeBtn->setCursor(Qt::PointingHandCursor);
         closeBtn->setStyleSheet(
-            "QPushButton { background: #00bcd4; color: #1a1d23; font-size: 12px;"
+            "QPushButton { background: #217346; color: #F3F5F4; font-size: 12px;"
             " padding: 6px 20px; border: none; border-radius: 4px; font-weight: bold; }"
-            "QPushButton:hover { background: #4dd0e1; }");
+            "QPushButton:hover { background: #185C37; }");
         connect(closeBtn, &QPushButton::clicked, dlg, &QDialog::accept);
         layout->addWidget(closeBtn, 0, Qt::AlignCenter);
         dlg->exec();
@@ -742,8 +742,10 @@ void EnterCalcPage::showInitInfoDialog(int index)
             { QStringLiteral("硅钢片牌号"), m_calcInput.steelGrade },
             { QStringLiteral("硅钢片厚度(mm)"),
               QString::number(m_calcInput.steelThickness_mm) },
-            { QStringLiteral("低压线圈材料"), QStringLiteral("铜（箔绕）") },
-            { QStringLiteral("高压线圈材料"), QStringLiteral("铜") },
+            { QStringLiteral("低压线圈材料"), m_calcInput.lvCopperFoil
+                  ? QStringLiteral("铜箔") : QStringLiteral("铝箔") },
+            { QStringLiteral("高压线圈材料"), m_calcInput.hvCopperWire
+                  ? QStringLiteral("铜导线") : QStringLiteral("铝导线") },
             { QStringLiteral("材料单价"),
               QStringLiteral("见系统设置页「报价参数」") },
         });
@@ -949,10 +951,10 @@ QPushButton *EnterCalcPage::createNavButton(QWidget *parent)
     btn->setToolTip(QStringLiteral("返回主界面"));
     btn->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Expanding);
     btn->setStyleSheet(
-        "QPushButton { background: rgba(0,188,212,0.15); color: #4dd0e1;"
-        "border: none; border-right: 1px solid #3a4050; border-radius: 0px;"
+        "QPushButton { background: rgba(33, 115, 70,0.15); color: #185C37;"
+        "border: none; border-right: 1px solid #D3DDD6; border-radius: 0px;"
         "font-size: 12px; padding: 4px; }"
-        "QPushButton:hover { background: #00bcd4; color: #0d1117; }");
+        "QPushButton:hover { background: #217346; color: #FFFFFF; }");
     connect(btn, &QPushButton::clicked, this, &EnterCalcPage::dashboardRequested);
     return btn;
 }
@@ -999,7 +1001,7 @@ void EnterCalcPage::setupOptimizeTab()
     QStringList sections = {"变压器类型选择", "一 铁芯结构", "二 线圈结构", "三 装配结构", "四 工艺方案", "五 其他参数"};
     QVector<QStringList> items = {
         {"变压器类型:配电变压器"},
-        {"铁芯结构形式:类椭圆形", "铁扼结构形式:D形扼", "铁芯轭截面放大系数:1.0",
+        {"铁芯结构形式:椭圆形", "铁扼结构形式:D形扼", "铁芯轭截面放大系数:1.0",
          "铁芯柱截面放大系数:1.0", "铁芯有效截面积系数:0.97"},
         {"绕组形式:双绕组", "低压线圈结构形式:箔绕", "高压线圈结构形式:多层圆筒",
          "低压线圈材料:铜", "高压线圈材料:铜", "线圈绝缘类型:标准绝缘"},
@@ -1015,7 +1017,7 @@ void EnterCalcPage::setupOptimizeTab()
         table->setItem(row, 0, new QTableWidgetItem(QString::number(row + 1)));
         auto *hdr = new QTableWidgetItem(sections[s]);
         QFont f = hdr->font(); f.setBold(true); hdr->setFont(f);
-        hdr->setBackground(QColor("#1a3a4a"));
+        hdr->setBackground(QColor("#DCEEDF"));
         table->setItem(row, 1, hdr);
         table->setSpan(row, 1, 1, 3);
         row++;
@@ -1615,7 +1617,7 @@ void EnterCalcPage::onSchemeSelected(int row)
     };
     auto *summary = new QLabel(summaryText(pendingResult), &dlg);
     summary->setWordWrap(true);
-    summary->setStyleSheet("color: #8a9bb0; font-size: 12px;");
+    summary->setStyleSheet("color: #607368; font-size: 12px;");
     layout->addWidget(summary);
 
     // 表格编辑跟踪（loadParamsForConfig 之后连接，避免初始化误报）
@@ -1648,16 +1650,16 @@ void EnterCalcPage::onSchemeSelected(int row)
     okBtn->setCursor(Qt::PointingHandCursor);
     cancelBtn->setCursor(Qt::PointingHandCursor);
     calcBtn->setStyleSheet(
-        "QPushButton { background: #00bcd4; color: #1a1d23; font-size: 12px;"
+        "QPushButton { background: #217346; color: #F3F5F4; font-size: 12px;"
         " padding: 5px 18px; border: none; border-radius: 4px; font-weight: bold; }"
-        "QPushButton:hover { background: #4dd0e1; }");
+        "QPushButton:hover { background: #185C37; }");
     okBtn->setStyleSheet(
-        "QPushButton { background: #2e75b6; color: #ffffff; font-size: 12px;"
+        "QPushButton { background: #217346; color: #ffffff; font-size: 12px;"
         " padding: 5px 18px; border: none; border-radius: 4px; font-weight: bold; }"
-        "QPushButton:hover { background: #3f8ad0; }");
+        "QPushButton:hover { background: #217346; }");
     cancelBtn->setStyleSheet(
-        "QPushButton { background: rgba(255,255,255,0.08); color: #8a9bb0;"
-        " font-size: 12px; padding: 5px 18px; border: 1px solid #3a4050;"
+        "QPushButton { background: rgba(255,255,255,0.08); color: #607368;"
+        " font-size: 12px; padding: 5px 18px; border: 1px solid #D3DDD6;"
         " border-radius: 4px; }"
         "QPushButton:hover { background: rgba(255,255,255,0.15); }");
     btnRow->addWidget(calcBtn);
@@ -2521,7 +2523,8 @@ void EnterCalcPage::onExportDocuments()
     const QuoteParams quoteParams =
         QuoteParams::loadFromFile(QuoteCalculator::defaultParamsPath(), &paramOk);
     const QuoteResult quote =
-        QuoteCalculator::calculate(m_params, m_emResult, paramOk ? quoteParams : QuoteParams{});
+        QuoteCalculator::calculate(m_params, m_calcInput, m_emResult,
+                                   paramOk ? quoteParams : QuoteParams{});
     QString costText = QStringLiteral("材料成本清单\n");
     costText += QStringLiteral("========================================\n");
     costText += QStringLiteral("图号：%1　型号：%2\n").arg(drawingNo, model);

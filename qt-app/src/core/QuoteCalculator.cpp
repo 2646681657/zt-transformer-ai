@@ -5,6 +5,7 @@
 #include <QStandardPaths>
 #include <QDir>
 #include <QDateTime>
+#include <cmath>
 
 // ============================================================================
 // QuoteParams 序列化
@@ -15,6 +16,7 @@ QJsonObject QuoteParams::toJson() const
     QJsonObject o;
     o[QStringLiteral("steelPrice")] = steelPrice;
     o[QStringLiteral("cuPrice")] = cuPrice;
+    o[QStringLiteral("alPrice")] = alPrice;
     o[QStringLiteral("oilPrice")] = oilPrice;
     o[QStringLiteral("tankPrice")] = tankPrice;
     o[QStringLiteral("purchasedParts_pct")] = purchasedParts_pct;
@@ -31,6 +33,7 @@ QuoteParams QuoteParams::fromJson(const QJsonObject &o)
     QuoteParams p;
     p.steelPrice = o[QStringLiteral("steelPrice")].toDouble(p.steelPrice);
     p.cuPrice = o[QStringLiteral("cuPrice")].toDouble(p.cuPrice);
+    p.alPrice = o[QStringLiteral("alPrice")].toDouble(p.alPrice);
     p.oilPrice = o[QStringLiteral("oilPrice")].toDouble(p.oilPrice);
     p.tankPrice = o[QStringLiteral("tankPrice")].toDouble(p.tankPrice);
     p.purchasedParts_pct = o[QStringLiteral("purchasedParts_pct")].toDouble(p.purchasedParts_pct);
@@ -86,10 +89,10 @@ QString QuoteCalculator::defaultParamsPath()
     return base + QStringLiteral("/quote_params.json");
 }
 
-// 材料重量从引擎成本反推：成本单价随报价参数变化，重量（含损耗系数
-// 前的净重不可拆分）直接用引擎已含 1.05/1.08/1.1 损耗的毛重口径，
-// 报价单价只调整价格部分，保持与计算单成本同口径可对比
+// 直接取计算结果中的净重，再按计算单的采购系数换算毛重；
+// 不从成本反推重量，避免切换材料单价时改变数量。
 QuoteResult QuoteCalculator::calculate(const TransformerParams &params,
+                                        const CalcInput &input,
                                         const CalcResult &r,
                                         const QuoteParams &q)
 {
@@ -99,15 +102,11 @@ QuoteResult QuoteCalculator::calculate(const TransformerParams &params,
     }
 
     // ---- 材料项：按报价单价重算（用量沿用引擎口径）----
-    // 硅钢：steelCost/17 反推毛重
-    const double steelW = r.cost.steelCost > 0.0 ? r.cost.steelCost / 17.0 : 0.0;
-    const double hvW = 63.3 > 0.0 && r.cost.hvWireCost > 0.0
-                           ? r.cost.hvWireCost / 63.3 : 0.0;          // cuPrice+3.3
-    const double lvW = r.cost.lvWireCost > 0.0
-                           ? r.cost.lvWireCost / (60.0 * 1.05 + 6.5) : 0.0;
-    const double oilW = r.cost.oilCost > 0.0 ? r.cost.oilCost / 10.0 : 0.0;
-    const double tankW = r.cost.tankCost > 0.0
-                             ? (r.cost.tankCost / 9.0 - 200.0) : 0.0;
+    const double steelW = std::round(r.core.coreWeight_kg * 1.05);
+    const double hvW = std::round(r.winding.hvWireWeight_kg * 1.05);
+    const double lvW = std::round(r.winding.lvWireWeight_kg * 1.08);
+    const double oilW = std::round(r.mass.oilWeight_kg * 1.1);
+    const double tankW = std::round(r.mass.tankWeight_kg * 1.05) + 200.0;
 
     auto addMaterial = [&out](const QString &name, double w, double price) {
         QuoteLine line;
@@ -121,8 +120,14 @@ QuoteResult QuoteCalculator::calculate(const TransformerParams &params,
     };
 
     addMaterial(QStringLiteral("硅钢片"), steelW, q.steelPrice);
-    addMaterial(QStringLiteral("高压导线"), hvW, q.cuPrice + 3.3);
-    addMaterial(QStringLiteral("低压箔"), lvW, q.cuPrice * 1.05 + 6.5);
+    const double hvPrice = input.hvCopperWire ? q.cuPrice + 3.3
+        : q.alPrice + (input.hvBareWidth_mm == input.hvBareThick_mm ? 6.0 : 8.5);
+    const double lvPrice = input.lvCopperFoil ? q.cuPrice * 1.05 + 6.5
+        : q.alPrice + 6.0;
+    addMaterial(input.hvCopperWire ? QStringLiteral("高压铜导线") : QStringLiteral("高压铝导线"),
+                hvW, hvPrice);
+    addMaterial(input.lvCopperFoil ? QStringLiteral("低压铜箔") : QStringLiteral("低压铝箔"),
+                lvW, lvPrice);
     addMaterial(QStringLiteral("绝缘油"), oilW, q.oilPrice);
     addMaterial(QStringLiteral("油箱及结构件"), tankW, q.tankPrice);
 

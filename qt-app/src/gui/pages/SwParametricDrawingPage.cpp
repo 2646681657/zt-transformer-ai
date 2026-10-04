@@ -30,7 +30,7 @@ namespace {
 QString groupStyle()
 {
     return QStringLiteral(
-        "QGroupBox { color: #c0c8d0; font-size: 12px; border: 1px solid #3a4050;"
+        "QGroupBox { color: #42584A; font-size: 12px; border: 1px solid #D3DDD6;"
         " border-radius: 4px; margin-top: 10px; padding-top: 6px; }"
         "QGroupBox::title { subcontrol-origin: margin; left: 8px; padding: 0 3px; }");
 }
@@ -41,13 +41,13 @@ QPushButton *makeActionButton(const QString &text, const QString &color, QWidget
     button->setCursor(Qt::PointingHandCursor);
     button->setStyleSheet(
         QStringLiteral(
-            "QPushButton { background: %1; color: #1a1d23; font-size: 12px;"
+            "QPushButton { background: %1; color: #F3F5F4; font-size: 12px;"
             " padding: 7px 16px; border: none; border-radius: 4px; font-weight: bold; }"
             "QPushButton:hover { background: %2; }"
-            "QPushButton:disabled { background: #3a4050; color: #777f89; }")
-            .arg(color, color == QStringLiteral("#00bcd4")
-                            ? QStringLiteral("#4dd0e1")
-                            : QStringLiteral("#81c784")));
+            "QPushButton:disabled { background: #D3DDD6; color: #607368; }")
+            .arg(color, color == QStringLiteral("#217346")
+                            ? QStringLiteral("#185C37")
+                            : QStringLiteral("#217346")));
     return button;
 }
 
@@ -78,13 +78,13 @@ void SwParametricDrawingPage::setupUi()
     auto *toolbar = new QWidget(this);
     toolbar->setFixedHeight(34);
     toolbar->setStyleSheet(QStringLiteral(
-        "background: #2a2f38; border-bottom: 1px solid #3a4050;"));
+        "background: #EDF3EF; border-bottom: 1px solid #D3DDD6;"));
     auto *toolLayout = new QHBoxLayout(toolbar);
     toolLayout->setContentsMargins(8, 4, 8, 4);
 
     auto *pageLabel = new QLabel(QStringLiteral("SW 参数化出图"), toolbar);
     pageLabel->setStyleSheet(
-        QStringLiteral("color: #4dd0e1; font-size: 12px; font-weight: bold;"));
+        QStringLiteral("color: #185C37; font-size: 12px; font-weight: bold;"));
     toolLayout->addWidget(pageLabel);
     toolLayout->addStretch();
 
@@ -101,7 +101,7 @@ void SwParametricDrawingPage::setupUi()
     mainLayout->addWidget(toolbar);
 
     auto *content = new QWidget(this);
-    content->setStyleSheet(QStringLiteral("background: #1a1d23;"));
+    content->setStyleSheet(QStringLiteral("background: #F3F5F4;"));
     auto *contentLayout = new QVBoxLayout(content);
     contentLayout->setContentsMargins(14, 10, 14, 12);
     contentLayout->setSpacing(10);
@@ -111,7 +111,7 @@ void SwParametricDrawingPage::setupUi()
         "填写完整尺寸名后可自动生成参数化模型、SLDDRW 工程图和 PDF。"), content);
     hintLabel->setWordWrap(true);
     hintLabel->setStyleSheet(QStringLiteral(
-        "color: #8a9bb0; background: #22262e; border-left: 3px solid #00bcd4;"
+        "color: #607368; background: #FFFFFF; border-left: 3px solid #217346;"
         " padding: 7px 10px; font-size: 11px;"));
     contentLayout->addWidget(hintLabel);
 
@@ -170,7 +170,7 @@ void SwParametricDrawingPage::setupUi()
         "尺寸名必须与模板完全一致，例如 D1@Sketch1；可在 SOLIDWORKS 中点击尺寸查看完整名称。"),
         parameterGroup);
     parameterHint->setWordWrap(true);
-    parameterHint->setStyleSheet(QStringLiteral("color: #8a9bb0; font-size: 11px;"));
+    parameterHint->setStyleSheet(QStringLiteral("color: #607368; font-size: 11px;"));
     parameterLayout->addWidget(parameterHint);
 
     m_parameterTable = new QTableWidget(0, 3, parameterGroup);
@@ -223,9 +223,9 @@ void SwParametricDrawingPage::setupUi()
 
     auto *actionRow = new QHBoxLayout();
     m_generateButton = makeActionButton(QStringLiteral("开始参数化出图"),
-                                        QStringLiteral("#00bcd4"), content);
+                                        QStringLiteral("#217346"), content);
     m_openOutputButton = makeActionButton(QStringLiteral("打开输出目录"),
-                                          QStringLiteral("#4caf50"), content);
+                                          QStringLiteral("#217346"), content);
     m_openOutputButton->setEnabled(false);
     actionRow->addWidget(m_generateButton);
     actionRow->addWidget(m_openOutputButton);
@@ -464,11 +464,11 @@ void SwParametricDrawingPage::updateSolidWorksStatus()
     if (SolidWorksAutomation::isSolidWorksRegistered()) {
         m_solidWorksStatusLabel->setText(QStringLiteral("● 已检测到 SOLIDWORKS"));
         m_solidWorksStatusLabel->setStyleSheet(
-            QStringLiteral("color: #81c784; font-size: 11px; padding-right: 6px;"));
+            QStringLiteral("color: #217346; font-size: 11px; padding-right: 6px;"));
     } else {
         m_solidWorksStatusLabel->setText(QStringLiteral("● 未检测到 SOLIDWORKS"));
         m_solidWorksStatusLabel->setStyleSheet(
-            QStringLiteral("color: #ef5350; font-size: 11px; padding-right: 6px;"));
+            QStringLiteral("color: #C53030; font-size: 11px; padding-right: 6px;"));
     }
 }
 

@@ -7,6 +7,7 @@
 #include <QVector>
 #include <QJsonObject>
 #include "CalcResult.h"
+#include "CalcInput.h"
 #include "TransformerParams.h"
 
 // 报价参数（材料单价 + 费用系数，可随行情调整并持久化）
@@ -14,6 +15,7 @@ struct QuoteParams {
     // 材料单价（元/kg 或元/台，默认值对齐引擎内置价格）
     double steelPrice = 17.0;         // 硅钢片 元/kg
     double cuPrice = 60.0;            // 铜导线基价 元/kg
+    double alPrice = 60.0;            // 铝导线基价 元/kg（默认对齐计算单）
     double oilPrice = 10.0;           // 绝缘油 元/kg
     double tankPrice = 9.0;           // 油箱钢材 元/kg
     // 费用系数（占材料成本百分比）
@@ -57,7 +59,8 @@ struct QuoteResult {
 
 namespace QuoteCalculator {
 // 用报价参数重算材料成本并叠加费用：结果需有效（result.valid）
-QuoteResult calculate(const TransformerParams &params, const CalcResult &r,
+QuoteResult calculate(const TransformerParams &params, const CalcInput &input,
+                      const CalcResult &r,
                       const QuoteParams &q);
 // 报价参数默认持久化路径（用户 AppData 配置目录）
 QString defaultParamsPath();

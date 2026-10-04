@@ -12,7 +12,7 @@ TransformerTypeDialog::TransformerTypeDialog(QWidget *parent)
 {
     setWindowTitle(QStringLiteral("选择变压器类型"));
     setFixedSize(420, 300);
-    setStyleSheet("QDialog { background: #22262e; }");
+    setStyleSheet("QDialog { background: #FFFFFF; }");
 
     auto *mainLayout = new QVBoxLayout(this);
     mainLayout->setSpacing(18);
@@ -20,7 +20,7 @@ TransformerTypeDialog::TransformerTypeDialog(QWidget *parent)
 
     // 标题
     auto *title = new QLabel(QStringLiteral("请选择计算类型"), this);
-    title->setStyleSheet("font-size: 16px; font-weight: bold; color: #4dd0e1;");
+    title->setStyleSheet("font-size: 16px; font-weight: bold; color: #185C37;");
     title->setAlignment(Qt::AlignCenter);
     mainLayout->addWidget(title);
 
@@ -59,12 +59,12 @@ TransformerTypeDialog::TransformerTypeDialog(QWidget *parent)
     auto *cancelBtn = new QPushButton(QStringLiteral("取消"), this);
     auto *okBtn = new QPushButton(QStringLiteral("确定"), this);
     okBtn->setDefault(true);
-    okBtn->setStyleSheet("QPushButton { background: #00bcd4; color: #0d1117; "
+    okBtn->setStyleSheet("QPushButton { background: #217346; color: #FFFFFF; "
                          "padding: 7px 28px; border-radius: 5px; font-weight: bold; }"
-                         "QPushButton:hover { background: #4dd0e1; }");
+                         "QPushButton:hover { background: #185C37; }");
     cancelBtn->setStyleSheet("QPushButton { padding: 7px 28px; border-radius: 5px;"
-                             "background: #2a2f38; color: #8a9bb0; border: 1px solid #3a4050; }"
-                             "QPushButton:hover { border-color: #00bcd4; color: #e0e6ed; }");
+                             "background: #EDF3EF; color: #607368; border: 1px solid #D3DDD6; }"
+                             "QPushButton:hover { border-color: #217346; color: #24362B; }");
     btnLayout->addWidget(cancelBtn);
     btnLayout->addWidget(okBtn);
     mainLayout->addLayout(btnLayout);

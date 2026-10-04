@@ -4,13 +4,28 @@
 // 默认值即 SB20-M-630-10 计算单的取值，可作为寻优变量空间
 
 #include <QString>
+#include <QRegularExpression>
 #include <QVector>
 
 struct CalcInput {
+    // 线圈型式!J17：牌号前两位代表硅钢片厚度的百分之一毫米。
+    static double thicknessFromSteelGrade(const QString &grade)
+    {
+        static const QRegularExpression pattern(QStringLiteral("^[0-9]{2}[A-Za-z0-9]+$"));
+        const QString value = grade.trimmed();
+        if (!pattern.match(value).hasMatch()) {
+            return 0.0;
+        }
+        return value.left(2).toInt() / 100.0;
+    }
+
     // ---- 额定值 ----
     double capacity_kVA = 630.0;      // H1 容量
     double hvRated_kV = 10.0;         // J1 高压
     double lvRated_kV = 0.4;          // L1 低压
+    int hvTapPlusSteps = 2;           // 正向调压级数
+    int hvTapMinusSteps = 2;          // 负向调压级数（存正数，显示为 -2）
+    double hvTapStep_pct = 2.5;       // 每级调压电压百分比
     double hvTapMax_pct = 5.0;        // 分接上限（±2×2.5% → +5%）
     double hvTapMin_pct = -5.0;       // 分接下限
     bool hvDeltaConnected = true;     // 高压 D 接（false 为 Y 接）
@@ -43,12 +58,13 @@ struct CalcInput {
     int hvTurnsPerLayer = 15;         // W12 每层匝数
     double hvLayerInsul_mm = 0.0967;  // X35 层间绝缘厚
     double hvWireInsulAdd_mm = 0.15;  // QZB 绝缘增厚（X14=X13+0.15）
+    bool hvCopperWire = true;         // 高压铜导线（false 铝导线）
     int hvCoilFormIdx = 1;            // 线圈型式序号（1=圆筒式, 2=双层圆筒式）
     // 高压轴向油道（宽侧 X30..X34 / 高侧 Y30..Y34，0=无）
     double hvDuctWidthSide[5] = {4, 4, 4, 4, 4};
     double hvDuctHeightSide[5] = {4, 4, 4, 4, 4};
 
-    // ---- 低压绕组（铜箔）----
+    // ---- 低压绕组（铜箔或铝箔）----
     int lvTurns = 18;                 // AH8 低压匝数
     double lvFoilThick_mm = 1.35;     // AF14 箔厚
     double lvFoilWidth_mm = 323.0;    // AJ14 箔宽

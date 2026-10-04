@@ -9,6 +9,11 @@
 #include "StructureConfig.h"
 #include "CalcInput.h"
 
+class QLineEdit;
+class QSpinBox;
+class QDoubleSpinBox;
+class QComboBox;
+
 class ParamTableWidget : public QTableWidget {
     Q_OBJECT
 public:
@@ -19,10 +24,36 @@ public:
     void loadParamsForConfig(const TransformerParams &params, const StructureConfig &config,
                              const CalcInput &input, bool proMode = false);
     TransformerParams getParams() const;
+    // 当前联结组别是否能同时用于电磁计算与现有标准损耗表。
+    bool hasSupportedConnectionGroup() const;
+    bool hasValidSteelGrade() const;
     // 从表格设计变量节读回 CalcInput（未绑定或非法输入的域保持原值）
     void saveToInput(CalcInput &input) const;
 
+signals:
+    // 型号/容量联动：按 GB 20052-2024 叠铁芯标准值自动覆盖损耗/阻抗标准值后发出
+    void stdValuesUpdated(const QString &summary);
+
 private:
+    // 复合产品型号：型号-M-容量/高压额定电压-低压额定电压
+    bool parseCompositeModel(const QString &text, bool commitLowVoltage);
+    void applyModelLinkage();
+    QString selectedSteelGrade() const;
+    void updateSteelThickness();
+    QLineEdit *m_productModelEdit = nullptr;
+    QSpinBox *m_tapPlusSpin = nullptr;
+    QSpinBox *m_tapMinusSpin = nullptr;
+    QDoubleSpinBox *m_tapStepSpin = nullptr;
+    QComboBox *m_steelGradeCombo = nullptr;
+    QComboBox *m_hvMaterialCombo = nullptr;
+    QComboBox *m_lvMaterialCombo = nullptr;
+    QString m_modelSeries;
+    double m_modelCapacity_kVA = 630.0;
+    double m_modelHvRated_kV = 10.0;
+    double m_modelLvRated_kV = 0.4;
+    QString m_lastLinkageKey;
+    bool m_loading = false;               // 加载期间抑制联动信号
+
     void setupTable();
     // advanced=true 时节标题使用琥珀色调，与一~六节（青蓝调）区分高级参数
     void addSectionRow(int row, const QString &title,

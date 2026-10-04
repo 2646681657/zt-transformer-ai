@@ -34,7 +34,7 @@ void PrintTableWidget::loadData(const PrintOutputData &data)
             QFont font = item->font();
             font.setBold(true);
             item->setFont(font);
-            item->setBackground(QColor("#e8f0ff"));
+            item->setBackground(QColor("#E7F2EA"));
             setItem(i, 1, item);
             setSpan(i, 1, 1, 6);
         } else {

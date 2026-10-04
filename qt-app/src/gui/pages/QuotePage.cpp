@@ -55,17 +55,17 @@ void QuotePage::setupUi()
     // 工具栏：页面名 + 当前方案 + 保存参数/导出按钮
     auto *toolbar = new QWidget(this);
     toolbar->setFixedHeight(34);
-    toolbar->setStyleSheet("background: #2a2f38; border-bottom: 1px solid #3a4050;");
+    toolbar->setStyleSheet("background: #EDF3EF; border-bottom: 1px solid #D3DDD6;");
     auto *toolLayout = new QHBoxLayout(toolbar);
     toolLayout->setContentsMargins(8, 4, 8, 4);
     toolLayout->setSpacing(8);
 
     auto *pageLabel = new QLabel(QStringLiteral("产品报价"), toolbar);
-    pageLabel->setStyleSheet("color: #4dd0e1; font-size: 12px; font-weight: bold;");
+    pageLabel->setStyleSheet("color: #185C37; font-size: 12px; font-weight: bold;");
     toolLayout->addWidget(pageLabel);
 
     m_schemeLabel = new QLabel(QStringLiteral("未载入方案"), toolbar);
-    m_schemeLabel->setStyleSheet("color: #8a9bb0; font-size: 11px;");
+    m_schemeLabel->setStyleSheet("color: #607368; font-size: 11px;");
     toolLayout->addWidget(m_schemeLabel);
 
     toolLayout->addStretch();
@@ -73,18 +73,18 @@ void QuotePage::setupUi()
     auto *saveBtn = new QPushButton(QStringLiteral("保存参数"), toolbar);
     saveBtn->setCursor(Qt::PointingHandCursor);
     saveBtn->setStyleSheet(
-        "QPushButton { background: rgba(0,188,212,0.15); color: #4dd0e1; border: 1px solid #00bcd4;"
+        "QPushButton { background: rgba(33, 115, 70,0.15); color: #185C37; border: 1px solid #217346;"
         " border-radius: 3px; padding: 2px 12px; font-size: 11px; }"
-        "QPushButton:hover { background: rgba(0,188,212,0.3); }");
+        "QPushButton:hover { background: rgba(33, 115, 70,0.3); }");
     connect(saveBtn, &QPushButton::clicked, this, &QuotePage::onSaveParams);
     toolLayout->addWidget(saveBtn);
 
     auto *exportBtn = new QPushButton(QStringLiteral("导出报价单"), toolbar);
     exportBtn->setCursor(Qt::PointingHandCursor);
     exportBtn->setStyleSheet(
-        "QPushButton { background: rgba(0,188,212,0.15); color: #4dd0e1; border: 1px solid #00bcd4;"
+        "QPushButton { background: rgba(33, 115, 70,0.15); color: #185C37; border: 1px solid #217346;"
         " border-radius: 3px; padding: 2px 12px; font-size: 11px; }"
-        "QPushButton:hover { background: rgba(0,188,212,0.3); }");
+        "QPushButton:hover { background: rgba(33, 115, 70,0.3); }");
     connect(exportBtn, &QPushButton::clicked, this, &QuotePage::onExportQuote);
     toolLayout->addWidget(exportBtn);
 
@@ -92,12 +92,12 @@ void QuotePage::setupUi()
 
     // 内容区：左参数面板 + 右明细表
     auto *splitter = new QSplitter(Qt::Horizontal, this);
-    splitter->setStyleSheet("QSplitter { background: #1a1d23; }"
-                            "QSplitter::handle { background: #3a4050; width: 2px; }");
+    splitter->setStyleSheet("QSplitter { background: #F3F5F4; }"
+                            "QSplitter::handle { background: #D3DDD6; width: 2px; }");
 
     // ---- 左：报价参数 ----
     auto *paramWidget = new QWidget(splitter);
-    paramWidget->setStyleSheet("background: #1e2228;");
+    paramWidget->setStyleSheet("background: #F7FAF8;");
     paramWidget->setMinimumWidth(260);
     auto *paramLayout = new QVBoxLayout(paramWidget);
     paramLayout->setContentsMargins(8, 8, 8, 8);
@@ -123,8 +123,8 @@ void QuotePage::setupUi()
         spin->setFont(f);
         // 对行编辑框子控件设样式（不影响按钮布局）
         if (auto *le = spin->findChild<QLineEdit*>()) {
-            le->setStyleSheet("QLineEdit { background: #22262e; color: #e0e6ed;"
-                              " border: 1px solid #3a4050; border-radius: 3px; padding: 1px 4px; }");
+            le->setStyleSheet("QLineEdit { background: #FFFFFF; color: #24362B;"
+                              " border: 1px solid #D3DDD6; border-radius: 3px; padding: 1px 4px; }");
         }
         connect(spin, &QDoubleSpinBox::valueChanged, this, &QuotePage::onParamsChanged);
         return spin;
@@ -132,7 +132,7 @@ void QuotePage::setupUi()
 
     // 材料单价组
     auto *priceGroup = new QGroupBox(QStringLiteral("材料单价"), paramWidget);
-    priceGroup->setStyleSheet("QGroupBox { color: #c0c8d0; font-size: 12px; border: 1px solid #3a4050;"
+    priceGroup->setStyleSheet("QGroupBox { color: #42584A; font-size: 12px; border: 1px solid #D3DDD6;"
                               " border-radius: 4px; margin-top: 10px; padding-top: 6px; }"
                               "QGroupBox::title { subcontrol-origin: margin; left: 8px; padding: 0 3px; }");
     auto *priceForm = new QFormLayout(priceGroup);
@@ -143,10 +143,12 @@ void QuotePage::setupUi()
 
     m_steelPrice = makeSpin(0.0, 999.0, m_quoteParams.steelPrice, QStringLiteral(" 元/kg"));
     m_cuPrice = makeSpin(0.0, 999.0, m_quoteParams.cuPrice, QStringLiteral(" 元/kg"));
+    m_alPrice = makeSpin(0.0, 999.0, m_quoteParams.alPrice, QStringLiteral(" 元/kg"));
     m_oilPrice = makeSpin(0.0, 999.0, m_quoteParams.oilPrice, QStringLiteral(" 元/kg"));
     m_tankPrice = makeSpin(0.0, 999.0, m_quoteParams.tankPrice, QStringLiteral(" 元/kg"));
     priceForm->addRow(QStringLiteral("硅钢片"), m_steelPrice);
     priceForm->addRow(QStringLiteral("铜导线"), m_cuPrice);
+    priceForm->addRow(QStringLiteral("铝导线"), m_alPrice);
     priceForm->addRow(QStringLiteral("绝缘油"), m_oilPrice);
     priceForm->addRow(QStringLiteral("油箱钢材"), m_tankPrice);
     paramLayout->addWidget(priceGroup);
@@ -196,24 +198,24 @@ void QuotePage::setupUi()
     m_table->setSelectionBehavior(QAbstractItemView::SelectRows);
     m_table->setAlternatingRowColors(true);
     m_table->setStyleSheet(
-        "QTableWidget { background: #1a1d23; color: #c0c8d0; gridline-color: #3a4050;"
+        "QTableWidget { background: #F3F5F4; color: #42584A; gridline-color: #D3DDD6;"
         " font-size: 12px; border: none; }"
         "QTableWidget::item { padding: 4px 8px; }"
-        "QTableWidget::item:selected { background: rgba(0,188,212,0.25); }"
-        "QHeaderView::section { background: #22262e; color: #8a9bb0; border: none;"
-        " border-bottom: 1px solid #3a4050; padding: 6px 8px; font-size: 11px; }");
+        "QTableWidget::item:selected { background: rgba(33, 115, 70,0.25); }"
+        "QHeaderView::section { background: #FFFFFF; color: #607368; border: none;"
+        " border-bottom: 1px solid #D3DDD6; padding: 6px 8px; font-size: 11px; }");
     rightLayout->addWidget(m_table, 1);
 
     // 汇总栏
     auto *summaryBar = new QWidget(rightWidget);
     summaryBar->setFixedHeight(56);
-    summaryBar->setStyleSheet("background: #22262e; border-top: 1px solid #3a4050;");
+    summaryBar->setStyleSheet("background: #FFFFFF; border-top: 1px solid #D3DDD6;");
     auto *sumLayout = new QHBoxLayout(summaryBar);
     sumLayout->setContentsMargins(12, 6, 12, 6);
     sumLayout->setSpacing(24);
 
     m_summaryLabel = new QLabel(summaryBar);
-    m_summaryLabel->setStyleSheet("color: #e0e6ed; font-size: 12px;");
+    m_summaryLabel->setStyleSheet("color: #24362B; font-size: 12px;");
     m_summaryLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
     sumLayout->addWidget(m_summaryLabel, 1);
     rightLayout->addWidget(summaryBar);
@@ -240,10 +242,10 @@ void QuotePage::loadScheme(const TransformerParams &params, const CalcInput &inp
                 .arg(m_params.capacity_kVA)
                 .arg(m_params.hvRatedVoltage_kV)
                 .arg(QString::number(m_result.mass.totalWeight_kg, 'f', 0)));
-        m_schemeLabel->setStyleSheet("color: #4dd0e1; font-size: 11px;");
+        m_schemeLabel->setStyleSheet("color: #185C37; font-size: 11px;");
     } else {
         m_schemeLabel->setText(QStringLiteral("方案无效，请重新计算"));
-        m_schemeLabel->setStyleSheet("color: #e57373; font-size: 11px;");
+        m_schemeLabel->setStyleSheet("color: #C53030; font-size: 11px;");
     }
     recalc();
 }
@@ -253,6 +255,7 @@ void QuotePage::onParamsChanged()
     // 从控件回填参数并重算
     m_quoteParams.steelPrice = m_steelPrice->value();
     m_quoteParams.cuPrice = m_cuPrice->value();
+    m_quoteParams.alPrice = m_alPrice->value();
     m_quoteParams.oilPrice = m_oilPrice->value();
     m_quoteParams.tankPrice = m_tankPrice->value();
     m_quoteParams.purchasedParts_pct = m_purchasedSpin->value();
@@ -348,7 +351,7 @@ void QuotePage::recalc()
         return;
     }
 
-    m_quote = QuoteCalculator::calculate(m_params, m_result, m_quoteParams);
+    m_quote = QuoteCalculator::calculate(m_params, m_input, m_result, m_quoteParams);
     if (!m_quote.valid) {
         m_summaryLabel->setText(QStringLiteral("报价计算失败"));
         return;
