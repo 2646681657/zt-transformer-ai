@@ -158,6 +158,7 @@ private:
     void appendScheme(const CalcInput &input, const CalcResult &result);
     // 确认指定行方案：记录基准并跳转输出打印 Tab
     void confirmSchemeAt(int row);
+    TransformerParams currentResultParams() const;
 
     QTabBar *m_tabBar;
     QStackedWidget *m_stack;
@@ -186,6 +187,7 @@ private:
     int m_confirmedSchemeIdx = -1;   // 已确认方案序号（方案库比较基准，排序无关）
     // 方案序号 → 完整候选（input+result+方案行）：确认方案时取回该方案全部数据
     QHash<int, OptimizeCandidate> m_schemeData;
+    QHash<int, TransformerParams> m_schemeParams; // 本方案的型号与性能设置，不覆盖寻优基准
     TransformerParams m_params;
     StructureConfig m_config;
     ElectromagneticEngine m_engine;

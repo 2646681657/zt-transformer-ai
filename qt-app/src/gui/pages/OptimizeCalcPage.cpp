@@ -306,22 +306,11 @@ void OptimizeCalcPage::onEnterCalcClicked()
     }
     if (!ensureSupportedCoreShape())
         return;
-    if (!m_paramTable->hasSupportedConnectionGroup()) {
-        QMessageBox::warning(this, QStringLiteral("联结组别暂不支持"),
-            QStringLiteral("当前版本仅支持 Dyn11（可填 Dyn）和 Yyn0。其他联结形式尚无对应的标准损耗值，请修改联结组别后再计算。"));
+    QString inputError;
+    if (!m_paramTable->collectForCalculation(m_params, m_input, inputError)) {
+        QMessageBox::warning(this, QStringLiteral("设计输入不可用"), inputError);
         return;
     }
-    if (!m_paramTable->hasValidSteelGrade()) {
-        QMessageBox::warning(this, QStringLiteral("硅钢片牌号不可用"),
-            QStringLiteral("请从下拉列表选择数据库已收录的硅钢片牌号；未收录牌号不能用于计算。"));
-        return;
-    }
-    m_params = m_paramTable->getParams();
-    m_paramTable->saveToInput(m_input);   // 收集表格中编辑的设计变量
-    // 表格「一 输入信息」节编辑的额定值同步回 CalcInput（保持两体系一致）
-    m_input.capacity_kVA = m_params.capacity_kVA;
-    m_input.hvRated_kV = m_params.hvRatedVoltage_kV;
-    m_input.lvRated_kV = m_params.lvRatedVoltage_kV;
     // 进入计算自动记录：记忆库（去重限量）+ 上次方案
     SchemeStore::appendMemory(m_input);
     SchemeStore::saveLastScheme(m_input);
@@ -335,23 +324,14 @@ void OptimizeCalcPage::onVerifySheetClicked()
 {
     if (!ensureSupportedCoreShape())
         return;
-    if (!m_paramTable->hasSupportedConnectionGroup()) {
-        QMessageBox::warning(this, QStringLiteral("联结组别暂不支持"),
-            QStringLiteral("当前版本仅支持 Dyn11（可填 Dyn）和 Yyn0。其他联结形式尚无对应的标准损耗值，请修改联结组别后再校验。"));
-        return;
-    }
-    if (!m_paramTable->hasValidSteelGrade()) {
-        QMessageBox::warning(this, QStringLiteral("硅钢片牌号不可用"),
-            QStringLiteral("请从下拉列表选择数据库已收录的硅钢片牌号；未收录牌号不能用于计算。"));
-        return;
-    }
     // 收集当前表格参数与设计变量（与进入计算同链路，但不记忆/不跳转）
-    const TransformerParams params = m_paramTable->getParams();
+    TransformerParams params;
     CalcInput input = m_input;
-    m_paramTable->saveToInput(input);
-    input.capacity_kVA = params.capacity_kVA;
-    input.hvRated_kV = params.hvRatedVoltage_kV;
-    input.lvRated_kV = params.lvRatedVoltage_kV;
+    QString inputError;
+    if (!m_paramTable->collectForCalculation(params, input, inputError)) {
+        QMessageBox::warning(this, QStringLiteral("设计输入不可用"), inputError);
+        return;
+    }
 
     ElectromagneticEngine engine;
     CalcResult result;

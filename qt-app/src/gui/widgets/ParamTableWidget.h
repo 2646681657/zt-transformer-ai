@@ -29,6 +29,10 @@ public:
     bool hasValidSteelGrade() const;
     // 从表格设计变量节读回 CalcInput（未绑定或非法输入的域保持原值）
     void saveToInput(CalcInput &input) const;
+    // 计算边界统一校验并提交完整型号；失败时不改变调用方输入。
+    bool collectForCalculation(TransformerParams &params, CalcInput &input, QString &error);
+    // 方案回显与输出元数据必须来自该方案，而不是寻优基准额定值。
+    static TransformerParams paramsForInput(const TransformerParams &base, const CalcInput &input);
 
 signals:
     // 型号/容量联动：按 GB 20052-2024 叠铁芯标准值自动覆盖损耗/阻抗标准值后发出

@@ -163,6 +163,7 @@ void EnterCalcPage::buildOptimizeRibbon()
                 QStringLiteral("请先执行快速计算或寻优计算，再使用 AI 解读"));
             return;
         }
+        const TransformerParams resultParams = currentResultParams();
         const QString data = QStringLiteral(
             "变压器电磁计算结果（引擎输出）：\n"
             "容量: %1 kVA；高压/低压: %2/%3 kV\n"
@@ -176,7 +177,7 @@ void EnterCalcPage::buildOptimizeRibbon()
             "性能标准：空载损耗标准 %19 W，负载损耗标准 %20 W，"
             "阻抗电压标准 %21%，空载电流标准 %22%\n"
             "约束校验：%23")
-            .arg(m_params.capacity_kVA).arg(m_params.hvRatedVoltage_kV).arg(m_params.lvRatedVoltage_kV)
+            .arg(resultParams.capacity_kVA).arg(resultParams.hvRatedVoltage_kV).arg(resultParams.lvRatedVoltage_kV)
             .arg(m_emResult.core.noLoadLoss_W, 0, 'f', 0)
             .arg(m_emResult.winding.loadLoss_W, 0, 'f', 0)
             .arg(m_emResult.impedance.impedance_pct, 0, 'f', 2)
@@ -192,12 +193,12 @@ void EnterCalcPage::buildOptimizeRibbon()
             .arg(m_emResult.winding.lvCurrentDensity, 0, 'f', 2)
             .arg(m_emResult.mass.totalWeight_kg, 0, 'f', 0)
             .arg(m_emResult.cost.materialCost, 0, 'f', 0)
-            .arg(m_params.noLoadLossStd_W, 0, 'f', 0)
-            .arg(m_params.loadLossStd_W, 0, 'f', 0)
-            .arg(m_params.impedanceVoltageStd_pct, 0, 'f', 2)
-            .arg(m_params.noLoadCurrentStd_pct, 0, 'f', 2)
+            .arg(resultParams.noLoadLossStd_W, 0, 'f', 0)
+            .arg(resultParams.loadLossStd_W, 0, 'f', 0)
+            .arg(resultParams.impedanceVoltageStd_pct, 0, 'f', 2)
+            .arg(resultParams.noLoadCurrentStd_pct, 0, 'f', 2)
             .arg([&]() {
-                const auto check = checkSchemeConstraints(m_params, m_emResult);
+                const auto check = checkSchemeConstraints(resultParams, m_emResult);
                 return check.passed ? QStringLiteral("全部通过")
                                     : check.violations.join(QStringLiteral("；"));
             }());
@@ -1090,6 +1091,7 @@ void EnterCalcPage::setCalcInput(const CalcInput &input)
     m_hasResult = false;
     m_confirmedSchemeIdx = -1;
     m_schemeData.clear();
+    m_schemeParams.clear();
     m_schemeTable->clearResults();
     m_emResultPanel->clearResult();
     m_statusBar->setText(QStringLiteral("已加载新参数，请重新计算"));
@@ -1117,6 +1119,7 @@ void EnterCalcPage::onTabChanged(int index)
 void EnterCalcPage::onRunEmCalc()
 {
     CalcInput input = m_calcInput;   // 参数设置页编辑的设计变量（默认 SB20-M-630-10）
+    m_confirmedSchemeIdx = -1;
     m_lastInput = input;
     if (!m_engine.calcElectromagnetic(input, m_emResult) || !m_emResult.valid) {
         m_statusBar->setText(QStringLiteral("电磁计算失败: %1").arg(m_emResult.error));
@@ -1246,6 +1249,7 @@ void EnterCalcPage::onOptimizeStart()
     // 新一轮寻优：清空方案表与方案数据缓存，从当前设计变量（参数设置页传入）出发网格搜索
     m_schemeTable->clearResults();
     m_schemeData.clear();
+    m_schemeParams.clear();
     m_confirmedSchemeIdx = -1;
     m_optRunning = true;
     if (m_pauseBtn) {
@@ -1330,6 +1334,7 @@ void EnterCalcPage::onOptimizeFinished(bool stopped, const OptimizeCandidate &be
     }
     if (valid > 0) {
         // 最优（材料成本最低）方案加载到结果面板与打印/保存链路
+        m_confirmedSchemeIdx = -1;
         m_lastInput = best.input;
         m_emResult = best.result;
         m_hasResult = true;
@@ -1594,12 +1599,15 @@ void EnterCalcPage::onSchemeSelected(int row)
 
     auto *table = new ParamTableWidget(&dlg);
     const bool proMode = m_config.calcMode == StructureConfig::Professional;
-    table->loadParamsForConfig(m_params, m_config, original.input, proMode);
+    const TransformerParams originalParams = ParamTableWidget::paramsForInput(
+        m_schemeParams.value(schemeIdx, m_params), original.input);
+    table->loadParamsForConfig(originalParams, m_config, original.input, proMode);
     layout->addWidget(table, 1);
 
     // 工作副本：弹窗内的编辑与重算不直接写回，确认时统一提交
     CalcInput working = original.input;
     CalcResult pendingResult = original.result;
+    TransformerParams pendingParams = originalParams;
 
     // 结果摘要（计算/确认后刷新）
     const auto summaryText = [](const CalcResult &r) {
@@ -1620,15 +1628,15 @@ void EnterCalcPage::onSchemeSelected(int row)
     summary->setStyleSheet("color: #607368; font-size: 12px;");
     layout->addWidget(summary);
 
-    // 表格编辑跟踪（loadParamsForConfig 之后连接，避免初始化误报）
-    bool dirty = false;
-    connect(table, &QTableWidget::itemChanged, table,
-            [&dirty](QTableWidgetItem *) { dirty = true; });
-
     // 表格当前值重算（计算/确认共用）：失败返回 false 并提示
     const auto recalc = [&]() -> bool {
-        CalcInput in = working;   // 未绑定/非法输入的域保持原值
-        table->saveToInput(in);
+        CalcInput in = working;
+        TransformerParams params;
+        QString inputError;
+        if (!table->collectForCalculation(params, in, inputError)) {
+            QMessageBox::warning(&dlg, QStringLiteral("方案输入不可用"), inputError);
+            return false;
+        }
         CalcResult res;
         if (!m_engine.calcElectromagnetic(in, res) || !res.valid) {
             QMessageBox::warning(&dlg, QStringLiteral("方案计算"),
@@ -1637,7 +1645,7 @@ void EnterCalcPage::onSchemeSelected(int row)
         }
         working = in;
         pendingResult = res;
-        dirty = false;
+        pendingParams = params;
         summary->setText(summaryText(pendingResult));
         return true;
     };
@@ -1671,8 +1679,8 @@ void EnterCalcPage::onSchemeSelected(int row)
     connect(calcBtn, &QPushButton::clicked, this, [&]() { recalc(); });
 
     connect(okBtn, &QPushButton::clicked, this, [&]() {
-        // 有未重算的编辑时先重算，保证确认提交的是当前输入的结果
-        if (dirty && !recalc()) {
+        // 子控件未必发出 itemChanged：确认时始终收集、校验并重算。
+        if (!recalc()) {
             return;
         }
         OptimizeCandidate updated = original;
@@ -1680,6 +1688,7 @@ void EnterCalcPage::onSchemeSelected(int row)
         updated.result = pendingResult;
         updated.scheme = makeScheme(schemeIdx, working, pendingResult);
         m_schemeData.insert(schemeIdx, updated);
+        m_schemeParams.insert(schemeIdx, pendingParams);
         m_schemeTable->updateResult(row, updated.scheme);
         m_schemeTable->markRow(row);
         m_schemeTable->selectRow(row);
@@ -1760,6 +1769,7 @@ void EnterCalcPage::onLoadSchemes()
     // 清空当前方案，逐个重算恢复（引擎确定性，结果与保存时一致）
     m_schemeTable->clearResults();
     m_schemeData.clear();
+    m_schemeParams.clear();
     m_confirmedSchemeIdx = -1;
     int loaded = 0;
     for (const CalcInput &in : inputs) {
@@ -1772,6 +1782,12 @@ void EnterCalcPage::onLoadSchemes()
     m_statusBar->setText(QStringLiteral("方案库已加载：%1（%2/%3 个方案重算成功）")
                              .arg(QDir::toNativeSeparators(path))
                              .arg(loaded).arg(inputs.size()));
+}
+
+TransformerParams EnterCalcPage::currentResultParams() const
+{
+    return ParamTableWidget::paramsForInput(
+        m_schemeParams.value(m_confirmedSchemeIdx, m_params), m_lastInput);
 }
 
 void EnterCalcPage::confirmSchemeAt(int row)
@@ -1791,7 +1807,7 @@ void EnterCalcPage::confirmSchemeAt(int row)
         m_emResultPanel->loadResult(m_emResult);
         m_printTable->loadData(ElectromagneticEngine::buildPrintOutput(it->input, it->result));
         // 通知主界面：已确认方案数据同步到产品报价页
-        emit schemeConfirmed(m_params, m_lastInput, m_emResult);
+        emit schemeConfirmed(currentResultParams(), m_lastInput, m_emResult);
     }
 
     if (m_schemeIndexSpin) {
@@ -2320,7 +2336,7 @@ void EnterCalcPage::onOpenPerfCompareTable()
         }
     }
     const auto &r = m_emResult;
-    const auto &p = m_params;
+    const auto p = currentResultParams();
     QString text = QStringLiteral("项目\t标准值\t计算值\t判定\n");
     const auto line = [&text](const QString &name, double std, double calc,
                               double maxDevPct, double minDevPct, const QString &unit) {
@@ -2460,11 +2476,8 @@ void EnterCalcPage::onExportDocuments()
     auto *drawingNoEdit = new QLineEdit(&dlg);
     drawingNoEdit->setPlaceholderText(QStringLiteral("如 1BT.520.0001"));
     auto *modelEdit = new QLineEdit(&dlg);
-    // 型号默认取当前方案规格（产品大类-容量/电压等级）
-    modelEdit->setText(QStringLiteral("%1-M-%2-%3")
-                           .arg(m_params.productModel,
-                                QString::number(m_params.capacity_kVA, 'f', 0),
-                                QString::number(m_params.hvRatedVoltage_kV, 'f', 0)));
+    // 型号取确认方案，不再拼接寻优基准型号或重复的 -M 后缀。
+    modelEdit->setText(currentResultParams().productModel);
     auto *dirEdit = new QLineEdit(&dlg);
     dirEdit->setReadOnly(true);
     dirEdit->setText(QDir::homePath());
@@ -2523,7 +2536,7 @@ void EnterCalcPage::onExportDocuments()
     const QuoteParams quoteParams =
         QuoteParams::loadFromFile(QuoteCalculator::defaultParamsPath(), &paramOk);
     const QuoteResult quote =
-        QuoteCalculator::calculate(m_params, m_calcInput, m_emResult,
+        QuoteCalculator::calculate(currentResultParams(), m_lastInput, m_emResult,
                                    paramOk ? quoteParams : QuoteParams{});
     QString costText = QStringLiteral("材料成本清单\n");
     costText += QStringLiteral("========================================\n");
