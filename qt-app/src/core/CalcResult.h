@@ -5,6 +5,7 @@
 
 #include <QString>
 #include <QVector>
+#include "TestVoltageHints.h"
 
 // AM8→AN8，仅建议，不参与实际匝数的写回。
 struct LvTurnsRecommendation {
@@ -154,6 +155,7 @@ struct CostResult {
 };
 
 struct CalcResult {
+    TestVoltageHints testVoltage;
     CoreResult core;
     WindingResult winding;
     ImpedanceResult impedance;

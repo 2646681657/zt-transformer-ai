@@ -72,7 +72,12 @@ QVector<QPair<QString, QVector<QStringList>>> EmResultPanel::buildGroups(const C
     // ---- 绕组 ----
     const auto &w = r.winding;
     QVector<QStringList> winding;
-    winding << row(QStringLiteral("高压匝数（额定）"), double(w.hvTurnsRated), 0, QString())
+    winding << QStringList{QStringLiteral("高压试验电压（参考）"), r.testVoltage.highVoltage, QStringLiteral("kV")}
+            << QStringList{QStringLiteral("低压试验电压（参考）"), r.testVoltage.lowVoltage, QStringLiteral("kV")}
+            << QStringList{QStringLiteral("试验电压依据"), TestVoltageHints::sourceNote(), QString()}
+            << QStringList{QStringLiteral("高压参考说明"), r.testVoltage.highReason, QString()}
+            << QStringList{QStringLiteral("低压参考说明"), r.testVoltage.lowReason, QString()}
+            << row(QStringLiteral("高压匝数（额定）"), double(w.hvTurnsRated), 0, QString())
             << row(QStringLiteral("高压匝数（最大分接）"), double(w.hvTurnsMax), 0, QString())
             << row(QStringLiteral("高压匝数（最小分接）"), double(w.hvTurnsMin), 0, QString())
             << row(QStringLiteral("低压实际匝数（参与计算）"), double(w.lvTurns), 0, QString())
@@ -182,6 +187,7 @@ void EmResultPanel::fillPage(QTableWidget *page, const QVector<QStringList> &row
         page->setItem(i, 0, new QTableWidgetItem(rows[i][0]));
         page->setItem(i, 1, new QTableWidgetItem(rows[i][1]));
         page->setItem(i, 2, new QTableWidgetItem(rows[i].value(2)));
+        page->item(i, 1)->setToolTip(rows[i][1]);
     }
 }
 
