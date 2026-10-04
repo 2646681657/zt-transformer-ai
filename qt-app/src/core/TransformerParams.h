@@ -23,6 +23,9 @@ struct TransformerParams {
     double loadLossMaxDev_pct = 10.0;
     double totalLossStd_W = 5740.0;
     double totalLossMaxDev_pct = 10.0;
+    // 当前会话中记录损耗标准值的来源；不改变既有方案文件格式。
+    bool lossStandardsManual = false;
+    QString lossStandardsKey;
     double impedanceVoltageStd_pct = 6.93;
     double impedanceVoltageMaxDev_pct = 10.0;
     double impedanceVoltageMinDev_pct = -10.0;

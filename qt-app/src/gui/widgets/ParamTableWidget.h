@@ -33,15 +33,19 @@ public:
     bool collectForCalculation(TransformerParams &params, CalcInput &input, QString &error);
     // 方案回显与输出元数据必须来自该方案，而不是寻优基准额定值。
     static TransformerParams paramsForInput(const TransformerParams &base, const CalcInput &input);
+    QString standardStatus() const { return m_standardStatus; }
+    void setCalculationConfig(const StructureConfig &config) { m_config = config; applyModelLinkage(); }
 
 signals:
-    // 型号/容量联动：按 GB 20052-2024 叠铁芯标准值自动覆盖损耗/阻抗标准值后发出
+    // 内置叠铁芯损耗标准表的适用状态；阻抗始终保留当前设置。
     void stdValuesUpdated(const QString &summary);
 
 private:
     // 复合产品型号：型号-M-容量/高压额定电压-低压额定电压
     bool parseCompositeModel(const QString &text, bool commitLowVoltage);
     void applyModelLinkage();
+    QString standardKey() const;
+    QString standardUnavailableReason() const;
     QString selectedSteelGrade() const;
     void updateSteelThickness();
     QLineEdit *m_productModelEdit = nullptr;
@@ -56,6 +60,10 @@ private:
     double m_modelHvRated_kV = 10.0;
     double m_modelLvRated_kV = 0.4;
     QString m_lastLinkageKey;
+    TransformerParams m_baseParams;
+    StructureConfig m_config;
+    bool m_lossStandardsManual = false;
+    QString m_standardStatus;
     bool m_loading = false;               // 加载期间抑制联动信号
 
     void setupTable();

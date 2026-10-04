@@ -11,6 +11,7 @@
 #include "BasicParamsImporter.h"
 #include "ElectromagneticEngine.h"
 #include "SchemeConstraints.h"
+#include "CalculationApplicability.h"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -168,10 +169,11 @@ void OptimizeCalcPage::setupRibbon()
     // Group 2: 变压器结构 (互斥)
     auto *g2 = m_ribbon->addGroup(QStringLiteral("变压器结构"));
     g2->setExclusive(true);
-    g2->addButton(new RibbonButton(QStringLiteral("叠铁芯"), ":/icons/core_stack.svg", g2));
+    auto *stackBtn = new RibbonButton(QStringLiteral("叠铁芯"), ":/icons/core_stack.svg", g2);
+    stackBtn->setActive(true);
+    g2->addButton(stackBtn);
     g2->addButton(new RibbonButton(QStringLiteral("立体卷铁芯"), ":/icons/core_roll.svg", g2));
     auto *amBtn = new RibbonButton(QStringLiteral("平面非晶合金"), ":/icons/core_amorphous.svg", g2);
-    amBtn->setActive(true);
     g2->addButton(amBtn);
     m_ribbon->addSeparator();
 
@@ -276,14 +278,12 @@ void OptimizeCalcPage::setupMainArea()
     // 叠铁芯型号/容量联动：标准值覆盖结果实时显示在提示条
     connect(m_paramTable, &ParamTableWidget::stdValuesUpdated, this, [this](const QString &s) {
         m_linkStatusLabel->setText(s);
+        m_linkStatusLabel->setToolTip(s);
         m_linkStatusLabel->show();
     });
-    m_linkStatusLabel->setVisible(m_config.coreType == StructureConfig::StackedSilicon);
-    if (m_config.coreType == StructureConfig::StackedSilicon) {
-        m_linkStatusLabel->setText(QStringLiteral(
-            "叠铁芯型号/容量联动已启用：切换后按 GB 20052-2024 自动更新损耗标准值（阻抗标准值保持当前设置）；"
-            "注意容量变更后设计变量仍为原容量基准，请按新容量重新设定"));
-    }
+    m_linkStatusLabel->setText(m_paramTable->standardStatus());
+    m_linkStatusLabel->setToolTip(m_paramTable->standardStatus());
+    m_linkStatusLabel->show();
 
     // Help panel（文案随计算模式切换，见 updateHelpPanel）
     m_helpPanel = new QTextEdit(this);
@@ -375,10 +375,14 @@ void OptimizeCalcPage::onVerifySheetClicked()
 
 bool OptimizeCalcPage::ensureSupportedCoreShape()
 {
-    if (m_selectGroups[2]->selectedIndex() == 2)
+    updateConfigFromRibbon();
+    CalcInput input = m_input;
+    m_paramTable->saveToInput(input);
+    const QString reason = calculationScopeError(m_config, m_paramTable->getParams(), input);
+    if (reason.isEmpty())
         return true;
-    QMessageBox::warning(this, QStringLiteral("铁芯结构暂不支持"),
-        QStringLiteral("当前计算引擎仅支持计算单中的「椭圆形」铁芯截面。请改选「椭圆形」后再计算。"));
+    QMessageBox::warning(this, QStringLiteral("当前配置暂不支持"), reason + QStringLiteral(
+        "。\n支持范围：油浸式、低压箔绕、叠铁芯、椭圆形、双绕组、多层圆筒式，50Hz/75℃。"));
     return false;
 }
 
@@ -559,8 +563,9 @@ void OptimizeCalcPage::onSelectionChanged()
     updateConfigFromRibbon();
     if (m_config.calcMode != oldMode || m_config.coreType != oldCoreType)
         refreshParamTable();
-    if (m_config.calcMode != oldMode)
-        updateHelpPanel();
+    else
+        m_paramTable->setCalculationConfig(m_config);
+    updateHelpPanel();
 }
 
 // 帮助面板文案随计算模式切换（正常/专业）
@@ -569,7 +574,8 @@ void OptimizeCalcPage::updateHelpPanel()
     if (!m_helpPanel)
         return;
     const bool proMode = (m_config.calcMode == StructureConfig::Professional);
-    m_helpPanel->setPlainText(proMode
+    const QString scope = calculationScopeError(m_config, m_paramTable->getParams(), m_input);
+    m_helpPanel->setPlainText((proMode
         ? QStringLiteral(
             "操作说明（专业模式）:\n\n"
             "1. 在左侧选择设计方案\n"
@@ -583,7 +589,9 @@ void OptimizeCalcPage::updateHelpPanel()
             "操作说明:\n\n"
             "1. 在左侧选择设计方案\n"
             "2. 在中间表格修改参数\n"
-            "3. 确认后点击\"进入计算\""));
+            "3. 确认后点击\"进入计算\"")) + QStringLiteral(
+            "\n\n计算范围：油浸式、低压箔绕、叠铁芯、椭圆形、双绕组、多层圆筒式。\n固定50Hz/75℃；环境温度、海拔仅记录，不修正温升。\n波纹油箱算法；其他油箱算法未接入。")
+        + (scope.isEmpty() ? QString() : QStringLiteral("\n\n当前配置不可计算：") + scope));
 }
 
 // 从Ribbon各分组的选中索引映射到StructureConfig枚举值
@@ -627,14 +635,8 @@ void OptimizeCalcPage::refreshParamTable()
     setUpdatesEnabled(false);
     const bool proMode = (m_config.calcMode == StructureConfig::Professional);
     m_paramTable->loadParamsForConfig(m_params, m_config, m_input, proMode);
-    // 联动提示条仅叠铁芯可见
-    const bool stacked = (m_config.coreType == StructureConfig::StackedSilicon);
-    m_linkStatusLabel->setVisible(stacked);
-    if (stacked) {
-        m_linkStatusLabel->setText(QStringLiteral(
-            "叠铁芯型号/容量联动已启用：切换后按 GB 20052-2024 自动更新损耗标准值（阻抗标准值保持当前设置）；"
-            "注意容量变更后设计变量仍为原容量基准，请按新容量重新设定"));
-    }
+    m_linkStatusLabel->setText(m_paramTable->standardStatus());
+    m_linkStatusLabel->show();
     saveModePreference();
     setUpdatesEnabled(wasUpdatesEnabled);
 }
@@ -651,6 +653,8 @@ void OptimizeCalcPage::saveModePreference() const
 void OptimizeCalcPage::setStructureConfig(const StructureConfig &config)
 {
     m_config = config;
+    // 结构按钮是此页的实际选型，不让外部默认配置与可见按钮脱节。
+    updateConfigFromRibbon();
 
     // 计算模式以 Ribbon 当前选中为准（含 QSettings 恢复的上次选择），
     // 避免被外部传入的默认 calcMode 覆盖导致模式按钮与表格内容不一致
@@ -672,4 +676,5 @@ void OptimizeCalcPage::setStructureConfig(const StructureConfig &config)
     }
 
     refreshParamTable();
+    updateHelpPanel();
 }

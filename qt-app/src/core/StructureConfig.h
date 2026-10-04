@@ -19,7 +19,7 @@ struct StructureConfig {
 
     // 变压器结构（铁芯类型）
     enum CoreType { StackedSilicon, StereoscopicRoll, PlanarAmorphous };
-    CoreType coreType = PlanarAmorphous;
+    CoreType coreType = StackedSilicon;
 
     // 铁芯截面形状
     enum CoreShape { Circle, LongRound, Ellipse, HalfEllipse, EllipseLike };
