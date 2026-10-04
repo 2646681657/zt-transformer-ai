@@ -154,6 +154,10 @@ QPair<int, QStringList> BasicParamsImporter::parseRows(const QStringList &rows,
                         detail=QStringLiteral("产品型号 = %1").arg(valueCell); applied=true; } break; }
                 }
                 if (applied) {
+                    if (r >= 5 && r <= 7) {
+                        params.lossStandardsManual = true;
+                        params.lossStandardsKey.clear();
+                    }
                     details << detail;
                     ++importedCount;
                 }

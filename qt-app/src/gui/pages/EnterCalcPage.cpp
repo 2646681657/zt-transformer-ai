@@ -16,6 +16,7 @@
 #include "AiAnalysisDialog.h"
 #include "QuoteCalculator.h"
 #include "ParamTableWidget.h"
+#include "CalculationApplicability.h"
 #include <QDateTime>
 #include <QDir>
 #include <algorithm>
@@ -1087,6 +1088,7 @@ void EnterCalcPage::setCalcInput(const CalcInput &input)
     }
     m_calcInput = input;
     m_lastInput = CalcInput{};
+    m_lastParams = m_params;
     m_emResult = CalcResult{};
     m_hasResult = false;
     m_confirmedSchemeIdx = -1;
@@ -1101,6 +1103,8 @@ void EnterCalcPage::setCalcInput(const CalcInput &input)
         return;   // 构造期间 Tab 未建完（正常流程不会发生）
     }
     m_printTable->setRowCount(0);
+    if (!calculationScopeError(m_config, m_params, m_calcInput).isEmpty())
+        return;
     CalcResult initResult;
     if (m_engine.calcElectromagnetic(m_calcInput, initResult) && initResult.valid) {
         m_printTable->loadData(
@@ -1119,6 +1123,21 @@ void EnterCalcPage::onTabChanged(int index)
 void EnterCalcPage::onRunEmCalc()
 {
     CalcInput input = m_calcInput;   // 参数设置页编辑的设计变量（默认 SB20-M-630-10）
+    // 侧栏方案库也走同一标准匹配/输入校验入口，不能绕过设计页。
+    ParamTableWidget inputTable(this);
+    inputTable.loadParamsForConfig(ParamTableWidget::paramsForInput(m_params, input),
+        m_config, input, m_config.calcMode == StructureConfig::Professional);
+    TransformerParams resultParams;
+    QString inputError;
+    if (!inputTable.collectForCalculation(resultParams, input, inputError)) {
+        QMessageBox::warning(this, QStringLiteral("方案输入不可用"), inputError);
+        return;
+    }
+    const QString scopeError = calculationScopeError(m_config, m_params, input);
+    if (!scopeError.isEmpty()) {
+        QMessageBox::warning(this, QStringLiteral("当前配置暂不支持"), scopeError);
+        return;
+    }
     m_confirmedSchemeIdx = -1;
     m_lastInput = input;
     if (!m_engine.calcElectromagnetic(input, m_emResult) || !m_emResult.valid) {
@@ -1128,11 +1147,13 @@ void EnterCalcPage::onRunEmCalc()
         return;
     }
     m_hasResult = true;
+    m_lastParams = resultParams;
 
     // 结果面板 + 打印表 + 方案入库
     m_emResultPanel->loadResult(m_emResult);
     m_printTable->loadData(ElectromagneticEngine::buildPrintOutput(input, m_emResult));
-    appendScheme(input, m_emResult);
+    const int schemeIdx = appendScheme(input, m_emResult);
+    m_schemeParams.insert(schemeIdx, resultParams);
 
     QString status = QStringLiteral(
         "电磁计算完成：空载损耗 %1 W | 负载损耗 %2 W | 阻抗电压 %3% | "
@@ -1145,7 +1166,7 @@ void EnterCalcPage::onRunEmCalc()
              QString::number(m_emResult.cost.materialCost, 'f', 0));
 
     // 约束校验：超差项追加提示（快速计算结果仍展示，仅提示不拦截）
-    const SchemeConstraintsResult check = checkSchemeConstraints(m_params, m_emResult);
+    const SchemeConstraintsResult check = checkSchemeConstraints(resultParams, m_emResult);
     if (!check.passed) {
         status += QStringLiteral(" ｜ 注意：%1").arg(check.violations.join(QStringLiteral("，")));
     }
@@ -1246,6 +1267,11 @@ void EnterCalcPage::onOptimizeStart()
         m_statusBar->setText(QStringLiteral("寻优正在进行中"));
         return;
     }
+    const QString scopeError = calculationScopeError(m_config, m_params, m_calcInput);
+    if (!scopeError.isEmpty()) {
+        QMessageBox::warning(this, QStringLiteral("当前配置暂不支持"), scopeError);
+        return;
+    }
     // 新一轮寻优：清空方案表与方案数据缓存，从当前设计变量（参数设置页传入）出发网格搜索
     m_schemeTable->clearResults();
     m_schemeData.clear();
@@ -1336,6 +1362,7 @@ void EnterCalcPage::onOptimizeFinished(bool stopped, const OptimizeCandidate &be
         // 最优（材料成本最低）方案加载到结果面板与打印/保存链路
         m_confirmedSchemeIdx = -1;
         m_lastInput = best.input;
+        m_lastParams = m_params;
         m_emResult = best.result;
         m_hasResult = true;
         m_emResultPanel->loadResult(m_emResult);
@@ -1757,6 +1784,14 @@ void EnterCalcPage::onLoadSchemes()
                              QStringLiteral("加载失败：文件不存在或不是有效的方案库文件"));
         return;
     }
+    for (const CalcInput &in : inputs) {
+        const QString reason = calculationScopeError(m_config, m_params, in);
+        if (!reason.isEmpty()) {
+            QMessageBox::warning(this, QStringLiteral("方案库包含不支持的配置"),
+                reason + QStringLiteral("。本次未替换当前方案表，请先在设计输入页调整方案。"));
+            return;
+        }
+    }
     if (!m_schemeData.isEmpty()
             && QMessageBox::question(
                    this, QStringLiteral("打开方案库"),
@@ -1773,9 +1808,18 @@ void EnterCalcPage::onLoadSchemes()
     m_confirmedSchemeIdx = -1;
     int loaded = 0;
     for (const CalcInput &in : inputs) {
+        CalcInput checkedInput = in;
+        ParamTableWidget inputTable(this);
+        inputTable.loadParamsForConfig(ParamTableWidget::paramsForInput(m_params, in),
+            m_config, in, m_config.calcMode == StructureConfig::Professional);
+        TransformerParams checkedParams;
+        QString error;
+        if (!inputTable.collectForCalculation(checkedParams, checkedInput, error))
+            continue;
         CalcResult r;
-        if (m_engine.calcElectromagnetic(in, r) && r.valid) {
-            appendScheme(in, r);
+        if (m_engine.calcElectromagnetic(checkedInput, r) && r.valid) {
+            const int schemeIdx = appendScheme(checkedInput, r);
+            m_schemeParams.insert(schemeIdx, checkedParams);
             ++loaded;
         }
     }
@@ -1787,7 +1831,7 @@ void EnterCalcPage::onLoadSchemes()
 TransformerParams EnterCalcPage::currentResultParams() const
 {
     return ParamTableWidget::paramsForInput(
-        m_schemeParams.value(m_confirmedSchemeIdx, m_params), m_lastInput);
+        m_schemeParams.value(m_confirmedSchemeIdx, m_lastParams), m_lastInput);
 }
 
 void EnterCalcPage::confirmSchemeAt(int row)
@@ -2625,7 +2669,7 @@ void EnterCalcPage::onSaveCustomSheet()
     m_statusBar->setText(QStringLiteral("自定义计算单已保存: %1").arg(path));
 }
 
-void EnterCalcPage::appendScheme(const CalcInput &input, const CalcResult &result)
+int EnterCalcPage::appendScheme(const CalcInput &input, const CalcResult &result)
 {
     const OptimizationResult scheme = makeScheme(m_schemeTable->rowCount() + 1, input, result);
     m_schemeTable->addResult(scheme);
@@ -2635,4 +2679,5 @@ void EnterCalcPage::appendScheme(const CalcInput &input, const CalcResult &resul
     saved.result = result;
     saved.scheme = scheme;
     m_schemeData.insert(scheme.schemeIdx, saved);
+    return scheme.schemeIdx;
 }

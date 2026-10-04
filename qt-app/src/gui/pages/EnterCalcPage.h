@@ -155,7 +155,7 @@ private:
     // 持久化寻优设置
     void saveOptimizeSettings(const OptimizationSettings &settings) const;
     // 当前计算结果映射为方案行，追加进方案表
-    void appendScheme(const CalcInput &input, const CalcResult &result);
+    int appendScheme(const CalcInput &input, const CalcResult &result);
     // 确认指定行方案：记录基准并跳转输出打印 Tab
     void confirmSchemeAt(int row);
     TransformerParams currentResultParams() const;
@@ -195,6 +195,7 @@ private:
     CalcInput m_calcInput;       // 当前设计变量（参数设置页传入，默认 SB20）
     CalcInput m_lastInput;       // 最近一次计算实际使用的输入
     bool m_hasResult = false;
+    TransformerParams m_lastParams;
     QString m_defaultPrinterName;   // 打印设置选定的打印机
     bool m_landscape = false;       // 打印设置选定的横向
 };
