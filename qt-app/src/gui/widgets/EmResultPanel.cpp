@@ -73,6 +73,12 @@ QVector<QPair<QString, QVector<QStringList>>> EmResultPanel::buildGroups(const C
             << row(QStringLiteral("高压匝数（最小分接）"), double(w.hvTurnsMin), 0, QString())
             << row(QStringLiteral("低压匝数"), double(w.lvTurns), 0, QString())
             << row(QStringLiteral("每段层数"), double(w.layerCount), 0, QString())
+            << QStringList{QStringLiteral("高压导线绝缘种类"),
+                           w.hvWireInsulation == QLatin1String("Custom") ? QStringLiteral("自定义") : w.hvWireInsulation,
+                           QString()}
+            << row(QStringLiteral("高压绝缘总增厚"), w.hvWireInsulAdd_mm, 3, QStringLiteral("mm"))
+            << row(QStringLiteral("高压绝缘线宽 X14"), w.hvInsWidth_mm, 3, QStringLiteral("mm"))
+            << row(QStringLiteral("高压绝缘线厚 Z14"), w.hvInsThick_mm, 3, QStringLiteral("mm"))
             << row(QStringLiteral("高压单根导线截面 U15"), w.hvWireSection_mm2, 3, QStringLiteral("mm²"))
             << row(QStringLiteral("高压总有效截面 AA15"), w.hvEffectiveSection_mm2, 3, QStringLiteral("mm²"))
             << row(QStringLiteral("低压箔截面"), w.lvWireSection_mm2, 2, QStringLiteral("mm²"))

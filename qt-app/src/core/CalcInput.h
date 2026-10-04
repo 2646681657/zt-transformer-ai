@@ -66,11 +66,28 @@ struct CalcInput {
             return QStringLiteral("高压并绕、叠绕根数必须是大于零的整数");
         if (hvBareWidth_mm == hvBareThick_mm)
             return QStringLiteral("高压裸线宽等于厚，按计算单属于圆线；圆线截面、绝缘及增重算法尚未完整实现，当前只支持扁导线");
+        if (!std::isfinite(hvWireInsulAdd_mm) || hvWireInsulAdd_mm < 0.0)
+            return QStringLiteral("高压导线绝缘增厚必须是大于等于零的有效数值");
         return QString();
     }
     int hvTurnsPerLayer = 15;         // W12 每层匝数
     double hvLayerInsul_mm = 0.0967;  // X35 层间绝缘厚
-    double hvWireInsulAdd_mm = 0.15;  // QZB 绝缘增厚（X14=X13+0.15）
+    double hvWireInsulAdd_mm = 0.15;  // X14/Z14 的总尺寸增厚（不是单边厚度）
+    QString hvWireInsulation = QStringLiteral("QZB-2/130"); // U14；Custom保留手填值
+    static double insulationIncrement(const QString &type)
+    {
+        if (type == QLatin1String("QZB-2/130")) return 0.15;
+        if (type == QLatin1String("ZB-0.3") || type == QLatin1String("ZLB-0.3")) return 0.35;
+        if (type == QLatin1String("ZB-0.45") || type == QLatin1String("ZLB-0.45")) return 0.50;
+        return -1.0;
+    }
+    // 数值仍是计算引擎的唯一来源；旧代码/导入数据有不一致时不能丢弃手填值。
+    QString resolvedInsulationType() const
+    {
+        const double preset = insulationIncrement(hvWireInsulation);
+        return preset >= 0.0 && std::abs(preset - hvWireInsulAdd_mm) < 1e-9
+            ? hvWireInsulation : QStringLiteral("Custom");
+    }
     bool hvCopperWire = true;         // 高压铜导线（false 铝导线）
     int hvCoilFormIdx = 1;            // 线圈型式序号（1=圆筒式, 2=双层圆筒式）
     // 高压轴向油道（宽侧 X30..X34 / 高侧 Y30..Y34，0=无）

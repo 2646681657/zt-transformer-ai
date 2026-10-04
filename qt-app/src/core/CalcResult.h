@@ -46,6 +46,10 @@ struct WindingResult {
     int layerCount = 0;                // Y9 每段层数
     int ductLayerIdx[6] = {0, 0, 0, 0, 0, 0};  // Z30..Z34 前油道层序（0=无）
     // 导线
+    QString hvWireInsulation;
+    double hvWireInsulAdd_mm = 0.0;
+    double hvInsWidth_mm = 0.0;        // X14 绝缘导线宽
+    double hvInsThick_mm = 0.0;        // Z14 绝缘导线厚
     double hvWireSection_mm2 = 0.0;    // U15 高压单根导线截面（保留原字段口径）
     double hvEffectiveSection_mm2 = 0.0; // AA15 单根截面×并绕×叠绕
     double lvWireSection_mm2 = 0.0;    // AH15 低压箔截面

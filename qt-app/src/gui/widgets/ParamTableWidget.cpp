@@ -502,6 +502,31 @@ void ParamTableWidget::applyModelLinkage()
     emit stdValuesUpdated(m_standardStatus);
 }
 
+void ParamTableWidget::updateWireInsulation()
+{
+    if (!m_wireInsulationCombo || !m_inputRefs.contains(QStringLiteral("hvWireInsulAdd")))
+        return;
+    const auto ref = m_inputRefs.value(QStringLiteral("hvWireInsulAdd"));
+    auto *valueItem = item(ref.first, ref.second);
+    if (!valueItem) return;
+    // 仅在离开自定义时记住手填值，切换预设不会覆盖这份会话值。
+    if (!m_loading && (valueItem->flags() & Qt::ItemIsEditable)) {
+        bool ok = false;
+        const double value = valueItem->text().toDouble(&ok);
+        if (ok && std::isfinite(value) && value >= 0.0) m_customWireInsulAdd_mm = value;
+    }
+    const double preset = CalcInput::insulationIncrement(m_wireInsulationCombo->currentData().toString());
+    const bool custom = preset < 0.0;
+    const QSignalBlocker blocker(this);
+    valueItem->setText(QString::number(custom ? m_customWireInsulAdd_mm : preset, 'g', 15));
+    valueItem->setFlags(custom ? valueItem->flags() | Qt::ItemIsEditable
+                               : valueItem->flags() & ~Qt::ItemIsEditable);
+    const QString note = custom ? QStringLiteral("手填总增厚；旧方案原值保留")
+                               : QStringLiteral("按计算单自动增厚；如需手填请选择自定义");
+    valueItem->setToolTip(note + QStringLiteral("；绝缘宽/厚=裸宽/厚+增厚，不乘2"));
+    item(ref.first, 5)->setText(note);
+}
+
 // 根据当前结构配置动态生成参数表：不同铁芯/绕组组合显示不同的参数行和分段；
 // 四/五/六节为可编辑设计变量，与 CalcInput 双向同步（saveToInput 读回）；
 // proMode=true 时追加七~十节高级参数（专业模式）
@@ -519,6 +544,8 @@ void ParamTableWidget::loadParamsForConfig(const TransformerParams &params, cons
     m_steelGradeCombo = nullptr;
     m_hvMaterialCombo = nullptr;
     m_lvMaterialCombo = nullptr;
+    m_wireInsulationCombo = nullptr;
+    m_customWireInsulAdd_mm = input.hvWireInsulAdd_mm;
     setRowCount(0);
     m_inputRefs.clear();
     int row = 0;
@@ -737,6 +764,21 @@ void ParamTableWidget::loadParamsForConfig(const TransformerParams &params, cons
                 "高压裸线厚(mm)", QString::number(input.hvBareThick_mm),
                 "hvBareWidth", "hvBareThick");
     item(row - 1, 5)->setText(QStringLiteral("仅支持扁导线；宽=厚的圆线暂不支持"));
+    addInputRow(row++, "高压导线绝缘种类", QString(),
+                "绝缘增厚(mm)", QString::number(input.hvWireInsulAdd_mm),
+                {}, "hvWireInsulAdd");
+    item(row - 1, 2)->setFlags(item(row - 1, 2)->flags() & ~Qt::ItemIsEditable);
+    m_wireInsulationCombo = new QComboBox(this);
+    m_wireInsulationCombo->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+    for (const QString &type : {QStringLiteral("QZB-2/130"), QStringLiteral("ZB-0.3"),
+                               QStringLiteral("ZLB-0.3"), QStringLiteral("ZB-0.45"), QStringLiteral("ZLB-0.45")})
+        m_wireInsulationCombo->addItem(type, type);
+    m_wireInsulationCombo->addItem(QStringLiteral("自定义"), QStringLiteral("Custom"));
+    m_wireInsulationCombo->setCurrentIndex(m_wireInsulationCombo->findData(input.resolvedInsulationType()));
+    setCellWidget(row - 1, 2, m_wireInsulationCombo);
+    connect(m_wireInsulationCombo, &QComboBox::currentIndexChanged,
+            this, [this](int) { updateWireInsulation(); });
+    updateWireInsulation();
     addInputRow(row++, "高压每层匝数", QString::number(input.hvTurnsPerLayer),
                 "层间绝缘厚(mm)", QString::number(input.hvLayerInsul_mm),
                 "hvTurnsPerLayer", "hvLayerInsul");
@@ -831,6 +873,12 @@ void ParamTableWidget::saveToInput(CalcInput &input) const
     setDouble("hvLayerInsul", input.hvLayerInsul_mm);
     setInt("hvParallelCount", input.hvParallelCount);
     setInt("hvStackCount", input.hvStackCount);
+    setDouble("hvWireInsulAdd", input.hvWireInsulAdd_mm);
+    if (m_wireInsulationCombo) {
+        input.hvWireInsulation = m_wireInsulationCombo->currentData().toString();
+        const double preset = CalcInput::insulationIncrement(input.hvWireInsulation);
+        if (preset >= 0.0) input.hvWireInsulAdd_mm = preset;
+    }
 
     // 主空道
     setDouble("mainDuctWidth", input.mainDuctWidth_mm);
@@ -849,7 +897,6 @@ void ParamTableWidget::saveToInput(CalcInput &input) const
     }
 
     // 八 绕组工艺（油道与绝缘细节）
-    setDouble("hvWireInsulAdd", input.hvWireInsulAdd_mm);
     setInt("lvLayerInsulCount", input.lvLayerInsulCount);
     setDouble("lvLayerInsul_mm", input.lvLayerInsul_mm);
     for (int i = 0; i < 5; ++i) {
@@ -901,9 +948,8 @@ void ParamTableWidget::addProModeSections(int &row, const CalcInput &input)
 
     // 八 绕组工艺（油道与绝缘细节）
     addSectionRow(row++, QStringLiteral("八 绕组工艺（高级）"), {}, {}, true);
-    addInputRow(row++, "高压导线绝缘增厚(mm)", QString::number(input.hvWireInsulAdd_mm),
-                "低压层间绝缘层数", QString::number(input.lvLayerInsulCount),
-                "hvWireInsulAdd", "lvLayerInsulCount");
+    addInputRow(row++, "低压层间绝缘层数", QString::number(input.lvLayerInsulCount),
+                "", "", "lvLayerInsulCount", {});
     addInputRow(row++, "低压层间绝缘厚(mm)", QString::number(input.lvLayerInsul_mm),
                 "", "",
                 "lvLayerInsul_mm", {});
