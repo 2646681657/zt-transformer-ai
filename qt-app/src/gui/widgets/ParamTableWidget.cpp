@@ -11,6 +11,7 @@
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QSignalBlocker>
+#include <cmath>
 
 namespace {
 enum class SupportedConnection { Invalid, Dyn11, Yyn0 };
@@ -210,6 +211,102 @@ TransformerParams ParamTableWidget::getParams() const
     return params;
 }
 
+TransformerParams ParamTableWidget::paramsForInput(const TransformerParams &base, const CalcInput &input)
+{
+    TransformerParams params = base;
+    params.capacity_kVA = input.capacity_kVA;
+    params.hvRatedVoltage_kV = input.hvRated_kV;
+    params.lvRatedVoltage_kV = input.lvRated_kV;
+    params.hvTapPlusSteps = input.hvTapPlusSteps;
+    params.hvTapMinusSteps = input.hvTapMinusSteps;
+    params.hvTapVoltagePercent = input.hvTapStep_pct;
+    params.connectionGroup = input.lvStarConnected
+        ? (input.hvDeltaConnected ? QStringLiteral("Dyn11") : QStringLiteral("Yyn0"))
+        : (input.hvDeltaConnected ? QStringLiteral("Dd（暂不支持）") : QStringLiteral("Yd（暂不支持）"));
+    static const QRegularExpression seriesPattern(QStringLiteral("^(.+-M)(?:-|$)"),
+                                                  QRegularExpression::CaseInsensitiveOption);
+    const auto match = seriesPattern.match(base.productModel.trimmed());
+    const QString series = match.hasMatch() ? match.captured(1) : QStringLiteral("SB20-M");
+    params.productModel = QStringLiteral("%1-%2/%3-%4")
+        .arg(series, QString::number(input.capacity_kVA, 'g', 12),
+             QString::number(input.hvRated_kV, 'g', 12), QString::number(input.lvRated_kV, 'g', 12));
+    return params;
+}
+
+bool ParamTableWidget::collectForCalculation(TransformerParams &params, CalcInput &input, QString &error)
+{
+    error.clear();
+    // 增量输入只负责编辑期间联动；计算/确认时必须完整解析屏幕上的型号。
+    static const QRegularExpression modelPattern(
+        QStringLiteral("^([A-Za-z0-9]+-M)-([0-9]+(?:\\.[0-9]+)?)/([0-9]+(?:\\.[0-9]+)?)-([0-9]+(?:\\.[0-9]+)?)$"),
+        QRegularExpression::CaseInsensitiveOption);
+    const auto match = modelPattern.match(m_productModelEdit ? m_productModelEdit->text().trimmed() : QString());
+    if (!match.hasMatch()) {
+        error = QStringLiteral("产品型号不完整或格式错误，请按“SB20-M-630/10-0.4”输入；小数只使用点号，不支持逗号。");
+        return false;
+    }
+    double ratings[3];
+    for (int i = 0; i < 3; ++i) {
+        bool ok = false;
+        ratings[i] = match.captured(i + 2).toDouble(&ok);
+        if (!ok || !std::isfinite(ratings[i]) || ratings[i] <= 0.0) {
+            error = QStringLiteral("产品型号中的容量、高压和低压额定电压必须是大于零的有效数值。");
+            return false;
+        }
+    }
+    if (!hasSupportedConnectionGroup()) {
+        error = QStringLiteral("当前版本仅支持 Dyn11（可填 Dyn）和 Yyn0，请修改联结组别后再计算。");
+        return false;
+    }
+    if (!hasValidSteelGrade()) {
+        error = QStringLiteral("请选择数据库已收录的硅钢片牌号，未收录牌号不能用于计算。");
+        return false;
+    }
+    const QStringList textKeys = {"connectionGroup", "environmentGrade", "efficiencyCalcMethod"};
+    const QStringList integerKeys = {"seamCount", "lvTurns", "hvTurnsPerLayer", "hvParallelCount",
+        "hvStackCount", "lvLayerInsulCount", "yokeWidenStages", "waveDepth", "waveHeight", "wavePitch"};
+    for (auto it = m_inputRefs.constBegin(); it != m_inputRefs.constEnd(); ++it) {
+        if (textKeys.contains(it.key()))
+            continue;
+        const auto *cell = item(it->first, it->second);
+        bool ok = false;
+        const QString value = cell ? cell->text().trimmed() : QString();
+        const double number = value.toDouble(&ok);
+        if (ok && integerKeys.contains(it.key()))
+            value.toInt(&ok);
+        if (!ok || !std::isfinite(number)) {
+            const auto *label = item(it->first, it->second == 2 ? 1 : 3);
+            error = QStringLiteral("“%1”请输入有效%2，不能留空或输入非数字。")
+                .arg(label && !label->text().isEmpty() ? label->text() : it.key(),
+                     integerKeys.contains(it.key()) ? QStringLiteral("整数") : QStringLiteral("数值"));
+            return false;
+        }
+    }
+    if (m_tapMinusSpin->value() * m_tapStepSpin->value() >= 100.0) {
+        error = QStringLiteral("负向调压总幅度必须小于100%，最低分接电压必须大于零。");
+        return false;
+    }
+    m_modelSeries = match.captured(1);
+    m_modelCapacity_kVA = ratings[0];
+    m_modelHvRated_kV = ratings[1];
+    m_modelLvRated_kV = ratings[2];
+    TransformerParams collectedParams = getParams();
+    CalcInput collectedInput = input;
+    saveToInput(collectedInput);
+    collectedInput.capacity_kVA = collectedParams.capacity_kVA;
+    collectedInput.hvRated_kV = collectedParams.hvRatedVoltage_kV;
+    collectedInput.lvRated_kV = collectedParams.lvRatedVoltage_kV;
+    if (collectedInput.lvTurns <= 0 || collectedInput.hvTurnsPerLayer < 2 ||
+        collectedInput.hvParallelCount <= 0 || collectedInput.hvStackCount <= 0 ||
+        collectedInput.seamCount <= 0) {
+        error = QStringLiteral("低压匝数、并绕/叠绕根数、接缝数必须大于零，高压每层匝数必须至少为2。");
+        return false;
+    }
+    params = collectedParams;
+    input = collectedInput;
+    return true;
+}
+
 bool ParamTableWidget::hasSupportedConnectionGroup() const
 {
     const auto it = m_inputRefs.constFind(QStringLiteral("connectionGroup"));
@@ -364,7 +461,7 @@ void ParamTableWidget::loadParamsForConfig(const TransformerParams &params, cons
                   QStringLiteral("变压器效率计算方式"), params.efficiencyCalcMethod);
     const QString oldModel = params.productModel.section(QLatin1Char('/'), 0, 0);
     const QRegularExpression oldModelPattern(
-        QStringLiteral("^(.+-M)(?:-[0-9]+(?:[.,][0-9]+)?){0,2}$"),
+        QStringLiteral("^(.+-M)(?:-[0-9]+(?:[.][0-9]+)?){0,2}$"),
         QRegularExpression::CaseInsensitiveOption);
     const QRegularExpressionMatch oldModelMatch = oldModelPattern.match(oldModel);
     QString series;
