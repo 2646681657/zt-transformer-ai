@@ -18,6 +18,9 @@ struct LvTurnsRecommendation {
 
 // ---- 铁芯（叠积/磁密/空载）----
 struct CoreResult {
+    bool yokePiece1Auto = false;
+    double yokePiece1Stack_mm = 0.0; // 实际采用的Sheet1 D16
+    double yokePiece1Width_mm = 0.0; // 实际F19（基宽90+叠积表偏移）
     LvTurnsRecommendation lvTurnsRecommendation;
     double turnVoltage_V = 0.0;        // AC4 匝电压
     // 椭圆几何

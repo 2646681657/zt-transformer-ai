@@ -46,6 +46,7 @@ inline QJsonObject toJson(const CalcInput &in)
     o.insert(QStringLiteral("seamCount"), in.seamCount);
     o.insert(QStringLiteral("coreLossCraftCoef"), in.coreLossCraftCoef);
     o.insert(QStringLiteral("yokePiece1Stack_mm"), in.yokePiece1Stack_mm);
+    o.insert(QStringLiteral("yokePiece1Auto"), in.yokePiece1Auto);
     o.insert(QStringLiteral("yokePiece2Stack_mm"), in.yokePiece2Stack_mm);
     o.insert(QStringLiteral("yokePiece3Stack_mm"), in.yokePiece3Stack_mm);
     o.insert(QStringLiteral("yokeWidenTo_mm"), in.yokeWidenTo_mm);
@@ -165,6 +166,7 @@ inline CalcInput fromJson(const QJsonObject &o)
     in.seamCount = integ("seamCount", in.seamCount);
     in.coreLossCraftCoef = num("coreLossCraftCoef", in.coreLossCraftCoef);
     in.yokePiece1Stack_mm = num("yokePiece1Stack_mm", in.yokePiece1Stack_mm);
+    in.yokePiece1Auto = o.value(QStringLiteral("yokePiece1Auto")).toBool(false); // 旧方案保持手工
     in.yokePiece2Stack_mm = num("yokePiece2Stack_mm", in.yokePiece2Stack_mm);
     in.yokePiece3Stack_mm = num("yokePiece3Stack_mm", in.yokePiece3Stack_mm);
     in.yokeWidenTo_mm = num("yokeWidenTo_mm", in.yokeWidenTo_mm);

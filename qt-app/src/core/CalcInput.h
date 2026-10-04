@@ -41,7 +41,8 @@ struct CalcInput {
     QString steelGrade = QStringLiteral("18SQGD065");  // 硅钢牌号
     int seamCount = 5;                // 接缝数
     double coreLossCraftCoef = 1.23;  // 心柱/轭工艺系数（T25/W25）
-    // T形轭补充片（轭片基宽 90/80/60 对应的叠厚，工艺手动值）
+    // 宽90支持F20自动几何；手填值独立保留，宽80/60仍是工艺手动值。
+    bool yokePiece1Auto = true;
     double yokePiece1Stack_mm = 4.0;  // 宽 90 片叠厚（Sheet1 D16）
     double yokePiece2Stack_mm = 1.5;  // 宽 80 片叠厚（Sheet1 D17 手输）
     double yokePiece3Stack_mm = 2.0;  // 宽 60 片叠厚（Sheet1 D18 手输）
