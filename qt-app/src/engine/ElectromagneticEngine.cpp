@@ -355,6 +355,10 @@ void calcWindingLayout(EmCtx &c)
     const double add = in.hvWireInsulAdd_mm;
     c.hvInsWidth_mm = in.hvBareWidth_mm + add;
     c.hvInsThick_mm = in.hvBareThick_mm + add;
+    c.out->winding.hvWireInsulation = in.resolvedInsulationType();
+    c.out->winding.hvWireInsulAdd_mm = add;
+    c.out->winding.hvInsWidth_mm = c.hvInsWidth_mm;
+    c.out->winding.hvInsThick_mm = c.hvInsThick_mm;
 
     // 导线截面（U15）：扁线扣除圆角
     const double r = (in.hvBareWidth_mm < 1.7) ? 0.5
@@ -1219,6 +1223,13 @@ PrintOutputData ElectromagneticEngine::buildPrintOutput(const CalcInput &input,
     addRow(QStringLiteral("高压单根截面 U15"), QString::number(result.winding.hvWireSection_mm2, 'f', 3),
            QStringLiteral("mm²"), QStringLiteral("高压总有效截面 AA15"),
            QString::number(result.winding.hvEffectiveSection_mm2, 'f', 3), QStringLiteral("mm²"));
+    addRow(QStringLiteral("高压导线绝缘种类"),
+           result.winding.hvWireInsulation == QLatin1String("Custom") ? QStringLiteral("自定义") : result.winding.hvWireInsulation,
+           QString(), QStringLiteral("绝缘总增厚"),
+           QString::number(result.winding.hvWireInsulAdd_mm, 'g', 15), QStringLiteral("mm"));
+    addRow(QStringLiteral("高压绝缘线宽 X14"), QString::number(result.winding.hvInsWidth_mm, 'f', 3),
+           QStringLiteral("mm"), QStringLiteral("高压绝缘线厚 Z14"),
+           QString::number(result.winding.hvInsThick_mm, 'f', 3), QStringLiteral("mm"));
     addRow(QStringLiteral("高压电密 X16"), QString::number(result.winding.hvCurrentDensity, 'f', 3),
            QStringLiteral("A/mm²"), QStringLiteral("高压电阻 X19（75℃）"),
            QString::number(result.winding.hvResistance_ohm, 'f', 6), QStringLiteral("Ω"));

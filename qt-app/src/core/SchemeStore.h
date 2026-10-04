@@ -63,6 +63,7 @@ inline QJsonObject toJson(const CalcInput &in)
     o.insert(QStringLiteral("hvTurnsPerLayer"), in.hvTurnsPerLayer);
     o.insert(QStringLiteral("hvLayerInsul_mm"), in.hvLayerInsul_mm);
     o.insert(QStringLiteral("hvWireInsulAdd_mm"), in.hvWireInsulAdd_mm);
+    o.insert(QStringLiteral("hvWireInsulation"), in.resolvedInsulationType());
     o.insert(QStringLiteral("hvCopperWire"), in.hvCopperWire);
     o.insert(QStringLiteral("hvCoilFormIdx"), in.hvCoilFormIdx);
     QJsonArray dws, dhs;
@@ -180,6 +181,9 @@ inline CalcInput fromJson(const QJsonObject &o)
     in.hvTurnsPerLayer = integ("hvTurnsPerLayer", in.hvTurnsPerLayer);
     in.hvLayerInsul_mm = num("hvLayerInsul_mm", in.hvLayerInsul_mm);
     in.hvWireInsulAdd_mm = num("hvWireInsulAdd_mm", in.hvWireInsulAdd_mm);
+    // 旧文件没有型号证据，不按数值反推类型；未知类型/冲突值也保留为自定义。
+    in.hvWireInsulation = o.value(QStringLiteral("hvWireInsulation")).toString(QStringLiteral("Custom"));
+    in.hvWireInsulation = in.resolvedInsulationType();
     in.hvCoilFormIdx = integ("hvCoilFormIdx", in.hvCoilFormIdx);
     const QJsonArray dws = o.value(QStringLiteral("hvDuctWidthSide")).toArray();
     const QJsonArray dhs = o.value(QStringLiteral("hvDuctHeightSide")).toArray();
