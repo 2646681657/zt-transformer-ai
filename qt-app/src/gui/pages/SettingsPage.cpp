@@ -38,37 +38,37 @@ void SettingsPage::setupUi()
     // 工具栏
     auto *toolbar = new QWidget(this);
     toolbar->setFixedHeight(34);
-    toolbar->setStyleSheet("background: #2a2f38; border-bottom: 1px solid #3a4050;");
+    toolbar->setStyleSheet("background: #EDF3EF; border-bottom: 1px solid #D3DDD6;");
     auto *toolLayout = new QHBoxLayout(toolbar);
     toolLayout->setContentsMargins(8, 4, 8, 4);
     auto *pageLabel = new QLabel(QStringLiteral("系统设置"), toolbar);
-    pageLabel->setStyleSheet("color: #4dd0e1; font-size: 12px; font-weight: bold;");
+    pageLabel->setStyleSheet("color: #185C37; font-size: 12px; font-weight: bold;");
     toolLayout->addWidget(pageLabel);
     toolLayout->addStretch();
     mainLayout->addWidget(toolbar);
 
     // 内容区
     auto *content = new QWidget(this);
-    content->setStyleSheet("background: #1a1d23;");
+    content->setStyleSheet("background: #F3F5F4;");
     auto *contentLayout = new QVBoxLayout(content);
     contentLayout->setContentsMargins(16, 16, 16, 16);
     contentLayout->setSpacing(16);
 
     // 样式工厂
     const QString groupStyle =
-        "QGroupBox { color: #c0c8d0; font-size: 12px; border: 1px solid #3a4050;"
+        "QGroupBox { color: #42584A; font-size: 12px; border: 1px solid #D3DDD6;"
         " border-radius: 4px; margin-top: 10px; padding-top: 6px; }"
         "QGroupBox::title { subcontrol-origin: margin; left: 8px; padding: 0 3px; }";
     const QString spinStyle =
-        "QSpinBox, QDoubleSpinBox { background: #22262e; color: #e0e6ed;"
-        " border: 1px solid #3a4050; border-radius: 4px; padding: 4px 6px; }"
-        "QSpinBox:focus, QDoubleSpinBox:focus { border: 1px solid #00bcd4; }";
+        "QSpinBox, QDoubleSpinBox { background: #FFFFFF; color: #24362B;"
+        " border: 1px solid #D3DDD6; border-radius: 4px; padding: 4px 6px; }"
+        "QSpinBox:focus, QDoubleSpinBox:focus { border: 1px solid #217346; }";
     const QString comboStyle =
-        "QComboBox { background: #22262e; color: #e0e6ed;"
-        " border: 1px solid #3a4050; border-radius: 4px; padding: 4px 8px; }"
-        "QComboBox:focus { border: 1px solid #00bcd4; }"
-        "QComboBox QAbstractItemView { background: #22262e; color: #e0e6ed;"
-        " selection-background-color: rgba(0,188,212,0.3); }";
+        "QComboBox { background: #FFFFFF; color: #24362B;"
+        " border: 1px solid #D3DDD6; border-radius: 4px; padding: 4px 8px; }"
+        "QComboBox:focus { border: 1px solid #217346; }"
+        "QComboBox QAbstractItemView { background: #FFFFFF; color: #24362B;"
+        " selection-background-color: rgba(33, 115, 70,0.3); }";
 
     // ---- 计算精度 ----
     auto *calcGroup = new QGroupBox(QStringLiteral("计算精度"), content);
@@ -93,7 +93,7 @@ void SettingsPage::setupUi()
     auto *calcHint = new QLabel(QStringLiteral(
         "影响电磁计算结果在表格中的显示精度（0-6 位）；"
         "默认计算模式在下次进入参数设置页时生效"), calcGroup);
-    calcHint->setStyleSheet("color: #8a9bb0; font-size: 11px;");
+    calcHint->setStyleSheet("color: #607368; font-size: 11px;");
     calcForm->addRow(QString(), calcHint);
     contentLayout->addWidget(calcGroup);
 
@@ -115,7 +115,7 @@ void SettingsPage::setupUi()
 
     auto *printerHint = new QLabel(QStringLiteral(
         "打印计算单时优先使用此打印机，留空则使用系统默认"), printerGroup);
-    printerHint->setStyleSheet("color: #8a9bb0; font-size: 11px;");
+    printerHint->setStyleSheet("color: #607368; font-size: 11px;");
     printerForm->addRow(QString(), printerHint);
     contentLayout->addWidget(printerGroup);
 
@@ -189,12 +189,12 @@ void SettingsPage::setupUi()
     llmForm->setSpacing(10);
 
     const QString editStyle =
-        "QLineEdit { background: #22262e; color: #e0e6ed;"
-        " border: 1px solid #3a4050; border-radius: 4px; padding: 4px 6px; }"
-        "QLineEdit:focus { border: 1px solid #00bcd4; }";
+        "QLineEdit { background: #FFFFFF; color: #24362B;"
+        " border: 1px solid #D3DDD6; border-radius: 4px; padding: 4px 6px; }"
+        "QLineEdit:focus { border: 1px solid #217346; }";
 
     m_llmEnabled = new QCheckBox(QStringLiteral("启用 AI 功能"), llmGroup);
-    m_llmEnabled->setStyleSheet("QCheckBox { color: #e0e6ed; font-size: 12px; }");
+    m_llmEnabled->setStyleSheet("QCheckBox { color: #24362B; font-size: 12px; }");
     llmForm->addRow(m_llmEnabled);
 
     m_llmKeyEdit = new QLineEdit(llmGroup);
@@ -216,17 +216,17 @@ void SettingsPage::setupUi()
     m_llmTestBtn = new QPushButton(QStringLiteral("测试连接"), llmGroup);
     m_llmTestBtn->setCursor(Qt::PointingHandCursor);
     m_llmTestBtn->setStyleSheet(
-        "QPushButton { background: #00bcd4; color: #1a1d23; font-size: 12px;"
+        "QPushButton { background: #217346; color: #F3F5F4; font-size: 12px;"
         " padding: 6px 16px; border: none; border-radius: 4px; font-weight: bold; }"
-        "QPushButton:hover { background: #4dd0e1; }"
-        "QPushButton:disabled { background: #45505e; color: #8a9bb0; }");
+        "QPushButton:hover { background: #185C37; }"
+        "QPushButton:disabled { background: #90A398; color: #607368; }");
     llmForm->addRow(QString(), m_llmTestBtn);
 
     auto *llmHint = new QLabel(QStringLiteral(
         "云端过渡验证（OpenAI 兼容协议）。关闭开关即离线模式，AI 功能整体停用；"
         "密钥仅保存在本机用户目录，不会入库"), llmGroup);
     llmHint->setWordWrap(true);
-    llmHint->setStyleSheet("color: #8a9bb0; font-size: 11px;");
+    llmHint->setStyleSheet("color: #607368; font-size: 11px;");
     llmForm->addRow(QString(), llmHint);
     contentLayout->addWidget(llmGroup);
 
@@ -235,21 +235,21 @@ void SettingsPage::setupUi()
     auto *btnLayout = new QHBoxLayout();
     btnLayout->setSpacing(10);
 
-    auto makeBtn = [](const QString &text, const QString &color = "#00bcd4") {
+    auto makeBtn = [](const QString &text, const QString &color = "#217346") {
         auto *btn = new QPushButton(text);
         btn->setCursor(Qt::PointingHandCursor);
         btn->setStyleSheet(
-            QString("QPushButton { background: %1; color: #1a1d23; font-size: 12px;"
+            QString("QPushButton { background: %1; color: #F3F5F4; font-size: 12px;"
                     " padding: 8px 20px; border: none; border-radius: 4px; font-weight: bold; }"
                     "QPushButton:hover { background: %2; }")
-                .arg(color, color == "#00bcd4" ? "#4dd0e1" :
-                            color == "#ff9800" ? "#ffb74d" : "#81c784"));
+                .arg(color, color == "#217346" ? "#185C37" :
+                            color == "#9A6500" ? "#8A5900" : "#217346"));
         return btn;
     };
 
-    auto *saveBtn = makeBtn(QStringLiteral("保存设置"), "#4caf50");
-    auto *resetQuoteBtn = makeBtn(QStringLiteral("重置报价参数"), "#ff9800");
-    auto *restoreBtn = makeBtn(QStringLiteral("恢复默认"), "#ef5350");
+    auto *saveBtn = makeBtn(QStringLiteral("保存设置"), "#217346");
+    auto *resetQuoteBtn = makeBtn(QStringLiteral("重置报价参数"), "#9A6500");
+    auto *restoreBtn = makeBtn(QStringLiteral("恢复默认"), "#C53030");
     btnLayout->addWidget(saveBtn);
     btnLayout->addWidget(resetQuoteBtn);
     btnLayout->addWidget(restoreBtn);
@@ -258,7 +258,7 @@ void SettingsPage::setupUi()
 
     // 状态标签
     m_statusLabel = new QLabel(content);
-    m_statusLabel->setStyleSheet("color: #8a9bb0; font-size: 11px;");
+    m_statusLabel->setStyleSheet("color: #607368; font-size: 11px;");
     contentLayout->addWidget(m_statusLabel);
 
     connect(saveBtn, &QPushButton::clicked, this, &SettingsPage::onSave);
@@ -272,9 +272,9 @@ void SettingsPage::setupUi()
     auto *scroll = new QScrollArea(this);
     scroll->setWidgetResizable(true);
     scroll->setFrameShape(QFrame::NoFrame);
-    scroll->setStyleSheet("QScrollArea { background: #1a1d23; }"
-                          "QScrollBar:vertical { background: #22262e; width: 8px; }"
-                          "QScrollBar::handle:vertical { background: #45505e;"
+    scroll->setStyleSheet("QScrollArea { background: #F3F5F4; }"
+                          "QScrollBar:vertical { background: #FFFFFF; width: 8px; }"
+                          "QScrollBar::handle:vertical { background: #90A398;"
                           " border-radius: 4px; min-height: 30px; }"
                           "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {"
                           " height: 0px; }");
@@ -364,17 +364,17 @@ void SettingsPage::onSave()
 
     if (quoteOk && llmOk) {
         m_statusLabel->setText(QStringLiteral("设置已保存"));
-        m_statusLabel->setStyleSheet("color: #4caf50; font-size: 11px;");
+        m_statusLabel->setStyleSheet("color: #217346; font-size: 11px;");
         QMessageBox::information(this, QStringLiteral("保存成功"),
             QStringLiteral("设置已保存"));
     } else if (quoteOk && !llmOk) {
         m_statusLabel->setText(QStringLiteral("AI 配置保存失败，其余设置已保存"));
-        m_statusLabel->setStyleSheet("color: #ef5350; font-size: 11px;");
+        m_statusLabel->setStyleSheet("color: #C53030; font-size: 11px;");
         QMessageBox::warning(this, QStringLiteral("部分保存失败"),
             QStringLiteral("AI 配置写入失败，其余设置已保存"));
     } else {
         m_statusLabel->setText(QStringLiteral("报价参数保存失败，其余设置已保存"));
-        m_statusLabel->setStyleSheet("color: #ef5350; font-size: 11px;");
+        m_statusLabel->setStyleSheet("color: #C53030; font-size: 11px;");
         QMessageBox::warning(this, QStringLiteral("部分保存失败"),
             QStringLiteral("报价参数文件写入失败，其余设置已保存"));
     }

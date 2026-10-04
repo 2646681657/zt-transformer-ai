@@ -1,6 +1,7 @@
 #include <QApplication>
 #include <QFile>
 #include <QIcon>
+#include <QPalette>
 #include <QProcessEnvironment>
 #include "gui/MainWindow.h"
 #include "engine/ElectromagneticEngine.h"
@@ -10,6 +11,23 @@
 int main(int argc, char *argv[])
 {
     QApplication app(argc, argv);
+    // 固定浅色基础调色板，避免未被样式表覆盖的控件继承系统深色主题。
+    app.setStyle(QStringLiteral("Fusion"));
+    QPalette palette;
+    palette.setColor(QPalette::Window, QColor("#F3F5F4"));
+    palette.setColor(QPalette::WindowText, QColor("#24362B"));
+    palette.setColor(QPalette::Base, QColor("#FFFFFF"));
+    palette.setColor(QPalette::AlternateBase, QColor("#F7FAF8"));
+    palette.setColor(QPalette::Text, QColor("#24362B"));
+    palette.setColor(QPalette::Button, QColor("#EDF3EF"));
+    palette.setColor(QPalette::ButtonText, QColor("#24362B"));
+    palette.setColor(QPalette::Highlight, QColor("#E7F2EA"));
+    palette.setColor(QPalette::HighlightedText, QColor("#185C37"));
+    palette.setColor(QPalette::ToolTipBase, QColor("#FFFFFF"));
+    palette.setColor(QPalette::ToolTipText, QColor("#24362B"));
+    palette.setColor(QPalette::Disabled, QPalette::Text, QColor("#607368"));
+    palette.setColor(QPalette::Disabled, QPalette::ButtonText, QColor("#607368"));
+    app.setPalette(palette);
     app.setApplicationName("ZTBLD-Designer");
     app.setApplicationVersion("2.0.0");
     app.setWindowIcon(QIcon(":/icons/app_icon.svg"));

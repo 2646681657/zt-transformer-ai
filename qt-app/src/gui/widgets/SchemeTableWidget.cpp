@@ -78,15 +78,15 @@ void applyButtonStyle(QPushButton *btn, bool marked)
 {
     if (marked) {
         btn->setStyleSheet(
-            "QPushButton { background: #00bcd4; color: #0d1117;"
-            "border: 1px solid #00bcd4; border-radius: 3px; font-size: 11px;"
+            "QPushButton { background: #217346; color: #FFFFFF;"
+            "border: 1px solid #217346; border-radius: 3px; font-size: 11px;"
             "padding: 2px 10px; font-weight: bold; }"
-            "QPushButton:hover { background: #00a5bf; }");
+            "QPushButton:hover { background: #1A633C; }");
     } else {
         btn->setStyleSheet(
-            "QPushButton { background: rgba(0,188,212,0.15); color: #4dd0e1;"
-            "border: 1px solid #3a4050; border-radius: 3px; font-size: 11px; padding: 2px 10px; }"
-            "QPushButton:hover { background: #00bcd4; color: #0d1117; }");
+            "QPushButton { background: rgba(33, 115, 70,0.15); color: #185C37;"
+            "border: 1px solid #D3DDD6; border-radius: 3px; font-size: 11px; padding: 2px 10px; }"
+            "QPushButton:hover { background: #217346; color: #FFFFFF; }");
     }
 }
 

@@ -44,8 +44,8 @@ OptimizeCalcPage::OptimizeCalcPage(QWidget *parent)
     auto *backBtn = new QPushButton(QStringLiteral("< 返回"), titleWidget);
     backBtn->setFlat(true);
     backBtn->setCursor(Qt::PointingHandCursor);
-    backBtn->setStyleSheet("QPushButton { color: #8a9bb0; font-size: 11px; border: none; padding: 2px 8px; }"
-                           "QPushButton:hover { background: rgba(0,188,212,0.2); border-radius: 3px; color: #4dd0e1; }");
+    backBtn->setStyleSheet("QPushButton { color: #FFFFFF; background: transparent; font-size: 11px; border: none; padding: 2px 8px; }"
+                           "QPushButton:hover { background: rgba(255,255,255,0.15); border-radius: 3px; color: #FFFFFF; }");
     connect(backBtn, &QPushButton::clicked, this, &OptimizeCalcPage::navigateBack);
     titleLayout->addWidget(backBtn);
 
@@ -53,7 +53,7 @@ OptimizeCalcPage::OptimizeCalcPage(QWidget *parent)
         QStringLiteral("中天伯乐达变压器电磁计算AI寻优软件 V2.0"), titleWidget);
     titleLabel->setObjectName("pageTitleLabel");
     titleLabel->setAlignment(Qt::AlignCenter);
-    titleLabel->setStyleSheet("color: #e0e6ed; font-size: 12px;");
+    titleLabel->setStyleSheet("color: #FFFFFF; background: transparent; font-size: 12px;");
     titleLayout->addWidget(titleLabel, 1);
 
     mainLayout->addWidget(titleWidget);
@@ -63,7 +63,7 @@ OptimizeCalcPage::OptimizeCalcPage(QWidget *parent)
     headerBar->setFixedHeight(28);
     headerBar->setObjectName("RibbonHeaderBar");
     headerBar->setStyleSheet(
-        "QWidget#RibbonHeaderBar { background: #2a2f38; border-bottom: 1px solid #3a4050; }");
+        "QWidget#RibbonHeaderBar { background: #EDF3EF; border-bottom: 1px solid #D3DDD6; }");
     auto *headerLayout = new QHBoxLayout(headerBar);
     headerLayout->setContentsMargins(4, 2, 4, 2);
     headerLayout->setSpacing(4);
@@ -74,9 +74,9 @@ OptimizeCalcPage::OptimizeCalcPage(QWidget *parent)
     schemeBtn->setPopupMode(QToolButton::InstantPopup);
     schemeBtn->setToolButtonStyle(Qt::ToolButtonTextOnly);
     schemeBtn->setStyleSheet(
-        "QToolButton { background: rgba(0,188,212,0.15); color: #4dd0e1;"
-        "border: 1px solid #3a4050; border-radius: 4px; font-size: 11px; padding: 4px 16px; }"
-        "QToolButton:hover { background: #00bcd4; color: #0d1117; border-color: #00bcd4; }"
+        "QToolButton { background: rgba(33, 115, 70,0.15); color: #185C37;"
+        "border: 1px solid #D3DDD6; border-radius: 4px; font-size: 11px; padding: 4px 16px; }"
+        "QToolButton:hover { background: #217346; color: #FFFFFF; border-color: #217346; }"
         "QToolButton::menu-indicator { subcontrol-origin: padding; subcontrol-position: right center; width: 8px; }");
     auto *schemeMenu = new QMenu(schemeBtn);
     // 菜单弹出前从我的方案库动态填充（保存/删除后自动同步）
@@ -112,10 +112,10 @@ OptimizeCalcPage::OptimizeCalcPage(QWidget *parent)
     designInputBtn->setEnabled(false);
     designInputBtn->setStyleSheet(
         "QPushButton { background: qlineargradient(x1:0, y1:0, x2:0, y2:1,"
-        "stop:0 #00bcd4, stop:1 #0097a7); color: #ffffff;"
+        "stop:0 #217346, stop:1 #185C37); color: #ffffff;"
         "border: none; font-size: 12px; font-weight: bold; padding: 4px 12px; }"
         "QPushButton:disabled { background: qlineargradient(x1:0, y1:0, x2:0, y2:1,"
-        "stop:0 #00bcd4, stop:1 #0097a7); color: #ffffff; }");
+        "stop:0 #217346, stop:1 #185C37); color: #ffffff; }");
     headerLayout->addWidget(designInputBtn, 1);
 
     mainLayout->addWidget(headerBar);
@@ -124,8 +124,8 @@ OptimizeCalcPage::OptimizeCalcPage(QWidget *parent)
     m_linkStatusLabel = new QLabel(this);
     m_linkStatusLabel->setFixedHeight(22);
     m_linkStatusLabel->setStyleSheet(
-        "QLabel { background: #1e2228; color: #4dd0e1; font-size: 11px;"
-        " padding: 2px 8px; border-bottom: 1px solid #3a4050; }");
+        "QLabel { background: #F7FAF8; color: #185C37; font-size: 11px;"
+        " padding: 2px 8px; border-bottom: 1px solid #D3DDD6; }");
     m_linkStatusLabel->hide();
     mainLayout->addWidget(m_linkStatusLabel);
 
@@ -234,10 +234,10 @@ void OptimizeCalcPage::setupMainArea()
     m_navButton->setToolTip(QStringLiteral("返回主界面"));
     m_navButton->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Expanding);
     m_navButton->setStyleSheet(
-        "QPushButton { background: rgba(0,188,212,0.15); color: #4dd0e1;"
-        "border: none; border-right: 1px solid #3a4050; border-radius: 0px;"
+        "QPushButton { background: rgba(33, 115, 70,0.15); color: #185C37;"
+        "border: none; border-right: 1px solid #D3DDD6; border-radius: 0px;"
         "font-size: 12px; padding: 4px; }"
-        "QPushButton:hover { background: #00bcd4; color: #0d1117; }");
+        "QPushButton:hover { background: #217346; color: #FFFFFF; }");
     connect(m_navButton, &QPushButton::clicked, this, &OptimizeCalcPage::navigateBack);
 
     // Left sidebar
@@ -289,8 +289,8 @@ void OptimizeCalcPage::setupMainArea()
     m_helpPanel = new QTextEdit(this);
     m_helpPanel->setFixedWidth(200);
     m_helpPanel->setReadOnly(true);
-    m_helpPanel->setStyleSheet("QTextEdit { background: #1e2228; border-left: 1px solid #3a4050;"
-                               "color: #8a9bb0; }");
+    m_helpPanel->setStyleSheet("QTextEdit { background: #F7FAF8; border-left: 1px solid #D3DDD6;"
+                               "color: #607368; }");
     updateHelpPanel();
 }
 

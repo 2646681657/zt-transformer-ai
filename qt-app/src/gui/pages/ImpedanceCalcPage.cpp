@@ -36,18 +36,18 @@ void ImpedanceCalcPage::setupUi()
     // 工具栏
     auto *toolbar = new QWidget(this);
     toolbar->setFixedHeight(34);
-    toolbar->setStyleSheet("background: #2a2f38; border-bottom: 1px solid #3a4050;");
+    toolbar->setStyleSheet("background: #EDF3EF; border-bottom: 1px solid #D3DDD6;");
     auto *toolLayout = new QHBoxLayout(toolbar);
     toolLayout->setContentsMargins(8, 4, 8, 4);
     auto *pageLabel = new QLabel(QStringLiteral("阻抗计算器"), toolbar);
-    pageLabel->setStyleSheet("color: #4dd0e1; font-size: 12px; font-weight: bold;");
+    pageLabel->setStyleSheet("color: #185C37; font-size: 12px; font-weight: bold;");
     toolLayout->addWidget(pageLabel);
     toolLayout->addStretch();
     mainLayout->addWidget(toolbar);
 
     // 内容区
     auto *content = new QWidget(this);
-    content->setStyleSheet("background: #1a1d23;");
+    content->setStyleSheet("background: #F3F5F4;");
     auto *contentLayout = new QHBoxLayout(content);
     contentLayout->setContentsMargins(16, 16, 16, 16);
     contentLayout->setSpacing(16);
@@ -55,7 +55,7 @@ void ImpedanceCalcPage::setupUi()
     // 左侧：参数输入
     auto *paramGroup = new QGroupBox(QStringLiteral("输入参数"), content);
     paramGroup->setStyleSheet(
-        "QGroupBox { color: #c0c8d0; font-size: 12px; border: 1px solid #3a4050;"
+        "QGroupBox { color: #42584A; font-size: 12px; border: 1px solid #D3DDD6;"
         " border-radius: 4px; margin-top: 10px; padding-top: 6px; }"
         "QGroupBox::title { subcontrol-origin: margin; left: 8px; padding: 0 3px; }");
     auto *form = new QFormLayout(paramGroup);
@@ -82,8 +82,8 @@ void ImpedanceCalcPage::setupUi()
         f.setPointSize(8);
         spin->setFont(f);
         if (auto *le = spin->findChild<QLineEdit*>()) {
-            le->setStyleSheet("QLineEdit { background: #22262e; color: #e0e6ed;"
-                              " border: 1px solid #3a4050; border-radius: 3px; padding: 1px 4px; }");
+            le->setStyleSheet("QLineEdit { background: #FFFFFF; color: #24362B;"
+                              " border: 1px solid #D3DDD6; border-radius: 3px; padding: 1px 4px; }");
         }
         return spin;
     };
@@ -109,9 +109,9 @@ void ImpedanceCalcPage::setupUi()
     auto *calcBtn = new QPushButton(QStringLiteral("计算"), paramGroup);
     calcBtn->setCursor(Qt::PointingHandCursor);
     calcBtn->setStyleSheet(
-        "QPushButton { background: #00bcd4; color: #1a1d23; font-size: 12px;"
+        "QPushButton { background: #217346; color: #F3F5F4; font-size: 12px;"
         " padding: 6px 24px; border: none; border-radius: 4px; font-weight: bold; }"
-        "QPushButton:hover { background: #4dd0e1; }");
+        "QPushButton:hover { background: #185C37; }");
     form->addRow(QString(), calcBtn);
     connect(calcBtn, &QPushButton::clicked, this, &ImpedanceCalcPage::onCalc);
 
@@ -126,11 +126,11 @@ void ImpedanceCalcPage::setupUi()
     resultLayout->setSpacing(12);
 
     m_resultLabel = new QLabel(QStringLiteral("阻抗电压：—"), resultGroup);
-    m_resultLabel->setStyleSheet("color: #4dd0e1; font-size: 20px; font-weight: bold;");
+    m_resultLabel->setStyleSheet("color: #185C37; font-size: 20px; font-weight: bold;");
     resultLayout->addWidget(m_resultLabel);
 
     m_detailLabel = new QLabel(resultGroup);
-    m_detailLabel->setStyleSheet("color: #c0c8d0; font-size: 12px;");
+    m_detailLabel->setStyleSheet("color: #42584A; font-size: 12px;");
     m_detailLabel->setTextFormat(Qt::RichText);
     m_detailLabel->setWordWrap(true);
     resultLayout->addWidget(m_detailLabel);
@@ -183,7 +183,7 @@ void ImpedanceCalcPage::onCalc()
             "<tr><td>电抗压降 P43:</td><td>%1 %</td></tr>"
             "<tr><td>电阻压降 Q34:</td><td>%2 %</td></tr>"
             "<tr><td>横向漏磁系数 Kx:</td><td>%3</td></tr>"
-            "<tr><td colspan='2' style='color:#8a9bb0;'>阻抗 = √(电抗² + 电阻²)</td></tr>"
+            "<tr><td colspan='2' style='color:#607368;'>阻抗 = √(电抗² + 电阻²)</td></tr>"
             "</table>")
             .arg(QString::number(p43, 'f', 2),
                  QString::number(q34, 'f', 2),

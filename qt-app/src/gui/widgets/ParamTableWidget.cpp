@@ -69,8 +69,8 @@ void ParamTableWidget::addSectionRow(int row, const QString &title,
     font.setBold(true);
     item->setFont(font);
     // 高级节（七~十）琥珀色标题，普通节（一~六）保持青蓝色
-    item->setBackground(advanced ? QColor("#4a3210") : QColor("#1a3a4a"));
-    item->setForeground(advanced ? QColor("#ffb74d") : QColor("#e0e6ed"));
+    item->setBackground(advanced ? QColor("#FFF2D2") : QColor("#DCEEDF"));
+    item->setForeground(advanced ? QColor("#8A5900") : QColor("#24362B"));
     auto *numItem = new QTableWidgetItem(QString::number(row + 1));
     numItem->setTextAlignment(Qt::AlignCenter);
     numItem->setFlags(numItem->flags() & ~Qt::ItemIsEditable);
@@ -81,11 +81,11 @@ void ParamTableWidget::addSectionRow(int row, const QString &title,
     setItem(row, 2, emptyValueItem);
     auto *optNameItem = new QTableWidgetItem(optName);
     optNameItem->setFlags(optNameItem->flags() & ~Qt::ItemIsEditable);
-    optNameItem->setBackground(advanced ? QColor("#4a3210") : QColor("#1a3a4a"));
+    optNameItem->setBackground(advanced ? QColor("#FFF2D2") : QColor("#DCEEDF"));
     setItem(row, 3, optNameItem);
     auto *optValItem = new QTableWidgetItem(optValue);
     optValItem->setFlags(optValItem->flags() & ~Qt::ItemIsEditable);
-    optValItem->setBackground(advanced ? QColor("#4a3210") : QColor("#1a3a4a"));
+    optValItem->setBackground(advanced ? QColor("#FFF2D2") : QColor("#DCEEDF"));
     setItem(row, 4, optValItem);
     auto *noteItem = new QTableWidgetItem("");
     noteItem->setFlags(noteItem->flags() & ~Qt::ItemIsEditable);
