@@ -13,6 +13,9 @@ inline QString calculationScopeError(const StructureConfig &config,
                                      const CalcInput &input)
 {
     QStringList reasons;
+    const QString wireError = input.highVoltageWireError();
+    if (!wireError.isEmpty())
+        reasons << wireError;
     if (config.category != StructureConfig::OilImmersed)
         reasons << QStringLiteral("干式变压器尚无对应温升算法");
     if (config.windingProcess != StructureConfig::FoilWound)

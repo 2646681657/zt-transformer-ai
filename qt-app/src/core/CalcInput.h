@@ -6,6 +6,7 @@
 #include <QString>
 #include <QRegularExpression>
 #include <QVector>
+#include <cmath>
 
 struct CalcInput {
     // 线圈型式!J17：牌号前两位代表硅钢片厚度的百分之一毫米。
@@ -55,6 +56,18 @@ struct CalcInput {
     double hvBareThick_mm = 5.52;     // Z13 裸线厚
     int hvParallelCount = 1;          // AB13 并绕
     int hvStackCount = 1;             // AB14 叠绕
+    // Excel按宽=厚识别圆线；圆线截面、绝缘和增重分支尚未完整实现。
+    QString highVoltageWireError() const
+    {
+        if (!std::isfinite(hvBareWidth_mm) || !std::isfinite(hvBareThick_mm) ||
+            hvBareWidth_mm <= 0.0 || hvBareThick_mm <= 0.0)
+            return QStringLiteral("高压裸线宽、厚必须是大于零的有效数值");
+        if (hvParallelCount <= 0 || hvStackCount <= 0)
+            return QStringLiteral("高压并绕、叠绕根数必须是大于零的整数");
+        if (hvBareWidth_mm == hvBareThick_mm)
+            return QStringLiteral("高压裸线宽等于厚，按计算单属于圆线；圆线截面、绝缘及增重算法尚未完整实现，当前只支持扁导线");
+        return QString();
+    }
     int hvTurnsPerLayer = 15;         // W12 每层匝数
     double hvLayerInsul_mm = 0.0967;  // X35 层间绝缘厚
     double hvWireInsulAdd_mm = 0.15;  // QZB 绝缘增厚（X14=X13+0.15）
