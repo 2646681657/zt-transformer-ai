@@ -51,6 +51,8 @@ private:
     void updateWireInsulation();
     void updateLvTurnsRecommendation();
     void updateYokePiece1();
+    void updateTestVoltageHints();
+    int m_testVoltageRow = -1;
     QComboBox *m_yokePiece1ModeCombo = nullptr;
     double m_manualYokePiece1_mm = 4.0;
     CalcInput m_recommendationBaseInput;

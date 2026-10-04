@@ -3,6 +3,7 @@
 #include "DesignDatabase.h"
 #include "CalculationApplicability.h"
 #include "ElectromagneticEngine.h"
+#include "TestVoltageHints.h"
 #include <QHeaderView>
 #include <QFont>
 #include <QLineEdit>
@@ -458,6 +459,7 @@ QString ParamTableWidget::standardUnavailableReason() const
 
 void ParamTableWidget::applyModelLinkage()
 {
+    updateTestVoltageHints();
     if (m_loading || m_modelSeries.isEmpty() || m_modelCapacity_kVA <= 0.0) {
         return;
     }
@@ -507,6 +509,20 @@ void ParamTableWidget::applyModelLinkage()
     emit stdValuesUpdated(m_standardStatus);
     updateYokePiece1();
     updateLvTurnsRecommendation();
+}
+
+void ParamTableWidget::updateTestVoltageHints()
+{
+    if (m_loading || m_testVoltageRow < 0) return;
+    const QSignalBlocker blocker(this);
+    const auto hints = testVoltageHints(m_modelHvRated_kV, m_modelLvRated_kV);
+    item(m_testVoltageRow, 2)->setText(hints.highVoltage);
+    item(m_testVoltageRow, 4)->setText(hints.lowVoltage);
+    item(m_testVoltageRow, 2)->setToolTip(hints.highReason);
+    item(m_testVoltageRow, 4)->setToolTip(hints.lowReason);
+    item(m_testVoltageRow, 5)->setText(QStringLiteral("计算单参考；非合格判定"));
+    item(m_testVoltageRow, 5)->setToolTip(TestVoltageHints::sourceNote()
+        + QStringLiteral("；") + hints.highReason + QStringLiteral("；") + hints.lowReason);
 }
 
 void ParamTableWidget::updateYokePiece1()
@@ -627,6 +643,7 @@ void ParamTableWidget::loadParamsForConfig(const TransformerParams &params, cons
     m_yokePiece1ModeCombo = nullptr;
     m_manualYokePiece1_mm = input.yokePiece1Stack_mm;
     m_recommendationRow = -1;
+    m_testVoltageRow = -1;
     m_baseParams = params;
     m_config = config;
     m_lossStandardsManual = params.lossStandardsManual;
@@ -703,6 +720,11 @@ void ParamTableWidget::loadParamsForConfig(const TransformerParams &params, cons
                 "频率(Hz)", QString::number(params.frequency_Hz),
                 "connectionGroup", "frequency");
     item(row - 1, 5)->setText(QStringLiteral("仅50Hz；其他频率禁止计算"));
+    m_testVoltageRow = row;
+    addParamRow(row++, QStringLiteral("高压试验电压(kV)"), QStringLiteral("需人工核对"),
+                QStringLiteral("低压试验电压(kV)"), QStringLiteral("需人工核对"));
+    for (int col : {2, 4})
+        item(m_testVoltageRow, col)->setFlags(item(m_testVoltageRow, col)->flags() & ~Qt::ItemIsEditable);
     // 正向级数、负向级数和每级百分比在同一行独立输入。
     addParamRow(row, QStringLiteral("高压调压级电压"), QString());
     item(row, 5)->setText(QStringLiteral("（+级数，-级数）× 每级%"));

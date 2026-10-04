@@ -1209,6 +1209,7 @@ bool ElectromagneticEngine::previewCoreGeometry(const CalcInput &input, CoreResu
 bool ElectromagneticEngine::calcElectromagnetic(const CalcInput &input, CalcResult &result)
 {
     result = CalcResult();
+    result.testVoltage = testVoltageHints(input.hvRated_kV, input.lvRated_kV);
     const QString wireError = input.highVoltageWireError();
     if (!wireError.isEmpty()) {
         result.error = wireError;
@@ -1316,6 +1317,13 @@ PrintOutputData ElectromagneticEngine::buildPrintOutput(const CalcInput &input,
         row.rightUnit = ru;
         data.rows.append(row);
     };
+    addRow(QStringLiteral("高压试验电压（参考）"), result.testVoltage.highVoltage, QStringLiteral("kV"),
+           QStringLiteral("低压试验电压（参考）"), result.testVoltage.lowVoltage, QStringLiteral("kV"));
+    // 打印表数值列较窄，使用短说明，避免关键免责声明被截断。
+    addRow(QStringLiteral("高压提示来源"), QStringLiteral("计算单C7"), QString(),
+           QStringLiteral("低压提示来源"), QStringLiteral("计算单C8"), QString());
+    addRow(QStringLiteral("试验电压提示用途"), QStringLiteral("仅参考"), QString(),
+           QStringLiteral("绝缘合格判定"), QStringLiteral("不作判定"), QString());
     addRow(QStringLiteral("铁芯截面"), QString::number(result.core.coreArea_cm2, 'f', 2),
            QStringLiteral("cm²"),
            QStringLiteral("磁密"), QString::number(result.core.fluxDensity_core_T, 'f', 3),
