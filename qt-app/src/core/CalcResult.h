@@ -104,6 +104,13 @@ struct ThermalResult {
     double lvWindingRise_K = 0.0;      // AK52 低压绕组温升
     double hvHeatLoad = 0.0;           // AB48 高压热负荷
     double lvHeatLoad = 0.0;           // AK48 低压热负荷
+    double hvSurface_m2 = 0.0;         // AC47 高压散热面积
+    double hvLayerGap_mm = 0.0;        // ROUND(W25/(W12-1)+X14-X13,2)
+    double mainDuctSecond_mm = 0.0;    // AG43 主空道第二油道
+    double hvSurfaceRise_K = 0.0;      // AC49 表面温升
+    double hvGapCorrection_K = 0.0;    // AC51 大间隙修正，原表为空时按0
+    double hvLayerCorrection_K = 0.0;  // AC52 原始修正，允许负值
+    double hvRiseAboveOil_K = 0.0;     // Y53 对油温升（不叠加负AC52）
 };
 
 // ---- 重量与成本 ----

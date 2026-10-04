@@ -107,6 +107,7 @@ struct EmCtx {
 
     // ---- 主空道 / 几何链 ----
     double mainDuct_mm = 0.0;     // AK43
+    double mainDuctSecond_mm = 0.0; // AG43，按额定电压联动
     double bChain_mm = 0.0;       // B45 半链长
     double bChainFull_mm = 0.0;   // B47 全链长
     double windowHeight_mm = 0.0; // J14 窗高
@@ -409,9 +410,8 @@ void calcWindingLayout(EmCtx &c)
     // 主空道（AK43 = AD43+AF43+等级加宽）
     const double kV = in.hvRated_kV;
     double ak43 = in.mainDuctWidth_mm + in.mainDuctInsul_mm;
-    if (kV > 12.0) {
-        ak43 += 5.0;
-    }
+    c.mainDuctSecond_mm = kV > 12.0 ? 5.0 : 0.0; // AG43
+    ak43 += c.mainDuctSecond_mm;
     if (kV > 24.0) {
         ak43 += 1.5 + 5.0;
     }
@@ -911,8 +911,15 @@ void calcThermal(EmCtx &c)
                 + sumHvDuctH) * P12
             + M_PI * (c.majorR_mm + B28 + c.lvRadial_mm + sumLvDuctW
                       + c.mainDuct_mm + c.hvRadial_mm + sumHvDuctW) * S12, 1);
+    // AC47：内表面只在 >12kV 时参与；原表此项只引用前三组低压端部油道。
+    // 当前仅开放 AC9=1 的单段线圈，不在这里放开两段线圈的适用范围。
+    const double perimHvInner = excelRound(
+        M_PI * (B29 + c.lvRadial_mm + in.lvDuctHeightSide[0]
+                + in.lvDuctHeightSide[1] + in.lvDuctHeightSide[2] + c.mainDuct_mm)
+            + c.ab39Long_mm, 1);
     const double ac47 = excelRound(
-        6.0 * c.ac30_mm * (ductTermHv * 1.7 + perimHv) / 1e6, 2);
+        6.0 * c.ac30_mm * (perimHvInner * (in.hvRated_kV > 12.0 ? 0.85 : 0.0)
+                          + ductTermHv * 1.7 + perimHv) / 1e6, 2);
 
     const double ductTermLv = [&]() {
         double s = 0.0;
@@ -947,7 +954,12 @@ void calcThermal(EmCtx &c)
     const int hvDuctCountY = (in.hvDuctHeightSide[0] > 0 ? 2 : 0)
                              + (in.hvDuctHeightSide[1] > 0 ? 2 : 0)
                              + (in.hvDuctHeightSide[2] > 0 ? 2 : 0);
-    const double coef52 = in.hvTurnsPerLayer - 2.0 * (0 + hvDuctCountY + 1);
+    const int mainDuctCount = c.mainDuctSecond_mm > 0.0 ? 1 : 0;
+    const int coolingCount = mainDuctCount + hvDuctCountY + 1;
+    // AC51 在间隙 <=0.64 时原表为空，数值链按0处理；两个分支分别取整。
+    const double ac51 = layerGap <= 0.64 ? 0.0 : excelRound(
+        0.002 * (layerGap - 0.64) * (in.hvTurnsPerLayer - coolingCount) * ab48, 1);
+    const double coef52 = in.hvTurnsPerLayer - 2.0 * coolingCount;
     const double ac52 = excelRound(
         0.002 * std::min(layerGap, 0.64) * coef52 * ab48, 1);
 
@@ -961,7 +973,7 @@ void calcThermal(EmCtx &c)
         0.002 * in.lvLayerInsulCount * in.lvLayerInsul_mm
             * (in.lvTurns - 2.0 * (lvDuctCount * 2.0 + 1.0)) * ak48, 1);
 
-    const double y53 = ac49 + ac52;
+    const double y53 = ac49 + ac51 + std::max(ac52, 0.0);
     const double y54 = y53 + n49;
     const double ak51 = ak49 + std::max(ak50, 0.0);
     const double ak52 = ak51 + n49;
@@ -976,6 +988,13 @@ void calcThermal(EmCtx &c)
     c.out->thermal.lvWindingRise_K = ak52;
     c.out->thermal.hvHeatLoad = ab48;
     c.out->thermal.lvHeatLoad = ak48;
+    c.out->thermal.hvSurface_m2 = ac47;
+    c.out->thermal.hvLayerGap_mm = layerGap;
+    c.out->thermal.mainDuctSecond_mm = c.mainDuctSecond_mm;
+    c.out->thermal.hvSurfaceRise_K = ac49;
+    c.out->thermal.hvGapCorrection_K = ac51;
+    c.out->thermal.hvLayerCorrection_K = ac52;
+    c.out->thermal.hvRiseAboveOil_K = y53;
 }
 
 // ============================================================================
@@ -1213,6 +1232,18 @@ PrintOutputData ElectromagneticEngine::buildPrintOutput(const CalcInput &input,
            QStringLiteral("K"),
            QStringLiteral("高压绕组温升"),
            QString::number(result.thermal.hvWindingRise_K, 'f', 1), QStringLiteral("K"));
+    addRow(QStringLiteral("高压散热面积 AC47"), QString::number(result.thermal.hvSurface_m2, 'f', 2),
+           QStringLiteral("m²"), QStringLiteral("高压热负荷 AB48"),
+           QString::number(result.thermal.hvHeatLoad, 'f', 1), QStringLiteral("W/m²"));
+    addRow(QStringLiteral("第二油道 AG43（自动）"), QString::number(result.thermal.mainDuctSecond_mm, 'f', 1),
+           QStringLiteral("mm"), QStringLiteral("高压等效层间间隙"),
+           QString::number(result.thermal.hvLayerGap_mm, 'f', 2), QStringLiteral("mm"));
+    addRow(QStringLiteral("高压表面温升 AC49"), QString::number(result.thermal.hvSurfaceRise_K, 'f', 1),
+           QStringLiteral("K"), QStringLiteral("大间隙修正 AC51（空值按0）"),
+           QString::number(result.thermal.hvGapCorrection_K, 'f', 1), QStringLiteral("K"));
+    addRow(QStringLiteral("层间修正 AC52（负值不计入）"), QString::number(result.thermal.hvLayerCorrection_K, 'f', 1),
+           QStringLiteral("K"), QStringLiteral("高压对油温升 Y53"),
+           QString::number(result.thermal.hvRiseAboveOil_K, 'f', 1), QStringLiteral("K"));
     addRow(QStringLiteral("器身重"), QString::number(result.mass.activePartWeight_kg, 'f', 0),
            QStringLiteral("kg"),
            QStringLiteral("总重"), QString::number(result.mass.totalWeight_kg, 'f', 0),
