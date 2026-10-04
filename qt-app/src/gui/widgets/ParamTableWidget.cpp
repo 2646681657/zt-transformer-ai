@@ -267,7 +267,6 @@ bool ParamTableWidget::parseCompositeModel(const QString &text, bool commitLowVo
 
     bool ok = false;
     QString token = value.mid(capacityStart, slashPos - capacityStart).trimmed();
-    token.replace(QLatin1Char(','), QLatin1Char('.'));
     const double capacity = token.toDouble(&ok);
     if (!ok || capacity <= 0.0) {
         return false;
@@ -279,7 +278,6 @@ bool ParamTableWidget::parseCompositeModel(const QString &text, bool commitLowVo
         return true;
     }
     token = value.mid(slashPos + 1, voltageSep - slashPos - 1).trimmed();
-    token.replace(QLatin1Char(','), QLatin1Char('.'));
     const double hv = token.toDouble(&ok);
     if (ok && hv > 0.0) {
         m_modelHvRated_kV = hv;
@@ -289,7 +287,6 @@ bool ParamTableWidget::parseCompositeModel(const QString &text, bool commitLowVo
         return true;
     }
     token = value.mid(voltageSep + 1).trimmed();
-    token.replace(QLatin1Char(','), QLatin1Char('.'));
     const double lv = token.toDouble(&ok);
     if (ok && lv > 0.0) {
         m_modelLvRated_kV = lv;
@@ -383,15 +380,15 @@ void ParamTableWidget::loadParamsForConfig(const TransformerParams &params, cons
         .arg(series,
              QString::number(params.capacity_kVA, 'g', 12),
              QString::number(params.hvRatedVoltage_kV, 'g', 12),
-             QString::number(params.lvRatedVoltage_kV, 'g', 12).replace(QLatin1Char('.'), QLatin1Char(',')));
+             QString::number(params.lvRatedVoltage_kV, 'g', 12));
 
     addParamRow(row, QStringLiteral("产品型号"), compositeModel);
     item(row, 5)->setText(QStringLiteral("型号-M-容量/高压-低压"));
     m_productModelEdit = new QLineEdit(this);
     m_productModelEdit->setText(compositeModel);
-    m_productModelEdit->setPlaceholderText(QStringLiteral("例如：SB20-M-630/10-0,4"));
+    m_productModelEdit->setPlaceholderText(QStringLiteral("例如：SB20-M-630/10-0.4"));
     m_productModelEdit->setToolTip(QStringLiteral(
-        "输入“/”后保存容量并联动标准值；输入高压后的“-”保存高压；输入低压后按回车保存"));
+        "输入“/”后保存容量并联动标准值；输入高压后的“-”保存高压；输入低压后按回车保存；小数使用“.”，不支持逗号"));
     setCellWidget(row, 2, m_productModelEdit);
     setSpan(row, 2, 1, 3);
     m_modelSeries = series;
