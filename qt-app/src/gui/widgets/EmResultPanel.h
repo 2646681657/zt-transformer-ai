@@ -14,6 +14,8 @@ public:
 
     // 填充一次完整电磁计算结果
     void loadResult(const CalcResult &result);
+    // 输入切换后清除上一轮结果
+    void clearResult();
 
     // 结果文本化（保存计算单用）
     static QString resultText(const CalcResult &result);

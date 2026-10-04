@@ -169,6 +169,7 @@ private:
     GridOptimizer *m_optimizer = nullptr; // 网格寻优器（后台线程）
     OptimizationSettings m_optSettings;   // 寻优网格设置（循环参数对话框可配）
     bool m_optRunning = false;            // 寻优运行中标志
+    bool m_discardOptimizationResults = false; // 输入已更换，忽略旧寻优线程的后续信号
     SchemeTableWidget *m_schemeTable;
     PrintTableWidget *m_printTable;
     EmResultPanel *m_emResultPanel = nullptr;

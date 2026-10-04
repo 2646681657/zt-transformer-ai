@@ -1078,12 +1078,25 @@ void EnterCalcPage::setupPrintTab()
 
 void EnterCalcPage::setCalcInput(const CalcInput &input)
 {
+    if (m_optRunning) {
+        m_discardOptimizationResults = true;
+        m_optimizer->stop();
+    }
     m_calcInput = input;
+    m_lastInput = CalcInput{};
+    m_emResult = CalcResult{};
+    m_hasResult = false;
+    m_confirmedSchemeIdx = -1;
+    m_schemeData.clear();
+    m_schemeTable->clearResults();
+    m_emResultPanel->clearResult();
+    m_statusBar->setText(QStringLiteral("已加载新参数，请重新计算"));
     // 进入计算页时刷新打印表初始计算单（当前设计变量的计算结果；
     // 快速计算/寻优完成后会由 onRunEmCalc 等用最新结果覆盖）
     if (!m_printTable) {
         return;   // 构造期间 Tab 未建完（正常流程不会发生）
     }
+    m_printTable->setRowCount(0);
     CalcResult initResult;
     if (m_engine.calcElectromagnetic(m_calcInput, initResult) && initResult.valid) {
         m_printTable->loadData(
@@ -1280,11 +1293,17 @@ void EnterCalcPage::onOptimizeStop()
 
 void EnterCalcPage::onOptimizeProgress(int percent)
 {
+    if (m_discardOptimizationResults) {
+        return;
+    }
     m_statusBar->setText(QStringLiteral("寻优进行中：%1%").arg(percent));
 }
 
 void EnterCalcPage::onOptimizeCandidate(const OptimizeCandidate &candidate)
 {
+    if (m_discardOptimizationResults) {
+        return;
+    }
     OptimizationResult scheme = candidate.scheme;
     scheme.schemeIdx = m_schemeTable->rowCount() + 1;   // 序号按入库顺序编排
     m_schemeTable->addResult(scheme);
@@ -1298,6 +1317,12 @@ void EnterCalcPage::onOptimizeFinished(bool stopped, const OptimizeCandidate &be
                                        int total, int valid)
 {
     m_optRunning = false;
+    if (m_discardOptimizationResults) {
+        m_discardOptimizationResults = false;
+        m_pauseBtn->setText(QStringLiteral("暂停计算"));
+        m_statusBar->setText(QStringLiteral("旧参数寻优已停止，可按新参数重新运行"));
+        return;
+    }
     if (m_pauseBtn) {
         m_pauseBtn->setText(QStringLiteral("暂停计算"));
     }
