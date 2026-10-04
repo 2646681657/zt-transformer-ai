@@ -49,6 +49,10 @@ QVector<QPair<QString, QVector<QStringList>>> EmResultPanel::buildGroups(const C
     // ---- 铁芯 ----
     QVector<QStringList> core;
     core << row(QStringLiteral("匝电压"), r.core.turnVoltage_V, 4, QStringLiteral("V"))
+         << QStringList{QStringLiteral("宽90补充片叠厚模式"),
+                        r.core.yokePiece1Auto ? QStringLiteral("自动（计算单）") : QStringLiteral("手工"), QString()}
+         << row(QStringLiteral("实际补充片宽 F19"), r.core.yokePiece1Width_mm, 2, QStringLiteral("mm"))
+         << row(QStringLiteral("实际采用叠厚 D16"), r.core.yokePiece1Stack_mm, 3, QStringLiteral("mm"))
          << row(QStringLiteral("大圆半径"), r.core.majorRadius_mm, 2, QStringLiteral("mm"))
          << row(QStringLiteral("圆心到轴距离"), r.core.yokeFlat_mm, 2, QStringLiteral("mm"))
          << row(QStringLiteral("交接点高"), r.core.junctionHeight_mm, 2, QStringLiteral("mm"))

@@ -280,10 +280,40 @@ void calcCoreGeometry(EmCtx &c)
         c.stack[i] = d;
         acc += d;
     }
-    // T 形轭补充片叠厚（F20/G20/H20 → Sheet1 D16..D18）
-    c.stack[11] = in.yokePiece1Stack_mm;
+    // Sheet1 D16引用F20，D17/D18是手填；不将G20/H20套入后两项。
+    if (in.yokePiece1Auto) {
+        const double halfW = c.lamWidth[11] / 2.0; // F19/2，不能固定写45
+        double automatic = 0.0;
+        if (c.lamWidth[11] != 0.0) {
+            const double t = std::sqrt(c.majorR_mm * c.majorR_mm
+                - (halfW + c.yokeFlat_mm) * (halfW + c.yokeFlat_mm));
+            const double candidate = t <= c.junctionH_mm ? t
+                : std::sqrt((D / 2.0) * (D / 2.0) - halfW * halfW) + Ls / 2.0;
+            if (!std::isfinite(t) || !std::isfinite(candidate)) {
+                c.fail(QStringLiteral("宽90补充片自动叠厚几何无解，请调整铁芯尺寸或选手工模式核对"));
+                return;
+            }
+            automatic = excelRound(candidate - acc, 0); // F20，减11级已取整叠厚之和
+            if (automatic < 0.0) {
+                c.fail(QStringLiteral("宽90补充片自动叠厚为负（%1mm），不能用于计算").arg(automatic));
+                return;
+            }
+        }
+        c.stack[11] = automatic;
+    } else {
+        c.stack[11] = in.yokePiece1Stack_mm;
+    }
     c.stack[12] = in.yokePiece2Stack_mm;
     c.stack[13] = in.yokePiece3Stack_mm;
+    for (int i = 11; i <= 13; ++i) {
+        if (!std::isfinite(c.stack[i]) || c.stack[i] < 0.0) {
+            c.fail(QStringLiteral("T形轭补充片叠厚必须为非负有效数值"));
+            return;
+        }
+    }
+    c.out->core.yokePiece1Auto = in.yokePiece1Auto;
+    c.out->core.yokePiece1Stack_mm = c.stack[11];
+    c.out->core.yokePiece1Width_mm = c.lamWidth[11];
     c.stack[14] = 0.0;
     c.stack[15] = 0.0;
 
@@ -1129,24 +1159,38 @@ void calcMassCost(EmCtx &c)
 // ============================================================================
 LvTurnsRecommendation ElectromagneticEngine::recommendLvTurns(const CalcInput &input)
 {
-    LvTurnsRecommendation unavailable;
-    unavailable.referenceFlux_T = input.refFluxDens_T;
+    CoreResult core;
+    QString error;
+    if (!previewCoreGeometry(input, core, error)) {
+        LvTurnsRecommendation r;
+        r.referenceFlux_T = input.refFluxDens_T;
+        r.error = error;
+        return r;
+    }
+    return recommendationForArea(input, core.coreArea_cm2);
+}
+
+bool ElectromagneticEngine::previewCoreGeometry(const CalcInput &input, CoreResult &core, QString &error)
+{
+    core = CoreResult();
+    error.clear();
     if (!std::isfinite(input.coreDiameter_mm) || input.coreDiameter_mm <= 0.0
             || !std::isfinite(input.coreStraight_mm) || input.coreStraight_mm < 0.0
             || !std::isfinite(input.ellipseAngle_deg) || input.ellipseAngle_deg <= 0.0 || input.ellipseAngle_deg >= 90.0
             || !std::isfinite(input.stackFactor) || input.stackFactor <= 0.0 || input.stackFactor > 1.0) {
-        unavailable.error = QStringLiteral("铁芯几何或叠片系数无效，无法推荐匝数");
-        return unavailable;
+        error = QStringLiteral("铁芯几何或叠片系数无效，无法计算叠厚及截面");
+        return false;
     }
     DesignDatabase &db = DesignDatabase::instance();
     if (!db.isLoaded() && !db.load()) {
-        unavailable.error = QStringLiteral("基础数据表加载失败：%1").arg(db.lastError());
-        return unavailable;
+        error = QStringLiteral("基础数据表加载失败：%1").arg(db.lastError());
+        return false;
     }
-    for (double thickness : {input.yokePiece1Stack_mm, input.yokePiece2Stack_mm, input.yokePiece3Stack_mm}) {
+    for (double thickness : {input.yokePiece1Auto ? 0.0 : input.yokePiece1Stack_mm,
+                             input.yokePiece2Stack_mm, input.yokePiece3Stack_mm}) {
         if (!std::isfinite(thickness) || thickness < 0.0) {
-            unavailable.error = QStringLiteral("T形轭补充片叠厚必须为非负有效数值");
-            return unavailable;
+            error = QStringLiteral("T形轭补充片叠厚必须为非负有效数值");
+            return false;
         }
     }
     CalcResult geometry;
@@ -1155,10 +1199,11 @@ LvTurnsRecommendation ElectromagneticEngine::recommendLvTurns(const CalcInput &i
     ctx.out = &geometry;
     calcCoreGeometry(ctx);
     if (ctx.failed) {
-        unavailable.error = ctx.error;
-        return unavailable;
+        error = ctx.error;
+        return false;
     }
-    return recommendationForArea(input, ctx.coreArea_cm2);
+    core = geometry.core;
+    return true;
 }
 
 bool ElectromagneticEngine::calcElectromagnetic(const CalcInput &input, CalcResult &result)
@@ -1287,6 +1332,10 @@ PrintOutputData ElectromagneticEngine::buildPrintOutput(const CalcInput &input,
            QStringLiteral("mm²"), QStringLiteral("高压总有效截面 AA15"),
            QString::number(result.winding.hvEffectiveSection_mm2, 'f', 3), QStringLiteral("mm²"));
     const auto &recommendation = result.core.lvTurnsRecommendation;
+    addRow(QStringLiteral("宽90补充片叠厚模式"),
+           result.core.yokePiece1Auto ? QStringLiteral("自动（计算单）") : QStringLiteral("手工"), QString(),
+           QStringLiteral("实际采用叠厚 D16"), QString::number(result.core.yokePiece1Stack_mm, 'g', 15), QStringLiteral("mm"));
+    addRow(QStringLiteral("实际补充片宽 F19"), QString::number(result.core.yokePiece1Width_mm, 'g', 15), QStringLiteral("mm"));
     addRow(QStringLiteral("低压实际匝数（参与计算）"), QString::number(result.winding.lvTurns), QString(),
            QStringLiteral("推荐低压匝数 AN8（未自动采用）"),
            recommendation.error.isEmpty() ? QString::number(recommendation.turns)

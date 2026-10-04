@@ -54,6 +54,7 @@ ParamTableWidget::ParamTableWidget(QWidget *parent)
             applyModelLinkage();
             break;
         }
+        updateYokePiece1();
         updateLvTurnsRecommendation();
     });
 }
@@ -372,6 +373,7 @@ void ParamTableWidget::updateSteelThickness()
         ? CalcInput::thicknessFromSteelGrade(selectedSteelGrade()) : 0.0;
     const QSignalBlocker blocker(this);
     thicknessItem->setText(value > 0.0 ? QString::number(value) : QString());
+    updateYokePiece1();
     updateLvTurnsRecommendation();
 }
 
@@ -503,7 +505,56 @@ void ParamTableWidget::applyModelLinkage()
         item(ref.first, ref.second)->setToolTip(m_standardStatus);
     }
     emit stdValuesUpdated(m_standardStatus);
+    updateYokePiece1();
     updateLvTurnsRecommendation();
+}
+
+void ParamTableWidget::updateYokePiece1()
+{
+    if (m_loading || !m_yokePiece1ModeCombo) return;
+    const auto ref = m_inputRefs.value(QStringLiteral("yokePiece1Stack"));
+    auto *valueItem = item(ref.first, ref.second);
+    if (!valueItem) return;
+    if (valueItem->flags() & Qt::ItemIsEditable) {
+        bool ok = false;
+        const double value = valueItem->text().toDouble(&ok);
+        if (ok && std::isfinite(value) && value >= 0.0) m_manualYokePiece1_mm = value;
+    }
+    const bool automatic = m_yokePiece1ModeCombo->currentData().toBool();
+    const QSignalBlocker blocker(this);
+    valueItem->setFlags(automatic ? valueItem->flags() & ~Qt::ItemIsEditable
+                                 : valueItem->flags() | Qt::ItemIsEditable);
+    if (!automatic) {
+        // 手工模式编辑期间不要用缓存覆盖屏幕上的非法输入，留给收集校验拒绝。
+        if (valueItem->data(Qt::UserRole).toBool())
+            valueItem->setText(QString::number(m_manualYokePiece1_mm, 'g', 15));
+        valueItem->setData(Qt::UserRole, false);
+        valueItem->setToolTip(QStringLiteral("手工叠厚参与计算；切换自动后仍独立保存本值"));
+        item(ref.first, 5)->setText(QStringLiteral("手工值参与计算；宽80、宽60仍手填"));
+        return;
+    }
+    valueItem->setData(Qt::UserRole, true);
+    CalcInput preview = m_recommendationBaseInput;
+    saveToInput(preview);
+    QString error;
+    for (const QString &key : {QStringLiteral("coreDiameter"), QStringLiteral("coreStraight"),
+                              QStringLiteral("ellipseAngle"), QStringLiteral("stackFactor"),
+                              QStringLiteral("yokePiece2Stack"), QStringLiteral("yokePiece3Stack")}) {
+        const auto it = m_inputRefs.constFind(key);
+        if (it == m_inputRefs.constEnd()) continue;
+        bool ok = false;
+        const double value = item(it->first, it->second)->text().toDouble(&ok);
+        if (!ok || !std::isfinite(value)) { error = QStringLiteral("铁芯几何输入未有效填写"); break; }
+    }
+    if (m_config.coreShape != StructureConfig::Ellipse || m_config.coreType != StructureConfig::StackedSilicon)
+        error = QStringLiteral("自动叠厚仅用于已支持的椭圆叠铁芯");
+    CoreResult core;
+    if (error.isEmpty()) ElectromagneticEngine::previewCoreGeometry(preview, core, error);
+    valueItem->setText(error.isEmpty() ? QString::number(core.yokePiece1Stack_mm, 'g', 15) : QStringLiteral("不可用"));
+    valueItem->setToolTip(error.isEmpty()
+        ? QStringLiteral("按F20自动计算，实际片宽%1mm；手工备份%2mm。自动值参与截面及损耗计算。")
+              .arg(core.yokePiece1Width_mm).arg(m_manualYokePiece1_mm) : error);
+    item(ref.first, 5)->setText(error.isEmpty() ? QStringLiteral("F20自动值参与计算；原手工值独立保留") : error);
 }
 
 void ParamTableWidget::updateLvTurnsRecommendation()
@@ -573,6 +624,8 @@ void ParamTableWidget::loadParamsForConfig(const TransformerParams &params, cons
 {
     m_loading = true;
     m_recommendationBaseInput = input;
+    m_yokePiece1ModeCombo = nullptr;
+    m_manualYokePiece1_mm = input.yokePiece1Stack_mm;
     m_recommendationRow = -1;
     m_baseParams = params;
     m_config = config;
@@ -781,6 +834,22 @@ void ParamTableWidget::loadParamsForConfig(const TransformerParams &params, cons
                 "接缝数", QString::number(input.seamCount),
                 "coreLossCraftCoef", "seamCount");
 
+    addInputRow(row++, "宽90补充片叠厚模式", QString(),
+                "实际叠厚(mm)", QString::number(input.yokePiece1Stack_mm, 'g', 15), {}, "yokePiece1Stack");
+    item(row - 1, 2)->setFlags(item(row - 1, 2)->flags() & ~Qt::ItemIsEditable);
+    m_yokePiece1ModeCombo = new QComboBox(this);
+    m_yokePiece1ModeCombo->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+    m_yokePiece1ModeCombo->addItem(QStringLiteral("自动（计算单）"), true);
+    m_yokePiece1ModeCombo->addItem(QStringLiteral("手工"), false);
+    m_yokePiece1ModeCombo->setCurrentIndex(input.yokePiece1Auto ? 0 : 1);
+    // 初次加载不把手工输入当作自动结果。
+    item(row - 1, 4)->setData(Qt::UserRole, false);
+    setCellWidget(row - 1, 2, m_yokePiece1ModeCombo);
+    connect(m_yokePiece1ModeCombo, &QComboBox::currentIndexChanged, this, [this](int) {
+        updateYokePiece1();
+        updateLvTurnsRecommendation();
+    });
+
     // 五 绕组参数（设计变量，初值取自 CalcInput）
     addSectionRow(row++, QStringLiteral("五 绕组参数"));
     m_recommendationRow = row;
@@ -932,7 +1001,10 @@ void ParamTableWidget::saveToInput(CalcInput &input) const
     // ---- 以下为专业模式高级参数（未绑定时保持原值）----
 
     // 七 铁芯工艺
-    setDouble("yokePiece1Stack", input.yokePiece1Stack_mm);
+    input.yokePiece1Auto = m_yokePiece1ModeCombo ? m_yokePiece1ModeCombo->currentData().toBool()
+                                               : m_recommendationBaseInput.yokePiece1Auto;
+    if (input.yokePiece1Auto) input.yokePiece1Stack_mm = m_manualYokePiece1_mm;
+    else setDouble("yokePiece1Stack", input.yokePiece1Stack_mm);
     setDouble("yokePiece2Stack", input.yokePiece2Stack_mm);
     setDouble("yokePiece3Stack", input.yokePiece3Stack_mm);
     setDouble("yokeWidenTo", input.yokeWidenTo_mm);
@@ -973,9 +1045,8 @@ void ParamTableWidget::addProModeSections(int &row, const CalcInput &input)
 {
     // 七 铁芯工艺
     addSectionRow(row++, QStringLiteral("七 铁芯工艺（高级）"), {}, {}, true);
-    addInputRow(row++, "T形轭片叠厚-宽90(mm)", QString::number(input.yokePiece1Stack_mm),
-                "轭片放大片宽(mm)", QString::number(input.yokeWidenTo_mm),
-                "yokePiece1Stack", "yokeWidenTo");
+    addInputRow(row++, "轭片放大片宽(mm)", QString::number(input.yokeWidenTo_mm),
+                "", "", "yokeWidenTo", {});
     addInputRow(row++, "T形轭片叠厚-宽80(mm)", QString::number(input.yokePiece2Stack_mm),
                 "轭片放大级数", QString::number(input.yokeWidenStages),
                 "yokePiece2Stack", "yokeWidenStages");
