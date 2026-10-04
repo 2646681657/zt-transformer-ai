@@ -60,15 +60,15 @@ protected:
 private:
     // 配色与 ztf_theme.qss 的 QHeaderView::section 保持一致
     static void paintThemeSection(QPainter *p, const QRect &rect, const QString &text) {
-        p->fillRect(rect, QColor(0x2a, 0x2f, 0x38));
-        p->setPen(QColor(0x3a, 0x40, 0x50));
+        p->fillRect(rect, QColor("#EDF3EF"));
+        p->setPen(QColor("#D3DDD6"));
         p->drawLine(rect.topRight(), rect.bottomRight());
         p->drawLine(rect.bottomLeft(), rect.bottomRight());
         QFont f = p->font();
         f.setPixelSize(11);
         f.setBold(true);
         p->setFont(f);
-        p->setPen(QColor(0x8a, 0x9b, 0xb0));
+        p->setPen(QColor("#607368"));
         p->drawText(rect, Qt::AlignCenter, text);
     }
 };
