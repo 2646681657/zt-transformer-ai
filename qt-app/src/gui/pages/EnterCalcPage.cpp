@@ -17,6 +17,7 @@
 #include "QuoteCalculator.h"
 #include "CostBasisNotes.h"
 #include "ParamTableWidget.h"
+#include "SchemeCalculationSheet.h"
 #include "CalculationApplicability.h"
 #include <QDateTime>
 #include <QDir>
@@ -51,6 +52,7 @@
 #include <QPainter>
 #include <QFormLayout>
 #include <QPlainTextEdit>
+#include <QScreen>
 
 EnterCalcPage::EnterCalcPage(QWidget *parent)
     : QWidget(parent)
@@ -1621,18 +1623,22 @@ void EnterCalcPage::onSchemeSelected(int row)
     // 寻优基准 m_calcInput/参数设置页不受影响）；确认后返回本页并点亮行内按钮
     const OptimizeCandidate original = it.value();
     QDialog dlg(this);
-    dlg.setWindowTitle(QStringLiteral("方案参数 - 方案 %1").arg(schemeIdx));
+    dlg.setWindowTitle(QStringLiteral("方案计算单 - 方案 %1").arg(schemeIdx));
     dlg.setModal(true);
-    dlg.resize(720, 620);
+    dlg.setWindowFlags(dlg.windowFlags() | Qt::WindowMinMaxButtonsHint);
+    const QSize available = dlg.screen()->availableGeometry().size();
+    dlg.resize(qMin(1400, qMax(640, available.width() - 80)),
+               qMin(860, qMax(480, available.height() - 100)));
     auto *layout = new QVBoxLayout(&dlg);
     layout->setContentsMargins(12, 12, 12, 12);
 
-    auto *table = new ParamTableWidget(&dlg);
     const bool proMode = m_config.calcMode == StructureConfig::Professional;
     const TransformerParams originalParams = ParamTableWidget::paramsForInput(
         m_schemeParams.value(schemeIdx, m_params), original.input);
-    table->loadParamsForConfig(originalParams, m_config, original.input, proMode);
-    layout->addWidget(table, 1);
+    auto *sheet = new SchemeCalculationSheet(originalParams, m_config, original.input,
+                                             original.result, proMode, &dlg);
+    auto *table = sheet->inputTable();
+    layout->addWidget(sheet, 1);
 
     // 工作副本：弹窗内的编辑与重算不直接写回，确认时统一提交
     CalcInput working = original.input;
@@ -1660,6 +1666,7 @@ void EnterCalcPage::onSchemeSelected(int row)
 
     // 表格当前值重算（计算/确认共用）：失败返回 false 并提示
     const auto recalc = [&]() -> bool {
+        sheet->markPending();
         CalcInput in = working;
         TransformerParams params;
         QString inputError;
@@ -1676,6 +1683,7 @@ void EnterCalcPage::onSchemeSelected(int row)
         working = in;
         pendingResult = res;
         pendingParams = params;
+        sheet->loadResult(pendingResult);
         summary->setText(summaryText(pendingResult));
         return true;
     };
