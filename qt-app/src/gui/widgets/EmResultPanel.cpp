@@ -155,7 +155,7 @@ QVector<QPair<QString, QVector<QStringList>>> EmResultPanel::buildGroups(const C
             << row(QStringLiteral("油面温升"), t.oilRise_K, 1, QStringLiteral("K"))
             << row(QStringLiteral("油顶层温升"), t.oilTopRise_K, 1, QStringLiteral("K"))
             << row(QStringLiteral("高压绕组温升"), t.hvWindingRise_K, 1, QStringLiteral("K"))
-            << row(QStringLiteral("低压绕组温升"), t.lvWindingRise_K, 1, QStringLiteral("K"))
+            << row(QStringLiteral("低压绕组温升 AK52"), t.lvWindingRise_K, 1, QStringLiteral("K"))
             << row(QStringLiteral("高压散热面积 AC47"), t.hvSurface_m2, 2, QStringLiteral("m²"))
             << row(QStringLiteral("主空道第二油道 AG43（自动）"), t.mainDuctSecond_mm, 1, QStringLiteral("mm"))
             << row(QStringLiteral("高压等效层间间隙（取整后）"), t.hvLayerGap_mm, 2, QStringLiteral("mm"))
@@ -164,7 +164,11 @@ QVector<QPair<QString, QVector<QStringList>>> EmResultPanel::buildGroups(const C
             << row(QStringLiteral("层间修正 AC52（负值不计入）"), t.hvLayerCorrection_K, 1, QStringLiteral("K"))
             << row(QStringLiteral("高压对油温升 Y53"), t.hvRiseAboveOil_K, 1, QStringLiteral("K"))
             << row(QStringLiteral("高压热负荷 AB48"), t.hvHeatLoad, 1, QStringLiteral("W/m²"))
-            << row(QStringLiteral("低压热负荷"), t.lvHeatLoad, 1, QString());
+            << row(QStringLiteral("低压散热面积 AK47"), t.lvSurface_m2, 2, QStringLiteral("m²"))
+            << row(QStringLiteral("低压热负荷 AK48"), t.lvHeatLoad, 2, QStringLiteral("W/m²"))
+            << row(QStringLiteral("低压表面温升 AK49"), t.lvSurfaceRise_K, 1, QStringLiteral("K"))
+            << row(QStringLiteral("低压层间修正 AK50（负值不计入）"), t.lvLayerCorrection_K, 1, QStringLiteral("K"))
+            << row(QStringLiteral("低压对油温升 AK51"), t.lvRiseAboveOil_K, 1, QStringLiteral("K"));
     groups.append({ QStringLiteral("温升"), thermal });
 
     // ---- 重量与成本 ----
