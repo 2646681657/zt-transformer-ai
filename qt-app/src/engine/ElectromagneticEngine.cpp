@@ -833,6 +833,11 @@ void calcLoadLoss(EmCtx &c, double lambda_mm, double hx_mm)
     c.out->winding.loadLoss_W = excelRound(
         (h10 + (in.hvBareWidth_mm == in.hvBareThick_mm ? 0.0 : i10))
             * (1.0 + in.strayLossFactor), 0);
+    // 仅保存既有链路的组成快照，不改最终损耗公式、分支或取整。
+    c.out->winding.lvExtraLoss_W = aj45;
+    c.out->winding.strayLossFactor = in.strayLossFactor;
+    c.out->winding.loadLossBeforeStray_W =
+        h10 + (in.hvBareWidth_mm == in.hvBareThick_mm ? 0.0 : i10);
 }
 
 // ============================================================================
@@ -1516,6 +1521,14 @@ PrintOutputData ElectromagneticEngine::buildPrintOutput(const CalcInput &input,
     addRow(QStringLiteral("高压附加损耗率 AA45"), QString::number(result.winding.hvExtraLossPct, 'f', 2),
            QStringLiteral("%"), QStringLiteral("高压附加损耗 AC45"),
            QString::number(result.winding.hvExtraLoss_W, 'f', 0), QStringLiteral("W"));
+    addRow(QStringLiteral("低压附加损耗（采用值）"), QString::number(result.winding.lvExtraLoss_W, 'g', 15),
+           QStringLiteral("W"), QStringLiteral("杂散损耗系数 J10"),
+           QString::number(result.winding.strayLossFactor, 'g', 15), QString());
+    addRow(QStringLiteral("杂散修正前损耗合计"), QString::number(result.winding.loadLossBeforeStray_W, 'g', 15),
+           QStringLiteral("W"), QStringLiteral("低压附加项作用"), QStringLiteral("损耗及温升"), QString());
+    addRow(QStringLiteral("负载损耗合成规则"), QStringLiteral("合计×(1+系数)"), QString(),
+           QStringLiteral("最终负载损耗取整"), QStringLiteral("整瓦"), QString());
+    addRow(QStringLiteral("原表AJ45/AS45口径"), QStringLiteral("待核对"), QString());
     addRow(QStringLiteral("油面温升"), QString::number(result.thermal.oilRise_K, 'f', 1),
            QStringLiteral("K"),
            QStringLiteral("高压绕组温升"),
