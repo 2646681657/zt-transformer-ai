@@ -83,6 +83,12 @@ struct WindingResult {
     double hvRadial_mm = 0.0;          // W28 高压辐向厚
     double mainDuct_mm = 0.0;          // AK43 主空道
     double hvAxial_mm = 0.0;           // AA28 高压轴向高
+    int hvCoilFormIdx = 1;             // 本次计算采用的AC9快照
+    double hvSegmentGap_mm = 0.0;      // AA29 段间距
+    double hvTotalAxial_mm = 0.0;      // AA30 = AA28 + AA29
+    double hvInnerAxial_mm = 0.0;      // AC30 = ROUND(AA30-AA22,2)
+    double hvEndInsul_mm = 0.0;        // AA31 = (AA33-AA30)/2；仅展示，不作合格判定
+    double hvEndInsulReference_mm = 0.0; // AC32 原表参考下限
     double lvAxial_mm = 0.0;           // AK23 低压轴向（箔宽+端绝缘）
     // 平均匝长与导线长
     double hvMeanTurn_m = 0.0;         // X17 高压平均匝长
@@ -113,7 +119,8 @@ struct WindingResult {
 // ---- 阻抗电压 ----
 struct ImpedanceResult {
     double lambda_mm = 0.0;            // M39 漏磁通道总厚 λ
-    double hx_mm = 0.0;                // Q30/Q33 绕组电抗高
+    double hx_mm = 0.0;                // Q33 绕组电抗高
+    double axialDifference_mm = 0.0;   // Q30 = ABS(AC30-AJ14)+AA29
     double a1 = 0.0;                   // R41 高压漏磁折算厚
     double a2 = 0.0;                   // R40 低压漏磁折算厚
     double leakArea_mm2 = 0.0;         // O42 Sx 漏磁面积
@@ -136,6 +143,7 @@ struct ThermalResult {
     double hvHeatLoad = 0.0;           // AB48 高压热负荷
     double lvHeatLoad = 0.0;           // AK48 低压热负荷
     double hvSurface_m2 = 0.0;         // AC47 高压散热面积
+    double hvEffectiveHeight_mm = 0.0; // AC47高度因子，AC9=2时为AC30-AA29
     double lvSurface_m2 = 0.0;         // AK47 低压散热面积
     double hvLayerGap_mm = 0.0;        // ROUND(W25/(W12-1)+X14-X13,2)
     double mainDuctSecond_mm = 0.0;    // AG43 主空道第二油道

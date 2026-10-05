@@ -114,6 +114,15 @@ QVector<QPair<QString, QVector<QStringList>>> EmResultPanel::buildGroups(const C
             << row(QStringLiteral("高压辐向厚"), w.hvRadial_mm, 1, QStringLiteral("mm"))
             << row(QStringLiteral("主空道"), w.mainDuct_mm, 1, QStringLiteral("mm"))
             << row(QStringLiteral("高压轴向高"), w.hvAxial_mm, 1, QStringLiteral("mm"))
+            << QStringList{QStringLiteral("实际高压线圈型式 AC9"), QString::number(w.hvCoilFormIdx)
+                           + (w.hvCoilFormIdx == 1 ? QStringLiteral("（圆筒式）")
+                              : QStringLiteral("（暂未开放）")), QString()}
+            << row(QStringLiteral("高压段间距 AA29"), w.hvSegmentGap_mm, 2, QStringLiteral("mm"))
+            << row(QStringLiteral("高压总轴向高 AA30（含段间距）"), w.hvTotalAxial_mm, 2, QStringLiteral("mm"))
+            << row(QStringLiteral("高压内孔轴向高 AC30"), w.hvInnerAxial_mm, 2, QStringLiteral("mm"))
+            << row(QStringLiteral("高压端绝缘 AA31"), w.hvEndInsul_mm, 2, QStringLiteral("mm"))
+            << row(QStringLiteral("高压端绝缘参考下限 AC32"), w.hvEndInsulReference_mm, 0, QStringLiteral("mm"))
+            << QStringList{QStringLiteral("端绝缘参考说明"), QStringLiteral("原计算单参考下限，仅供人工核对；未参与合格判定或寻优筛选"), QString()}
             << row(QStringLiteral("低压轴向高"), w.lvAxial_mm, 1, QStringLiteral("mm"))
             << row(QStringLiteral("高压平均匝长"), w.hvMeanTurn_m, 4, QStringLiteral("m"))
             << row(QStringLiteral("低压平均匝长"), w.lvMeanTurn_m, 4, QStringLiteral("m"))
@@ -149,6 +158,7 @@ QVector<QPair<QString, QVector<QStringList>>> EmResultPanel::buildGroups(const C
     const auto &im = r.impedance;
     QVector<QStringList> impedance;
     impedance << row(QStringLiteral("漏磁通道总厚 λ"), im.lambda_mm, 2, QStringLiteral("mm"))
+              << row(QStringLiteral("轴向高度差 Q30（含段间距）"), im.axialDifference_mm, 2, QStringLiteral("mm"))
               << row(QStringLiteral("绕组电抗高"), im.hx_mm, 1, QStringLiteral("mm"))
               << row(QStringLiteral("低压漏磁折算厚"), im.a2, 2, QStringLiteral("mm"))
               << row(QStringLiteral("高压漏磁折算厚"), im.a1, 2, QStringLiteral("mm"))
@@ -163,6 +173,7 @@ QVector<QPair<QString, QVector<QStringList>>> EmResultPanel::buildGroups(const C
     const auto &t = r.thermal;
     QVector<QStringList> thermal;
     thermal << row(QStringLiteral("箱壁散热面积"), t.tankSurface_m2, 2, QStringLiteral("m²"))
+            << row(QStringLiteral("高压有效散热高度（AC47高度因子）"), t.hvEffectiveHeight_mm, 2, QStringLiteral("mm"))
             << row(QStringLiteral("波纹散热面积"), t.corrSurface_m2, 2, QStringLiteral("m²"))
             << row(QStringLiteral("箱顶散热面积"), t.topSurface_m2, 2, QStringLiteral("m²"))
             << row(QStringLiteral("总散热面积"), t.totalSurface_m2, 2, QStringLiteral("m²"))
