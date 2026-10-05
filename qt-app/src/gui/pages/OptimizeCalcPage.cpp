@@ -337,7 +337,9 @@ void OptimizeCalcPage::onVerifySheetClicked()
     CalcResult result;
     if (!engine.calcElectromagnetic(input, result) || !result.valid) {
         QMessageBox::warning(this, QStringLiteral("校验失败"),
-            QStringLiteral("电磁计算未成功，请检查参数设置是否合理"));
+            result.error.isEmpty()
+                ? QStringLiteral("电磁计算未成功，请检查参数设置是否合理")
+                : QStringLiteral("电磁计算失败：%1").arg(result.error));
         return;
     }
 
