@@ -745,10 +745,12 @@ void calcCoreWeights(EmCtx &c)
     c.out->core.coreLossPerKg_W = wCore;
     c.out->core.yokeLossPerKg_W = wYoke;
 
-    // 空载损耗（T26）：工艺系数 × 单位铁损 × 分重
-    c.out->core.noLoadLoss_W = excelRound(
-        in.coreLossCraftCoef * wCore * sumLegs
-            + in.coreLossCraftCoef * wYoke * sumY, 0);
+    // Sheet1 T26：分别乘心柱T25/铁轭W25，合计后统一取整。
+    c.out->core.coreLossCraftCoef = in.coreLossCraftCoef;
+    c.out->core.yokeLossCraftCoef = in.yokeLossCraftCoef;
+    c.out->core.coreLegsLoss_W = in.coreLossCraftCoef * wCore * sumLegs;
+    c.out->core.yokesLoss_W = in.yokeLossCraftCoef * wYoke * sumY;
+    c.out->core.noLoadLoss_W = excelRound(c.out->core.coreLegsLoss_W + c.out->core.yokesLoss_W, 0);
 
     // 磁化容量插值（J16，用设计磁密 F16）与空载电流（R16）
     if (!db.steelMagnetizationPerKgInterp(in.steelGrade, bDesign, vaKg)) {
@@ -1222,6 +1224,11 @@ bool ElectromagneticEngine::calcElectromagnetic(const CalcInput &input, CalcResu
 {
     result = CalcResult();
     result.testVoltage = testVoltageHints(input.hvRated_kV, input.lvRated_kV);
+    if (!std::isfinite(input.coreLossCraftCoef) || input.coreLossCraftCoef <= 0.0
+        || !std::isfinite(input.yokeLossCraftCoef) || input.yokeLossCraftCoef <= 0.0) {
+        result.error = QStringLiteral("心柱和铁轭铁损工艺系数必须是大于零的有效数值。");
+        return false;
+    }
     const QString wireError = input.highVoltageWireError();
     if (!wireError.isEmpty()) {
         result.error = wireError;
@@ -1340,6 +1347,10 @@ PrintOutputData ElectromagneticEngine::buildPrintOutput(const CalcInput &input,
            QStringLiteral("cm²"),
            QStringLiteral("磁密"), QString::number(result.core.fluxDensity_core_T, 'f', 3),
            QStringLiteral("T"));
+    addRow(QStringLiteral("心柱工艺系数"), QString::number(result.core.coreLossCraftCoef, 'g', 15), QString(),
+           QStringLiteral("铁轭工艺系数"), QString::number(result.core.yokeLossCraftCoef, 'g', 15), QString());
+    addRow(QStringLiteral("心柱铁损分项"), QString::number(result.core.coreLegsLoss_W, 'f', 3), QStringLiteral("W"),
+           QStringLiteral("铁轭铁损分项"), QString::number(result.core.yokesLoss_W, 'f', 3), QStringLiteral("W"));
     addRow(QStringLiteral("硅钢片重"), QString::number(result.core.coreWeight_kg, 'f', 0),
            QStringLiteral("kg"),
            QStringLiteral("空载损耗"), QString::number(result.core.noLoadLoss_W, 'f', 0),

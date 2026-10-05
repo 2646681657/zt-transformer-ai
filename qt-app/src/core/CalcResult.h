@@ -45,6 +45,10 @@ struct CoreResult {
     // 空载性能
     double coreLossPerKg_W = 0.0;      // I26 心柱单位铁损（插值）
     double yokeLossPerKg_W = 0.0;      // O26 铁轭单位铁损（插值）
+    double coreLossCraftCoef = 0.0;    // 实际采用的心柱系数
+    double yokeLossCraftCoef = 0.0;    // 实际采用的铁轭系数
+    double coreLegsLoss_W = 0.0;       // 心柱铁损分项（未取整）
+    double yokesLoss_W = 0.0;          // 铁轭铁损分项（未取整）
     double noLoadLoss_W = 0.0;         // O16/T26 空载损耗
     double magCapacity_vaPerKg = 0.0;  // J16 磁化容量（插值）
     double noLoadCurrent_pct = 0.0;    // R16 空载电流 %
