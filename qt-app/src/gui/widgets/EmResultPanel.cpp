@@ -77,7 +77,10 @@ QVector<QPair<QString, QVector<QStringList>>> EmResultPanel::buildGroups(const C
     // ---- 绕组 ----
     const auto &w = r.winding;
     QVector<QStringList> winding;
-    winding << QStringList{QStringLiteral("高压试验电压（参考）"), r.testVoltage.highVoltage, QStringLiteral("kV")}
+    winding << QStringList{QStringLiteral("引线损耗记录值（未参与计算）"),
+                           QString::number(w.recordedLeadLoss_W, 'g', 15), QStringLiteral("W")}
+            << QStringList{QStringLiteral("引线损耗作用"), QStringLiteral("未计入负载损耗、温升或寻优损耗判定"), QString()}
+            << QStringList{QStringLiteral("高压试验电压（参考）"), r.testVoltage.highVoltage, QStringLiteral("kV")}
             << QStringList{QStringLiteral("低压试验电压（参考）"), r.testVoltage.lowVoltage, QStringLiteral("kV")}
             << QStringList{QStringLiteral("试验电压依据"), TestVoltageHints::sourceNote(), QString()}
             << QStringList{QStringLiteral("高压参考说明"), r.testVoltage.highReason, QString()}

@@ -114,7 +114,7 @@ struct CalcInput {
 
     // ---- 损耗系数 ----
     double strayLossFactor = 0.11;    // J10 杂散损耗系数
-    double leadLoss_W = 0.0;          // J10 引线损耗
+    double leadLoss_W = 0.0;          // 引线损耗记录值，未参与计算；原表J10是杂散系数，非此字段
     double lvExtraLoss_W = 0.0;       // AS45 低压附加损耗
 
     // ---- 油箱（波纹油箱）----

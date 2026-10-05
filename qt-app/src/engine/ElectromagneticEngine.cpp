@@ -1267,6 +1267,7 @@ bool ElectromagneticEngine::previewCoreGeometry(const CalcInput &input, CoreResu
 bool ElectromagneticEngine::calcElectromagnetic(const CalcInput &input, CalcResult &result)
 {
     result = CalcResult();
+    result.winding.recordedLeadLoss_W = input.leadLoss_W; // 只记录快照，不参与数值计算。
     result.testVoltage = testVoltageHints(input.hvRated_kV, input.lvRated_kV);
     if (!std::isfinite(input.coreLossCraftCoef) || input.coreLossCraftCoef <= 0.0
         || !std::isfinite(input.yokeLossCraftCoef) || input.yokeLossCraftCoef <= 0.0) {
@@ -1388,6 +1389,10 @@ PrintOutputData ElectromagneticEngine::buildPrintOutput(const CalcInput &input,
            QStringLiteral("低压提示来源"), QStringLiteral("计算单C8"), QString());
     addRow(QStringLiteral("试验电压提示用途"), QStringLiteral("仅参考"), QString(),
            QStringLiteral("绝缘合格判定"), QStringLiteral("不作判定"), QString());
+    addRow(QStringLiteral("引线损耗记录值"), QString::number(result.winding.recordedLeadLoss_W, 'g', 15), QStringLiteral("W"),
+           QStringLiteral("引线损耗作用"), QStringLiteral("未参与计算"), QString());
+    addRow(QStringLiteral("负载损耗中引线项"), QStringLiteral("未计入"), QString(),
+           QStringLiteral("温升中引线项"), QStringLiteral("未计入"), QString());
     const auto &oil = result.oilExpansion;
     const auto oilValue = [&oil](double value, int prec) {
         return oil.available ? QString::number(value, 'f', prec) : QStringLiteral("需核对");

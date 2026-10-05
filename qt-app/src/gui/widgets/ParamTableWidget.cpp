@@ -1135,8 +1135,13 @@ void ParamTableWidget::addProModeSections(int &row, const CalcInput &input)
     // 九 损耗系数
     addSectionRow(row++, QStringLiteral("九 损耗系数（高级）"), {}, {}, true);
     addInputRow(row++, "杂散损耗系数", QString::number(input.strayLossFactor),
-                "引线损耗(W)", QString::number(input.leadLoss_W),
+                "引线损耗(W，未参与)", QString::number(input.leadLoss_W),
                 "strayLossFactor", "leadLoss");
+    const QString leadLossNote = QStringLiteral("引线损耗仅编辑、保存与回显，未计入负载损耗、温升或寻优损耗判定；工艺定义确认后再接入算法。原表J10为杂散系数，不是此引线损耗值。");
+    item(row - 1, 3)->setToolTip(leadLossNote);
+    item(row - 1, 4)->setToolTip(leadLossNote);
+    item(row - 1, 5)->setText(QStringLiteral("引线损耗仅记录，未参与计算"));
+    item(row - 1, 5)->setToolTip(leadLossNote);
     addInputRow(row++, "低压附加损耗(W)", QString::number(input.lvExtraLoss_W),
                 "", "",
                 "lvExtraLoss", {});
