@@ -22,6 +22,7 @@ EmResultPanel::EmResultPanel(QWidget *parent)
     m_impedanceTab = createPage(QStringLiteral("阻抗电压"));
     m_thermalTab = createPage(QStringLiteral("温升"));
     m_massTab = createPage(QStringLiteral("重量与成本"));
+    m_oilExpansionTab = createPage(QStringLiteral("油膨缩校核"));
 }
 
 QTableWidget *EmResultPanel::createPage(const QString &title)
@@ -180,6 +181,26 @@ QVector<QPair<QString, QVector<QStringList>>> EmResultPanel::buildGroups(const C
          << row(QStringLiteral("材料成本合计"), c.materialCost, 1, QStringLiteral("元"));
     groups.append({ QStringLiteral("重量与成本"), mass });
 
+    const auto &o = r.oilExpansion;
+    QVector<QStringList> oil;
+    oil << QStringList{QStringLiteral("油膨缩校核（计算单参考）"), o.status(), QString()}
+        << QStringList{QStringLiteral("独立校核说明"),
+            o.available ? QStringLiteral("N54严格大于N53；与温升分开，不参与寻优筛选") : o.error, QString()}
+        << row(QStringLiteral("原表固定参考温差"), o.referenceDeltaT_K, 0, QStringLiteral("K"))
+        << row(QStringLiteral("原表膨胀系数"), o.expansionCoefficient, 4, QString());
+    if (o.available) {
+        oil << row(QStringLiteral("采用总油重 C24"), o.oilWeight_kg, 2, QStringLiteral("kg"))
+            << row(QStringLiteral("膨胀需求 N53"), o.demand_kg, 2, QStringLiteral("kg"))
+            << row(QStringLiteral("膨缩能力 N54"), o.capacity_kg, 2, QStringLiteral("kg"))
+            << row(QStringLiteral("膨缩能力余量"), o.margin_kg, 2, QStringLiteral("kg"))
+            << row(QStringLiteral("波纹深 S45"), o.waveDepth_mm, 0, QStringLiteral("mm"))
+            << row(QStringLiteral("波纹高 S46"), o.waveHeight_mm, 0, QStringLiteral("mm"))
+            << row(QStringLiteral("波纹长边数量 S48"), o.longSideCount, 0, QString())
+            << row(QStringLiteral("波纹短边数量 S49"), o.shortSideCount, 0, QString())
+            << row(QStringLiteral("波纹系数 Kp S51"), o.kp, 3, QString());
+    }
+    groups.append({ QStringLiteral("油膨缩校核"), oil });
+
     return groups;
 }
 
@@ -203,6 +224,7 @@ void EmResultPanel::loadResult(const CalcResult &result)
     fillPage(m_impedanceTab, groups[2].second);
     fillPage(m_thermalTab, groups[3].second);
     fillPage(m_massTab, groups[4].second);
+    fillPage(m_oilExpansionTab, groups[5].second);
 }
 
 void EmResultPanel::clearResult()

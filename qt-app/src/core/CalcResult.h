@@ -158,7 +158,30 @@ struct CostResult {
     double materialCost = 0.0;         // 材料成本合计（不含钢材等未翻译项）
 };
 
+// 原计算单N53/N54/P54的独立参考，不参与温升合格或寻优筛选。
+struct OilExpansionResult {
+    bool available = false;
+    bool passed = false;
+    double oilWeight_kg = 0.0;
+    double demand_kg = 0.0;
+    double capacity_kg = 0.0;
+    double margin_kg = 0.0;
+    double waveDepth_mm = 0.0;
+    double waveHeight_mm = 0.0;
+    double longSideCount = 0.0;
+    double shortSideCount = 0.0;
+    double kp = 0.0;
+    double expansionCoefficient = 0.0007;
+    double referenceDeltaT_K = 50.0;
+    QString error = QStringLiteral("尚未生成膨缩校核");
+    QString status() const {
+        return !available ? QStringLiteral("需人工核对")
+            : passed ? QStringLiteral("合格（参考）") : QStringLiteral("不合格（参考）");
+    }
+};
+
 struct CalcResult {
+    OilExpansionResult oilExpansion;
     TestVoltageHints testVoltage;
     CoreResult core;
     WindingResult winding;

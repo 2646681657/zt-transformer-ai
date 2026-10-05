@@ -351,6 +351,18 @@ bool DesignDatabase::coreYokeBase(double ref, QVector<double> &yokeBase) const
     return true;
 }
 
+bool DesignDatabase::corrugatedDepthRange(double &minMm, double &maxMm) const
+{
+    if (m_corrCoefs.isEmpty()) return false;
+    for (int i = 0; i < m_corrCoefs.size(); ++i) {
+        if (!std::isfinite(m_corrCoefs[i][0]) || m_corrCoefs[i][0] <= 0.0
+            || (i > 0 && m_corrCoefs[i][0] <= m_corrCoefs[i - 1][0])) return false;
+    }
+    minMm = m_corrCoefs.first()[0];
+    maxMm = m_corrCoefs.last()[0];
+    return true;
+}
+
 bool DesignDatabase::corrugatedCoefs(double depthMm, double &ks, double &kp) const
 {
     QVector<double> keys;
