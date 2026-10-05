@@ -918,6 +918,17 @@ void calcImpedance(EmCtx &c)
 void calcThermal(EmCtx &c)
 {
     const CalcInput &in = *c.in;
+    // 先校验分母与幂函数输入；不钳位、不替换原计算单公式。
+    const auto requirePositiveArea = [&c](double value, const QString &name) {
+        if (std::isfinite(value) && value > 0.0) return true;
+        c.fail(name + QStringLiteral("必须为大于0的有限数值，无法计算温升；请检查油道、绕组尺寸或油箱散热参数"));
+        return false;
+    };
+    const auto requireNonnegative = [&c](double value, const QString &name) {
+        if (std::isfinite(value) && value >= 0.0) return true;
+        c.fail(name + QStringLiteral("必须为非负有限数值，请检查损耗、散热面积及绕组参数"));
+        return false;
+    };
     const double H1 = in.capacity_kVA;
     const double H26 = c.tankLength_mm;
     const double F25 = c.tankWidth_mm;
@@ -946,10 +957,12 @@ void calcThermal(EmCtx &c)
         (((H26 + F25) * 2.0 - 2.0 * 45.0 * (S49 > 0 ? S48 + S49 - 2.0 : S48 - 1.0)) * J27
          + 2.0 * 45.0 * (S49 > 0 ? S48 + S49 - 2.0 : S48 - 1.0) * (J27 - S46)) / 1e6, 2);
     const double o48 = o44 + o45 + o46 + o47;
+    if (!requirePositiveArea(o48, QStringLiteral("油箱总散热面积 O48"))) return;
 
     // 油面温升（I49/N49）与油顶层（N51）
     const double i49 = excelRound(
         (c.out->winding.loadLoss_W + c.out->core.noLoadLoss_W) / o48, 0);
+    if (!requireNonnegative(i49, QStringLiteral("油箱单位面积热负荷 I49"))) return;
     const double n49 = excelRound(0.262 * std::pow(i49, 0.8), 1);
     const double n51 = excelRound(1.2 * n49 + 6.0, 1);
 
@@ -996,6 +1009,7 @@ void calcThermal(EmCtx &c)
     const double ac47 = excelRound(
         6.0 * c.ac30_mm * (perimHvInner * (in.hvRated_kV > 12.0 ? 0.85 : 0.0)
                           + ductTermHv * 1.7 + perimHv) / 1e6, 2);
+    if (!requirePositiveArea(ac47, QStringLiteral("高压绕组散热面积 AC47"))) return;
 
     const double ductTermLv = [&]() {
         double s = 0.0;
@@ -1014,19 +1028,27 @@ void calcThermal(EmCtx &c)
             * (ductTermLv * 1.7
                + (c.mainDuct_mm < 4.0 ? 0.0
                                       : (c.ak36Wide_mm + c.ak39Long_mm) * 0.85)) / 1e6, 2);
+    if (!requirePositiveArea(ak47, QStringLiteral("低压绕组散热面积 AK47"))) return;
 
     // 热负荷与绕组温升（AB48/AC49/AC52 → Y53/Y54；AK48/AK49/AK50 → AK51/AK52）
     const double ab48 = excelRound(
         (c.out->winding.hvCopperLoss_W + c.out->winding.hvExtraLoss_W) / ac47, 1);
     const double ak48 = excelRound(
         (c.out->winding.lvCopperLoss_W + in.lvExtraLoss_W) / ak47, 2);
+    if (!requireNonnegative(ab48, QStringLiteral("高压绕组热负荷 AB48"))
+            || !requireNonnegative(ak48, QStringLiteral("低压绕组热负荷 AK48"))) return;
     const double ac49 = excelRound(0.065 * std::pow(ab48, 0.8), 1);
     const double ak49 = excelRound(0.065 * std::pow(ak48, 0.8), 1);
 
     // 层间油升修正（AC52/AK50）：gap = 层间绝缘均摊 + 漆膜厚
+    if (in.hvTurnsPerLayer < 2) {
+        c.fail(QStringLiteral("高压每层匝数 W12 必须至少为2，层间间隙公式 W12-1 不能为零或负数"));
+        return;
+    }
     const double layerGap = excelRound(
         c.hvLayerInsulTotal_mm / (in.hvTurnsPerLayer - 1)
             + c.hvInsWidth_mm - in.hvBareWidth_mm, 2);
+    if (!requireNonnegative(layerGap, QStringLiteral("高压层间间隙"))) return;
     const int hvDuctCountY = (in.hvDuctHeightSide[0] > 0 ? 2 : 0)
                              + (in.hvDuctHeightSide[1] > 0 ? 2 : 0)
                              + (in.hvDuctHeightSide[2] > 0 ? 2 : 0);
@@ -1053,6 +1075,28 @@ void calcThermal(EmCtx &c)
     const double y54 = y53 + n49;
     const double ak51 = ak49 + std::max(ak50, 0.0);
     const double ak52 = ak51 + n49;
+
+    // AC51/AC52/AK50 是有符号修正项，不能按负值直接剔除。
+    for (const auto &correction : {
+             qMakePair(QStringLiteral("高压大间隙修正 AC51"), ac51),
+             qMakePair(QStringLiteral("高压层间修正 AC52"), ac52),
+             qMakePair(QStringLiteral("低压层间修正 AK50"), ak50)}) {
+        if (!std::isfinite(correction.second)) {
+            c.fail(correction.first + QStringLiteral("计算结果不是有限数值，请检查绕组参数"));
+            return;
+        }
+    }
+    for (const auto &rise : {
+             qMakePair(QStringLiteral("油面温升 N49"), n49),
+             qMakePair(QStringLiteral("油顶层温升 N51"), n51),
+             qMakePair(QStringLiteral("高压表面温升 AC49"), ac49),
+             qMakePair(QStringLiteral("低压表面温升 AK49"), ak49),
+             qMakePair(QStringLiteral("高压对油温升 Y53"), y53),
+             qMakePair(QStringLiteral("低压对油温升 AK51"), ak51),
+             qMakePair(QStringLiteral("高压绕组温升 Y54"), y54),
+             qMakePair(QStringLiteral("低压绕组温升 AK52"), ak52)}) {
+        if (!requireNonnegative(rise.second, rise.first)) return;
+    }
 
     c.out->thermal.tankSurface_m2 = o44;
     c.out->thermal.corrSurface_m2 = o45;
@@ -1330,6 +1374,10 @@ bool ElectromagneticEngine::calcElectromagnetic(const CalcInput &input, CalcResu
     calcWindingLosses(ctx);
     calcImpedance(ctx);
     calcThermal(ctx);
+    if (ctx.failed) {
+        result.error = ctx.error;
+        return false;
+    }
     calcMassCost(ctx);
     calcOilExpansionReference(ctx); // 仅填独立参考，不调用fail、不影响有效候选。
 
