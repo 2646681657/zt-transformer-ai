@@ -7,6 +7,7 @@
 
 #include "DesignDatabase.h"
 #include "HvCoilFormNotes.h"
+#include "HvEndInsulationNotes.h"
 
 // ============================================================================
 // 工具函数：Excel 语义复现
@@ -1490,6 +1491,20 @@ PrintOutputData ElectromagneticEngine::buildPrintOutput(const CalcInput &input,
            QStringLiteral("低压提示来源"), QStringLiteral("计算单C8"), QString());
     addRow(QStringLiteral("试验电压提示用途"), QStringLiteral("仅参考"), QString(),
            QStringLiteral("绝缘合格判定"), QStringLiteral("不作判定"), QString());
+    const auto &winding = result.winding;
+    const bool endInsulAvailable = HvEndInsulationNotes::available(winding);
+    addRow(QStringLiteral("高压端绝缘 AA31"),
+           endInsulAvailable ? QString::number(winding.hvEndInsul_mm, 'f', 2) : QStringLiteral("需核对"), QStringLiteral("mm"),
+           QStringLiteral("参考下限 AC32"),
+           endInsulAvailable ? QString::number(winding.hvEndInsulReference_mm, 'f', 0) : QStringLiteral("需核对"), QStringLiteral("mm"));
+    addRow(QStringLiteral("端绝缘参考差额"), HvEndInsulationNotes::marginText(winding), QStringLiteral("mm"),
+           QStringLiteral("端绝缘参考状态"), HvEndInsulationNotes::status(winding), QString());
+    addRow(QStringLiteral("差额计算口径"), QStringLiteral("实际-下限"), QString(),
+           QStringLiteral("低于参考值时"), QStringLiteral("需人工核对"), QString());
+    addRow(QStringLiteral("端绝缘参考用途"), QStringLiteral("人工核对"), QString(),
+           QStringLiteral("端绝缘寻优筛选"), QStringLiteral("不参与"), QString());
+    addRow(QStringLiteral("端绝缘合格判定"), QStringLiteral("不作判定"), QString(),
+           QStringLiteral("差额符号说明"), QStringLiteral("负数为不足"), QString());
     addRow(QStringLiteral("引线损耗记录值"), QString::number(result.winding.recordedLeadLoss_W, 'g', 15), QStringLiteral("W"),
            QStringLiteral("引线损耗作用"), QStringLiteral("未参与计算"), QString());
     addRow(QStringLiteral("负载损耗中引线项"), QStringLiteral("未计入"), QString(),
