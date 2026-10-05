@@ -328,7 +328,7 @@ bool ParamTableWidget::collectForCalculation(TransformerParams &params, CalcInpu
     if (collectedInput.lvTurns <= 0 || collectedInput.hvTurnsPerLayer < 2 ||
         collectedInput.hvParallelCount <= 0 || collectedInput.hvStackCount <= 0 ||
         collectedInput.seamCount <= 0) {
-        error = QStringLiteral("低压匝数、并绕/叠绕根数、接缝数必须大于零，高压每层匝数必须至少为2。");
+        error = QStringLiteral("低压匝数、并绕/叠绕根数、接缝数必须大于零，高压总层数 W12 必须至少为2。");
         return false;
     }
     const QString scopeError = calculationScopeError(m_config, collectedParams, collectedInput);
@@ -943,9 +943,10 @@ void ParamTableWidget::loadParamsForConfig(const TransformerParams &params, cons
     connect(m_wireInsulationCombo, &QComboBox::currentIndexChanged,
             this, [this](int) { updateWireInsulation(); });
     updateWireInsulation();
-    addInputRow(row++, "高压每层匝数", QString::number(input.hvTurnsPerLayer),
+    addInputRow(row++, "高压总层数 W12", QString::number(input.hvTurnsPerLayer),
                 "层间绝缘厚(mm)", QString::number(input.hvLayerInsul_mm),
                 "hvTurnsPerLayer", "hvLayerInsul");
+    item(row - 1, 5)->setText(QStringLiteral("W12为总层数；每层匝数Y9由最高分接匝数/W12取整后加1计算，不在此手填"));
     addInputRow(row++, "高压并绕根数", QString::number(input.hvParallelCount),
                 "高压叠绕根数", QString::number(input.hvStackCount),
                 "hvParallelCount", "hvStackCount");

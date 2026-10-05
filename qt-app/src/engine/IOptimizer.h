@@ -23,7 +23,7 @@ struct OptimizationSettings {
     double straightStep_mm = 5.0; // 直线段长步进 mm
     int straightRange = 1;        // 直线段 ±1 步（3 档）
     int lvTurnsRange = 1;         // 低压匝数 ±1（3 档）
-    int hvTplRange = 1;           // 高压每层匝数 ±1（3 档）
+    int hvTplRange = 1;           // 高压总层数 W12 ±1（3 档），保留旧字段名
 };
 
 // 寻优候选方案：完整输入/输出 + 方案表行数据

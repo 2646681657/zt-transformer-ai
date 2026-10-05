@@ -72,7 +72,7 @@ struct CalcInput {
             return QStringLiteral("高压导线绝缘增厚必须是大于等于零的有效数值");
         return QString();
     }
-    int hvTurnsPerLayer = 15;         // W12 每层匝数
+    int hvTurnsPerLayer = 15;         // W12 高压总层数；保留旧字段名以兼容方案文件
     double hvLayerInsul_mm = 0.0967;  // X35 层间绝缘厚
     double hvWireInsulAdd_mm = 0.15;  // X14/Z14 的总尺寸增厚（不是单边厚度）
     QString hvWireInsulation = QStringLiteral("QZB-2/130"); // U14；Custom保留手填值

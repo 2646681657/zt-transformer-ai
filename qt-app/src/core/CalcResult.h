@@ -63,7 +63,7 @@ struct WindingResult {
     int hvTurnsMin = 0;                // AA8 最低分接匝数
     int lvTurns = 0;                   // AH8 低压匝数
     // 层分布
-    int layerCount = 0;                // Y9 每段层数
+    int layerCount = 0;                // Y9 高压每层匝数；保留旧字段名，非W12总层数
     int ductLayerIdx[6] = {0, 0, 0, 0, 0, 0};  // Z30..Z34 前油道层序（0=无）
     // 导线
     QString hvWireInsulation;

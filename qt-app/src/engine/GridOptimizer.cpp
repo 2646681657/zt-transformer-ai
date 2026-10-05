@@ -10,7 +10,7 @@
 namespace {
 
 // 网格步进与邻域的默认值（OptimizationSettings 缺省即此，保持向后一致）：
-// 直径 ±10mm(步进5) × 直线段 ±5mm(步进5) × 低压匝数 ±1 × 高压每层匝数 ±1 = 135 组合
+// 直径 ±10mm(步进5) × 直线段 ±5mm(步进5) × 低压匝数 ±1 × 高压总层数 W12 ±1 = 135 组合
 constexpr double kDiaStep = 5.0;
 constexpr int kDiaRange = 2;
 constexpr double kStraightStep = 5.0;
