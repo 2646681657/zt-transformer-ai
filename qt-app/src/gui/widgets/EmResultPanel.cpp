@@ -124,6 +124,11 @@ QVector<QPair<QString, QVector<QStringList>>> EmResultPanel::buildGroups(const C
             << row(QStringLiteral("低压电阻损耗"), w.lvCopperLoss_W, 1, QStringLiteral("W"))
             << row(QStringLiteral("高压附加损耗"), w.hvExtraLoss_W, 1, QStringLiteral("W"))
             << row(QStringLiteral("高压附加损耗率 AA45"), w.hvExtraLossPct, 2, QStringLiteral("%"))
+            << QStringList{QStringLiteral("低压附加损耗（采用值）"), QString::number(w.lvExtraLoss_W, 'g', 15), QStringLiteral("W")}
+            << QStringList{QStringLiteral("杂散损耗系数 J10"), QString::number(w.strayLossFactor, 'g', 15), QString()}
+            << QStringList{QStringLiteral("杂散修正前损耗合计"), QString::number(w.loadLossBeforeStray_W, 'g', 15), QStringLiteral("W")}
+            << QStringList{QStringLiteral("低压附加项作用"), QStringLiteral("当前扁线范围内计入负载损耗及低压热负荷；原表AJ45/AS45口径仍需核对"), QString()}
+            << QStringList{QStringLiteral("负载损耗合成规则"), QStringLiteral("杂散修正前合计×(1+杂散系数)，最后取整到整瓦；引线损耗未计入"), QString()}
             << row(QStringLiteral("负载损耗"), w.loadLoss_W, 1, QStringLiteral("W"))
             << row(QStringLiteral("高压裸导线重 W21"), w.hvBareWireWeight_kg, 0, QStringLiteral("kg"))
             << row(QStringLiteral("高压绝缘导线重 Z21"), w.hvWireWeight_kg, 0, QStringLiteral("kg"))

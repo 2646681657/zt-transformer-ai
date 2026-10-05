@@ -96,6 +96,9 @@ struct WindingResult {
     double lvCopperLoss_W = 0.0;       // AH20 低压电阻损耗
     double hvExtraLossPct = 0.0;       // AA45 高压附加损耗 %
     double hvExtraLoss_W = 0.0;        // AC45 高压附加损耗 W
+    double lvExtraLoss_W = 0.0;        // 实际低压附加损耗输入快照，参与负载损耗与低压热负荷
+    double strayLossFactor = 0.0;      // J10 杂散系数快照，如0.11，不是百分数11
+    double loadLossBeforeStray_W = 0.0; // 杂散修正前合计，保留实际导线分支，未另行取整
     double loadLoss_W = 0.0;           // L10 负载损耗
     // 导线重
     double hvBareWireWeight_kg = 0.0;  // W21 高压裸导线重（三相合计）

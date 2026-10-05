@@ -1157,6 +1157,11 @@ void ParamTableWidget::addProModeSections(int &row, const CalcInput &input)
     addInputRow(row++, "低压附加损耗(W)", QString::number(input.lvExtraLoss_W),
                 "", "",
                 "lvExtraLoss", {});
+    const QString lvExtraLossNote = QStringLiteral("当前扁线计算范围内，此值计入负载损耗的附加损耗合计，同时计入低压热负荷AK48并影响温升；不同于仅记录的引线损耗。原计算单AJ45/AS45口径仍待确认，本批不改算法。");
+    item(row - 1, 1)->setToolTip(lvExtraLossNote);
+    item(row - 1, 2)->setToolTip(lvExtraLossNote);
+    item(row - 1, 5)->setText(QStringLiteral("参与负载损耗和低压温升；原表口径待核对"));
+    item(row - 1, 5)->setToolTip(lvExtraLossNote);
 
     // 十 油箱与结构
     addSectionRow(row++, QStringLiteral("十 油箱与结构（高级）"), {}, {}, true);
