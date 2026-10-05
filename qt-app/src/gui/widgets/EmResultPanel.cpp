@@ -1,6 +1,7 @@
 #include "EmResultPanel.h"
 #include "core/CostBasisNotes.h"
 #include "core/HvCoilFormNotes.h"
+#include "core/HvEndInsulationNotes.h"
 #include <QTableWidget>
 #include <QHeaderView>
 #include <QVector>
@@ -123,6 +124,9 @@ QVector<QPair<QString, QVector<QStringList>>> EmResultPanel::buildGroups(const C
             << row(QStringLiteral("高压内孔轴向高 AC30"), w.hvInnerAxial_mm, 2, QStringLiteral("mm"))
             << row(QStringLiteral("高压端绝缘 AA31"), w.hvEndInsul_mm, 2, QStringLiteral("mm"))
             << row(QStringLiteral("高压端绝缘参考下限 AC32"), w.hvEndInsulReference_mm, 0, QStringLiteral("mm"))
+            << QStringList{QStringLiteral("端绝缘参考差额（实际－下限）"), HvEndInsulationNotes::marginText(w), QStringLiteral("mm")}
+            << QStringList{QStringLiteral("端绝缘参考状态（非合格判定）"), HvEndInsulationNotes::status(w), QString()}
+            << QStringList{QStringLiteral("端绝缘核对提示"), HvEndInsulationNotes::note(w), QString()}
             << QStringList{QStringLiteral("端绝缘参考说明"), QStringLiteral("原计算单参考下限，仅供人工核对；未参与合格判定或寻优筛选"), QString()}
             << row(QStringLiteral("低压轴向高"), w.lvAxial_mm, 1, QStringLiteral("mm"))
             << row(QStringLiteral("高压平均匝长"), w.hvMeanTurn_m, 4, QStringLiteral("m"))
