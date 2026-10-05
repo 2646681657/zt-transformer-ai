@@ -374,6 +374,17 @@ void ParamTableWidget::updateSteelThickness()
         ? CalcInput::thicknessFromSteelGrade(selectedSteelGrade()) : 0.0;
     const QSignalBlocker blocker(this);
     thicknessItem->setText(value > 0.0 ? QString::number(value) : QString());
+    if (m_steelCurveRangeRow >= 0) {
+        double minT = 0.0, maxT = 0.0;
+        const bool available = DesignDatabase::instance().steelCurveRange(selectedSteelGrade(), minT, maxT);
+        item(m_steelCurveRangeRow, 2)->setText(available ? QString::number(minT, 'g', 12) : QStringLiteral("无有效数据"));
+        item(m_steelCurveRangeRow, 4)->setText(available ? QString::number(maxT, 'g', 12) : QStringLiteral("无有效数据"));
+        item(m_steelCurveRangeRow, 5)->setText(QStringLiteral("含端点；越界禁止计算"));
+        const QString note = QStringLiteral("内置牌号曲线的数据范围，不是材料保证值。按实际查表磁密检查心柱铁损、铁轭铁损及磁化容量；不外推、不取端点替代。");
+        item(m_steelCurveRangeRow, 2)->setToolTip(note);
+        item(m_steelCurveRangeRow, 4)->setToolTip(note);
+        item(m_steelCurveRangeRow, 5)->setToolTip(note);
+    }
     updateYokePiece1();
     updateLvTurnsRecommendation();
 }
@@ -652,6 +663,7 @@ void ParamTableWidget::loadParamsForConfig(const TransformerParams &params, cons
     m_tapMinusSpin = nullptr;
     m_tapStepSpin = nullptr;
     m_steelGradeCombo = nullptr;
+    m_steelCurveRangeRow = -1;
     m_hvMaterialCombo = nullptr;
     m_lvMaterialCombo = nullptr;
     m_wireInsulationCombo = nullptr;
@@ -852,6 +864,11 @@ void ParamTableWidget::loadParamsForConfig(const TransformerParams &params, cons
     setCellWidget(row - 1, 2, m_steelGradeCombo);
     connect(m_steelGradeCombo, &QComboBox::currentIndexChanged,
             this, [this](int) { updateSteelThickness(); });
+    m_steelCurveRangeRow = row;
+    addParamRow(row++, QStringLiteral("曲线磁密下限(T)"), QString(),
+                QStringLiteral("曲线磁密上限(T)"), QString());
+    for (int col : {2, 4})
+        item(m_steelCurveRangeRow, col)->setFlags(item(m_steelCurveRangeRow, col)->flags() & ~Qt::ItemIsEditable);
     updateSteelThickness();
     addInputRow(row++, "铁损工艺系数", QString::number(input.coreLossCraftCoef),
                 "接缝数", QString::number(input.seamCount),

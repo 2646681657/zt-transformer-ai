@@ -64,6 +64,7 @@ private:
     QSpinBox *m_tapMinusSpin = nullptr;
     QDoubleSpinBox *m_tapStepSpin = nullptr;
     QComboBox *m_steelGradeCombo = nullptr;
+    int m_steelCurveRangeRow = -1;
     QComboBox *m_hvMaterialCombo = nullptr;
     QComboBox *m_lvMaterialCombo = nullptr;
     QString m_modelSeries;

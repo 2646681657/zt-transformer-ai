@@ -5,6 +5,8 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <algorithm>
+#include <cmath>
+#include <limits>
 
 DesignDatabase &DesignDatabase::instance()
 {
@@ -213,8 +215,41 @@ bool DesignDatabase::steelIndexOfB(const QString &grade, double bT, int &index) 
     return true;
 }
 
+bool DesignDatabase::steelCurveRange(const QString &grade, double &minT, double &maxT) const
+{
+    const SteelCurve *curve = findSteel(grade);
+    if (!curve || curve->points.isEmpty()) return false;
+    const auto &pts = curve->points;
+    for (int i = 0; i < pts.size(); ++i) {
+        if (!std::isfinite(pts[i].b) || pts[i].b <= 0.0
+            || (i > 0 && pts[i].b <= pts[i - 1].b)) return false;
+    }
+    minT = pts.first().b;
+    maxT = pts.last().b;
+    return true;
+}
+
+QString DesignDatabase::steelCurveLookupError(const QString &grade, double bT) const
+{
+    double minT = 0.0, maxT = 0.0;
+    if (!steelCurveRange(grade, minT, maxT))
+        return QStringLiteral("牌号 %1 无有效硅钢曲线数据").arg(grade);
+    if (!std::isfinite(bT) || bT <= 0.0)
+        return QStringLiteral("牌号 %1 的查表磁密须为有效正数，允许范围 [%2, %3] T")
+            .arg(grade).arg(minT, 0, 'g', 12).arg(maxT, 0, 'g', 12);
+    // CEILING的整数×0.001可能比JSON端点高一个ULP，只消除机器舍入误差。
+    // 不按显示小数位放宽范围，也不允许真实的下一档0.001T越界。
+    const double roundoff = 8.0 * std::numeric_limits<double>::epsilon()
+        * std::max({1.0, std::abs(bT), std::abs(minT), std::abs(maxT)});
+    if (bT < minT - roundoff || bT > maxT + roundoff)
+        return QStringLiteral("牌号 %1 的查表磁密 %2 T 超出曲线范围 [%3, %4] T；不取端点替代")
+            .arg(grade).arg(bT, 0, 'g', 12).arg(minT, 0, 'g', 12).arg(maxT, 0, 'g', 12);
+    return QString();
+}
+
 bool DesignDatabase::steelLossPerKgInterp(const QString &grade, double bT, double &wPerKg) const
 {
+    if (!steelCurveLookupError(grade, bT).isEmpty()) return false;
     const SteelCurve *curve = findSteel(grade);
     if (!curve || curve->points.isEmpty()) {
         return false;
@@ -244,6 +279,7 @@ bool DesignDatabase::steelLossPerKgInterp(const QString &grade, double bT, doubl
 bool DesignDatabase::steelMagnetizationPerKgInterp(const QString &grade, double bT,
                                                    double &vaPerKg) const
 {
+    if (!steelCurveLookupError(grade, bT).isEmpty()) return false;
     const SteelCurve *curve = findSteel(grade);
     if (!curve || curve->points.isEmpty()) {
         return false;

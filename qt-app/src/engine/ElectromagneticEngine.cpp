@@ -725,6 +725,17 @@ void calcCoreWeights(EmCtx &c)
 
     // 单位铁损插值（I26/O26）
     DesignDatabase &db = DesignDatabase::instance();
+    // 按实际进入查表的取整后磁密检查；设计磁密与实际心柱磁密并非同一值。
+    const double bDesign = excelRound(et * 450.0 / c.coreArea_cm2 / 10.0, 3);
+    for (const auto &lookup : {qMakePair(QStringLiteral("心柱单位铁损 I26"), bCore),
+                               qMakePair(QStringLiteral("铁轭单位铁损 O26"), bYoke),
+                               qMakePair(QStringLiteral("磁化容量 J16"), bDesign)}) {
+        const QString error = db.steelCurveLookupError(in.steelGrade, lookup.second);
+        if (!error.isEmpty()) {
+            c.fail(lookup.first + QStringLiteral("：") + error);
+            return;
+        }
+    }
     double wCore = 0.0, wYoke = 0.0, vaKg = 0.0;
     if (!db.steelLossPerKgInterp(in.steelGrade, bCore, wCore)
         || !db.steelLossPerKgInterp(in.steelGrade, bYoke, wYoke)) {
@@ -740,10 +751,11 @@ void calcCoreWeights(EmCtx &c)
             + in.coreLossCraftCoef * wYoke * sumY, 0);
 
     // 磁化容量插值（J16，用设计磁密 F16）与空载电流（R16）
-    const double bDesign = excelRound(et * 450.0 / c.coreArea_cm2 / 10.0, 3);
-    if (db.steelMagnetizationPerKgInterp(in.steelGrade, bDesign, vaKg)) {
-        c.out->core.magCapacity_vaPerKg = excelRound(vaKg, 3);
+    if (!db.steelMagnetizationPerKgInterp(in.steelGrade, bDesign, vaKg)) {
+        c.fail(QStringLiteral("硅钢曲线中未找到牌号 %1 的有效磁化容量数据").arg(in.steelGrade));
+        return;
     }
+    c.out->core.magCapacity_vaPerKg = excelRound(vaKg, 3);
     c.out->core.noLoadCurrent_pct = excelRound(
         2.5 * totalCore * c.out->core.magCapacity_vaPerKg / in.capacity_kVA / 10.0, 2);
 }
