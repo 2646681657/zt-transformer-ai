@@ -82,6 +82,8 @@ public:
     // ---- 线规表 ----
     // 裸线宽 → 线规（阶梯查）
     bool wireByBareWidth(double bareWidthMm, WireSpec &spec) const;
+    // 圆线首版只接受表内精确规格；不向下取档、不插值、不越界。
+    bool roundWireSpec(double diameterMm, WireSpec &spec) const;
 
     // ---- 原始数据只读访问（数据查询页展示用）----
     const QVector<QPair<double, double>> &perfStandards() const { return m_perfStd; }

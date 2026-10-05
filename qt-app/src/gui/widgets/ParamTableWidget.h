@@ -49,6 +49,7 @@ private:
     QString selectedSteelGrade() const;
     void updateSteelThickness();
     void updateWireInsulation();
+    void updateWireForm();
     void updateLvTurnsRecommendation();
     void updateYokePiece1();
     void updateTestVoltageHints();
@@ -58,6 +59,13 @@ private:
     CalcInput m_recommendationBaseInput;
     int m_recommendationRow = -1;
     QComboBox *m_wireInsulationCombo = nullptr;
+    QComboBox *m_wireFormCombo = nullptr;
+    QComboBox *m_roundWireSpecCombo = nullptr;
+    bool m_roundWireActive = false;
+    double m_unlistedRoundDiameter_mm = 0.0; // 保留导入原值，不从格式化文本还原
+    QString m_flatWireWidth = QStringLiteral("2.05");
+    QString m_flatWireThick = QStringLiteral("5.52");
+    QString m_flatWireInsulation = QStringLiteral("QZB-2/130");
     double m_customWireInsulAdd_mm = 0.15;
     QLineEdit *m_productModelEdit = nullptr;
     QSpinBox *m_tapPlusSpin = nullptr;

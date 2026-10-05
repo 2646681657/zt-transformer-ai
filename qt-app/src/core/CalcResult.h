@@ -56,6 +56,9 @@ struct CoreResult {
 
 // ---- 绕组（尺寸/导线/损耗）----
 struct WindingResult {
+    bool hvRoundWire = false;         // 本次实际导线分支快照
+    double hvRoundWireDiameter_mm = 0.0;
+    double hvRoundWeightAddPct = 0.0;  // 圆线表Q列绝缘增重百分比
     QString oilDuctLayoutNote;        // 布局提示快照，非散热合格判定
     // 匝数
     int hvTurnsMax = 0;                // V8 最高分接匝数
@@ -96,7 +99,7 @@ struct WindingResult {
     double lvCopperLoss_W = 0.0;       // AH20 低压电阻损耗
     double hvExtraLossPct = 0.0;       // AA45 高压附加损耗 %
     double hvExtraLoss_W = 0.0;        // AC45 高压附加损耗 W
-    double lvExtraLoss_W = 0.0;        // 实际低压附加损耗输入快照，参与负载损耗与低压热负荷
+    double lvExtraLoss_W = 0.0;        // 输入快照：圆线不计入L10，仍参与低压热负荷
     double strayLossFactor = 0.0;      // J10 杂散系数快照，如0.11，不是百分数11
     double loadLossBeforeStray_W = 0.0; // 杂散修正前合计，保留实际导线分支，未另行取整
     double loadLoss_W = 0.0;           // L10 负载损耗

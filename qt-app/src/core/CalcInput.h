@@ -58,7 +58,8 @@ struct CalcInput {
     double hvBareThick_mm = 5.52;     // Z13 裸线厚
     int hvParallelCount = 1;          // AB13 并绕
     int hvStackCount = 1;             // AB14 叠绕
-    // Excel按宽=厚识别圆线；圆线截面、绝缘和增重分支尚未完整实现。
+    // 保持计算单及旧方案的宽=厚圆线判定；规格由数据库在计算入口校验。
+    bool isRoundHighVoltageWire() const { return hvBareWidth_mm == hvBareThick_mm; }
     QString highVoltageWireError() const
     {
         if (!std::isfinite(hvBareWidth_mm) || !std::isfinite(hvBareThick_mm) ||
@@ -66,8 +67,7 @@ struct CalcInput {
             return QStringLiteral("高压裸线宽、厚必须是大于零的有效数值");
         if (hvParallelCount <= 0 || hvStackCount <= 0)
             return QStringLiteral("高压并绕、叠绕根数必须是大于零的整数");
-        if (hvBareWidth_mm == hvBareThick_mm)
-            return QStringLiteral("高压裸线宽等于厚，按计算单属于圆线；圆线截面、绝缘及增重算法尚未完整实现，当前只支持扁导线");
+        if (isRoundHighVoltageWire()) return QString(); // 圆线不使用扁线绝缘增厚输入
         if (!std::isfinite(hvWireInsulAdd_mm) || hvWireInsulAdd_mm < 0.0)
             return QStringLiteral("高压导线绝缘增厚必须是大于等于零的有效数值");
         return QString();
@@ -86,6 +86,7 @@ struct CalcInput {
     // 数值仍是计算引擎的唯一来源；旧代码/导入数据有不一致时不能丢弃手填值。
     QString resolvedInsulationType() const
     {
+        if (isRoundHighVoltageWire()) return QStringLiteral("RoundTable");
         const double preset = insulationIncrement(hvWireInsulation);
         return preset >= 0.0 && std::abs(preset - hvWireInsulAdd_mm) < 1e-9
             ? hvWireInsulation : QStringLiteral("Custom");

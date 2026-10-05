@@ -409,11 +409,21 @@ void calcWindingLayout(EmCtx &c)
         : excelInt(w12 / 6.0);
     c.ductLayerIdx[4] = (hvDuct[4] == 0.0) ? 0 : excelInt(w12 / 8.0);
 
-    // 绝缘线尺寸（X14/Z14）：QZB 漆包 +0.15 / ZB-0.3 +0.35 / ZB-0.45 +0.5
-    const double add = in.hvWireInsulAdd_mm;
+    // 圆线按原表O/P/Q列查表，首版只接受表内规格。扁线沿用原有增厚。
+    WireSpec roundSpec;
+    const bool roundWire = in.isRoundHighVoltageWire();
+    if (roundWire && !DesignDatabase::instance().roundWireSpec(in.hvBareWidth_mm, roundSpec)) {
+        c.fail(QStringLiteral("圆线规格不在有效圆线表中，或圆线表数据不完整；请选择表内规格，不支持插值或越界计算"));
+        return;
+    }
+    const double add = roundWire ? roundSpec.insulatedWidthMm - in.hvBareWidth_mm : in.hvWireInsulAdd_mm;
     c.hvInsWidth_mm = in.hvBareWidth_mm + add;
     c.hvInsThick_mm = in.hvBareThick_mm + add;
-    c.out->winding.hvWireInsulation = in.resolvedInsulationType();
+    if (roundWire) c.hvInsWidth_mm = c.hvInsThick_mm = roundSpec.insulatedWidthMm;
+    c.out->winding.hvRoundWire = roundWire;
+    c.out->winding.hvRoundWireDiameter_mm = roundWire ? in.hvBareWidth_mm : 0.0;
+    c.out->winding.hvRoundWeightAddPct = roundWire ? roundSpec.weightAddPct : 0.0;
+    c.out->winding.hvWireInsulation = roundWire ? QStringLiteral("圆线表（计算单缓存）") : in.resolvedInsulationType();
     c.out->winding.hvWireInsulAdd_mm = add;
     c.out->winding.hvInsWidth_mm = c.hvInsWidth_mm;
     c.out->winding.hvInsThick_mm = c.hvInsThick_mm;
@@ -422,8 +432,9 @@ void calcWindingLayout(EmCtx &c)
     const double r = (in.hvBareWidth_mm < 1.7) ? 0.5
                      : (in.hvBareWidth_mm < 2.5) ? 0.65
                      : (in.hvBareWidth_mm < 4.0) ? 0.8 : 1.0;
-    c.hvWireSection_mm2 = excelRound(
-        in.hvBareWidth_mm * in.hvBareThick_mm - 0.8584 * r * r, 3);
+    c.hvWireSection_mm2 = excelRound(roundWire
+        ? in.hvBareWidth_mm * in.hvBareWidth_mm * M_PI / 4.0
+        : in.hvBareWidth_mm * in.hvBareThick_mm - 0.8584 * r * r, 3);
     // Y15=AB13*AB14，AA15=U15*Y15；先按原表舍入单根截面，再乘根数。
     c.hvEffectiveSection_mm2 = c.hvWireSection_mm2
         * static_cast<double>(in.hvParallelCount) * static_cast<double>(in.hvStackCount);
@@ -796,8 +807,9 @@ void calcWindingLosses(EmCtx &c)
     const double rhoHv = in.hvCopperWire ? 8.9 : 2.7;
     const double w21 = excelRound(3.0 * w18 * c.hvEffectiveSection_mm2 * rhoHv / 1000.0, 0);
     // Z21绝缘增重仍按U15单根截面计算，不可替换为AA15总截面。
-    const double z21 = excelRound(
-        (in.hvCopperWire ? 3.825 : 12.6) * (in.hvBareWidth_mm + in.hvBareThick_mm + 0.354)
+    const double z21 = excelRound(in.isRoundHighVoltageWire()
+        ? w21 * (1.0 + c.out->winding.hvRoundWeightAddPct / 100.0)
+        : (in.hvCopperWire ? 3.825 : 12.6) * (in.hvBareWidth_mm + in.hvBareThick_mm + 0.354)
             / c.hvWireSection_mm2 / 100.0 * w21 + w21, 0);
     const double ah21 = excelRound(
         ah18 * c.lvWireSection_mm2 * (in.lvCopperFoil ? 8.9 : 2.7) * 3.0 / 1000.0, 0);
@@ -817,7 +829,8 @@ void calcLoadLoss(EmCtx &c, double lambda_mm, double hx_mm)
 
     // 高压附加损耗 %（AA45）与 W（AC45）
     const double roundCoef = excelRound(1.0 - lambda_mm / (hx_mm * M_PI), 2);
-    const double aa45 = excelRound(
+    // 圆线原表AA45/AC45为空，数值链按0处理，温升也不得带入扁线附加损耗。
+    const double aa45 = in.isRoundHighVoltageWire() ? 0.0 : excelRound(
         (in.hvCopperWire ? 3.8e-7 : 1.4e-7)
             * std::pow(50.0 * c.hvTurnsMax * in.hvBareWidth_mm
                               * c.hvEffectiveSection_mm2 * roundCoef / c.ac30_mm, 2.0), 2);
@@ -831,13 +844,13 @@ void calcLoadLoss(EmCtx &c, double lambda_mm, double hx_mm)
     const double h10 = y20 + c.out->winding.lvCopperLoss_W;
     const double i10 = ac45 + aj45;
     c.out->winding.loadLoss_W = excelRound(
-        (h10 + (in.hvBareWidth_mm == in.hvBareThick_mm ? 0.0 : i10))
+        (h10 + (in.isRoundHighVoltageWire() ? 0.0 : i10))
             * (1.0 + in.strayLossFactor), 0);
     // 仅保存既有链路的组成快照，不改最终损耗公式、分支或取整。
     c.out->winding.lvExtraLoss_W = aj45;
     c.out->winding.strayLossFactor = in.strayLossFactor;
     c.out->winding.loadLossBeforeStray_W =
-        h10 + (in.hvBareWidth_mm == in.hvBareThick_mm ? 0.0 : i10);
+        h10 + (in.isRoundHighVoltageWire() ? 0.0 : i10);
 }
 
 // ============================================================================
@@ -1358,6 +1371,14 @@ bool ElectromagneticEngine::calcElectromagnetic(const CalcInput &input, CalcResu
     ctx.in = &normalizedInput;
     ctx.out = &result;
 
+    if (input.isRoundHighVoltageWire()) {
+        WireSpec spec;
+        if (!db.roundWireSpec(input.hvBareWidth_mm, spec)) {
+            result.error = QStringLiteral("圆线规格未收录或圆线表数据无效，请选择有效表内规格；不支持插值、向下取档或越界计算");
+            return false;
+        }
+    }
+
     calcElectrical(ctx);
     if (ctx.failed) {
         result.error = ctx.error;
@@ -1509,6 +1530,13 @@ PrintOutputData ElectromagneticEngine::buildPrintOutput(const CalcInput &input,
            result.winding.hvWireInsulation == QLatin1String("Custom") ? QStringLiteral("自定义") : result.winding.hvWireInsulation,
            QString(), QStringLiteral("绝缘总增厚"),
            QString::number(result.winding.hvWireInsulAdd_mm, 'g', 15), QStringLiteral("mm"));
+    addRow(QStringLiteral("高压导线形状"), result.winding.hvRoundWire ? QStringLiteral("圆线（计算单表）") : QStringLiteral("扁线"), QString());
+    if (result.winding.hvRoundWire) {
+        addRow(QStringLiteral("圆线裸直径"), QString::number(result.winding.hvRoundWireDiameter_mm, 'g', 15), QStringLiteral("mm"),
+               QStringLiteral("圆线表绝缘增重"), QString::number(result.winding.hvRoundWeightAddPct, 'g', 15), QStringLiteral("%"));
+        addRow(QStringLiteral("圆线数据适用说明"), QStringLiteral("计算单缓存表；不代表全部材料/绝缘等级"), QString());
+        addRow(QStringLiteral("圆线附加损耗"), QStringLiteral("原表AA45/AC45空值按0，不计入高压热负荷"), QString());
+    }
     addRow(QStringLiteral("高压绝缘线宽 X14"), QString::number(result.winding.hvInsWidth_mm, 'f', 3),
            QStringLiteral("mm"), QStringLiteral("高压绝缘线厚 Z14"),
            QString::number(result.winding.hvInsThick_mm, 'f', 3), QStringLiteral("mm"));
@@ -1525,7 +1553,8 @@ PrintOutputData ElectromagneticEngine::buildPrintOutput(const CalcInput &input,
            QStringLiteral("W"), QStringLiteral("杂散损耗系数 J10"),
            QString::number(result.winding.strayLossFactor, 'g', 15), QString());
     addRow(QStringLiteral("杂散修正前损耗合计"), QString::number(result.winding.loadLossBeforeStray_W, 'g', 15),
-           QStringLiteral("W"), QStringLiteral("低压附加项作用"), QStringLiteral("损耗及温升"), QString());
+           QStringLiteral("W"), QStringLiteral("低压附加项作用"), result.winding.hvRoundWire
+               ? QStringLiteral("仅低压温升，不计入L10") : QStringLiteral("损耗及温升"), QString());
     addRow(QStringLiteral("负载损耗合成规则"), QStringLiteral("合计×(1+系数)"), QString(),
            QStringLiteral("最终负载损耗取整"), QStringLiteral("整瓦"), QString());
     addRow(QStringLiteral("原表AJ45/AS45口径"), QStringLiteral("待核对"), QString());

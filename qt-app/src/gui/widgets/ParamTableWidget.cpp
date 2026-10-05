@@ -281,6 +281,24 @@ bool ParamTableWidget::collectForCalculation(TransformerParams &params, CalcInpu
         error = QStringLiteral("请选择数据库已收录的硅钢片牌号，未收录牌号不能用于计算。");
         return false;
     }
+    if (m_wireFormCombo && m_wireFormCombo->currentData().toBool()) {
+        WireSpec spec;
+        if (!m_roundWireSpecCombo || !m_roundWireSpecCombo->currentData().isValid()
+                || !DesignDatabase::instance().roundWireSpec(m_roundWireSpecCombo->currentData().toDouble(), spec)) {
+            error = QStringLiteral("请选择有效圆线表内规格；未收录规格、缺失或无效表数据不能用于计算。");
+            return false;
+        }
+    } else {
+        const auto width = m_inputRefs.value(QStringLiteral("hvBareWidth"));
+        const auto thick = m_inputRefs.value(QStringLiteral("hvBareThick"));
+        bool widthOk = false, thickOk = false;
+        const double w = item(width.first, width.second)->text().toDouble(&widthOk);
+        const double t = item(thick.first, thick.second)->text().toDouble(&thickOk);
+        if (widthOk && thickOk && w == t) {
+            error = QStringLiteral("宽=厚按计算单属于圆线，请选择“圆线（计算单表）”并从下拉框选择规格。");
+            return false;
+        }
+    }
     const QStringList textKeys = {"connectionGroup", "environmentGrade", "efficiencyCalcMethod"};
     const QStringList integerKeys = {"frequency", "seamCount", "lvTurns", "hvTurnsPerLayer", "hvParallelCount",
         "hvStackCount", "lvLayerInsulCount", "yokeWidenStages", "waveDepth", "waveHeight", "wavePitch"};
@@ -634,6 +652,19 @@ void ParamTableWidget::updateWireInsulation()
     const auto ref = m_inputRefs.value(QStringLiteral("hvWireInsulAdd"));
     auto *valueItem = item(ref.first, ref.second);
     if (!valueItem) return;
+    if (m_wireFormCombo && m_wireFormCombo->currentData().toBool()) {
+        WireSpec spec;
+        const bool valid = m_roundWireSpecCombo && m_roundWireSpecCombo->currentData().isValid()
+            && DesignDatabase::instance().roundWireSpec(m_roundWireSpecCombo->currentData().toDouble(), spec);
+        const QSignalBlocker blocker(this);
+        valueItem->setText(QString::number(valid ? spec.insulatedWidthMm - spec.bareWidthMm : 0.0, 'g', 15));
+        valueItem->setFlags(valueItem->flags() & ~Qt::ItemIsEditable);
+        valueItem->setToolTip(QStringLiteral("圆线总增厚=表内绝缘后直径-裸线直径；不使用扁线预设或手填值"));
+        item(ref.first, 5)->setText(valid
+            ? QStringLiteral("按计算单圆线表；绝缘后直径%1mm，增重%2%；不代表所有材料/绝缘等级").arg(spec.insulatedWidthMm).arg(spec.weightAddPct)
+            : QStringLiteral("圆线规格或表数据无效，禁止计算"));
+        return;
+    }
     // 仅在离开自定义时记住手填值，切换预设不会覆盖这份会话值。
     if (!m_loading && (valueItem->flags() & Qt::ItemIsEditable)) {
         bool ok = false;
@@ -652,12 +683,73 @@ void ParamTableWidget::updateWireInsulation()
     item(ref.first, 5)->setText(note);
 }
 
+void ParamTableWidget::updateWireForm()
+{
+    if (!m_wireFormCombo || !m_roundWireSpecCombo || !m_wireInsulationCombo) return;
+    const bool round = m_wireFormCombo->currentData().toBool();
+    const auto widthRef = m_inputRefs.value(QStringLiteral("hvBareWidth"));
+    const auto thickRef = m_inputRefs.value(QStringLiteral("hvBareThick"));
+    auto *width = item(widthRef.first, widthRef.second);
+    auto *thick = item(thickRef.first, thickRef.second);
+    const QSignalBlocker tableBlocker(this);
+    const QSignalBlocker insulationBlocker(m_wireInsulationCombo);
+    if (round && !m_roundWireActive) {
+        m_flatWireWidth = width->text();
+        m_flatWireThick = thick->text();
+        m_flatWireInsulation = m_wireInsulationCombo->currentData().toString();
+        // 切换圆线前保留自定义扁线增厚。
+        const auto addRef = m_inputRefs.value(QStringLiteral("hvWireInsulAdd"));
+        if (m_flatWireInsulation == QLatin1String("Custom")) {
+            bool ok = false;
+            const double add = item(addRef.first, addRef.second)->text().toDouble(&ok);
+            if (ok && std::isfinite(add) && add >= 0.0) m_customWireInsulAdd_mm = add;
+        }
+    }
+    if (round) {
+        if (m_roundWireSpecCombo->currentData().isValid()) {
+            const QString diameter = QString::number(m_roundWireSpecCombo->currentData().toDouble(), 'g', 15);
+            width->setText(diameter);
+            thick->setText(diameter);
+        }
+        m_wireInsulationCombo->setCurrentIndex(m_wireInsulationCombo->findData(QStringLiteral("RoundTable")));
+    } else {
+        if (m_roundWireActive) {
+            width->setText(m_flatWireWidth);
+            thick->setText(m_flatWireThick);
+        }
+        m_wireInsulationCombo->setCurrentIndex(m_wireInsulationCombo->findData(m_flatWireInsulation));
+    }
+    width->setFlags(round ? width->flags() & ~Qt::ItemIsEditable : width->flags() | Qt::ItemIsEditable);
+    thick->setFlags(round ? thick->flags() & ~Qt::ItemIsEditable : thick->flags() | Qt::ItemIsEditable);
+    m_roundWireSpecCombo->setEnabled(round);
+    m_wireInsulationCombo->setEnabled(!round);
+    item(widthRef.first, 5)->setText(round ? QStringLiteral("宽、厚均为裸线直径；仅下拉框表内规格可计算")
+                                         : QStringLiteral("扁线宽厚手填；宽=厚时请改选圆线表规格"));
+    m_roundWireActive = round;
+    updateWireInsulation();
+}
+
 // 根据当前结构配置动态生成参数表：不同铁芯/绕组组合显示不同的参数行和分段；
 // 四/五/六节为可编辑设计变量，与 CalcInput 双向同步（saveToInput 读回）；
 // proMode=true 时追加七~十节高级参数（专业模式）
 void ParamTableWidget::loadParamsForConfig(const TransformerParams &params, const StructureConfig &config,
                                            const CalcInput &input, bool proMode)
 {
+    // 普通/专业模式会在同一对象上重载。销毁旧单元格前保留扁线会话备份；
+    // 当前圆线输入不包含这份备份，不得用圆线增厚或默认宽厚覆盖它。
+    if (m_wireFormCombo && !m_roundWireActive && m_wireInsulationCombo) {
+        const auto widthRef = m_inputRefs.value(QStringLiteral("hvBareWidth"));
+        const auto thickRef = m_inputRefs.value(QStringLiteral("hvBareThick"));
+        m_flatWireWidth = item(widthRef.first, widthRef.second)->text();
+        m_flatWireThick = item(thickRef.first, thickRef.second)->text();
+        m_flatWireInsulation = m_wireInsulationCombo->currentData().toString();
+        if (m_flatWireInsulation == QLatin1String("Custom")) {
+            const auto addRef = m_inputRefs.value(QStringLiteral("hvWireInsulAdd"));
+            bool ok = false;
+            const double add = item(addRef.first, addRef.second)->text().toDouble(&ok);
+            if (ok && std::isfinite(add) && add >= 0.0) m_customWireInsulAdd_mm = add;
+        }
+    }
     m_loading = true;
     m_recommendationBaseInput = input;
     m_yokePiece1ModeCombo = nullptr;
@@ -676,7 +768,16 @@ void ParamTableWidget::loadParamsForConfig(const TransformerParams &params, cons
     m_hvMaterialCombo = nullptr;
     m_lvMaterialCombo = nullptr;
     m_wireInsulationCombo = nullptr;
-    m_customWireInsulAdd_mm = input.hvWireInsulAdd_mm;
+    m_wireFormCombo = nullptr;
+    m_roundWireSpecCombo = nullptr;
+    m_roundWireActive = input.isRoundHighVoltageWire();
+    m_unlistedRoundDiameter_mm = input.hvBareWidth_mm;
+    if (!m_roundWireActive) {
+        m_flatWireWidth = QString::number(input.hvBareWidth_mm, 'g', 15);
+        m_flatWireThick = QString::number(input.hvBareThick_mm, 'g', 15);
+        m_flatWireInsulation = input.resolvedInsulationType();
+        if (m_flatWireInsulation == QLatin1String("Custom")) m_customWireInsulAdd_mm = input.hvWireInsulAdd_mm;
+    }
     setRowCount(0);
     m_inputRefs.clear();
     int row = 0;
@@ -924,10 +1025,36 @@ void ParamTableWidget::loadParamsForConfig(const TransformerParams &params, cons
     addInputRow(row++, "低压箔宽(mm)", QString::number(input.lvFoilWidth_mm),
                 "低压端绝缘(mm)", QString::number(input.lvEndInsul_mm),
                 "lvFoilWidth", "lvEndInsul");
-    addInputRow(row++, "高压裸线宽(mm)", QString::number(input.hvBareWidth_mm),
-                "高压裸线厚(mm)", QString::number(input.hvBareThick_mm),
+    addParamRow(row, QStringLiteral("高压导线形状"), QString(), QStringLiteral("圆线裸直径(mm)"), QString());
+    m_wireFormCombo = new QComboBox(this);
+    m_wireFormCombo->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+    m_wireFormCombo->addItem(QStringLiteral("扁线"), false);
+    m_wireFormCombo->addItem(QStringLiteral("圆线（计算单表）"), true);
+    m_wireFormCombo->setCurrentIndex(input.isRoundHighVoltageWire() ? 1 : 0);
+    m_roundWireSpecCombo = new QComboBox(this);
+    m_roundWireSpecCombo->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+    const auto &wireDb = DesignDatabase::instance();
+    for (const auto &spec : wireDb.wireSpecs()) {
+        WireSpec checked;
+        if (wireDb.roundWireSpec(spec.bareWidthMm, checked))
+            m_roundWireSpecCombo->addItem(QString::number(spec.bareWidthMm, 'g', 15), spec.bareWidthMm);
+    }
+    WireSpec loadedSpec;
+    int specIndex = wireDb.roundWireSpec(input.hvBareWidth_mm, loadedSpec)
+        ? m_roundWireSpecCombo->findData(input.hvBareWidth_mm) : -1;
+    if (input.isRoundHighVoltageWire() && specIndex < 0) {
+        m_roundWireSpecCombo->insertItem(0, QStringLiteral("未收录：%1").arg(QString::number(input.hvBareWidth_mm, 'g', 17)), QVariant());
+        specIndex = 0; // 不得把导入的无效圆线静默替换为可算规格。
+    }
+    if (specIndex < 0) specIndex = m_roundWireSpecCombo->findData(2.0);
+    m_roundWireSpecCombo->setCurrentIndex(specIndex);
+    setCellWidget(row, 2, m_wireFormCombo);
+    setCellWidget(row, 4, m_roundWireSpecCombo);
+    item(row, 5)->setText(QStringLiteral("仅计算单圆线表内规格；不插值、不向下取档、不越界"));
+    ++row;
+    addInputRow(row++, "高压裸线宽(mm)", QString::number(input.hvBareWidth_mm, 'g', input.isRoundHighVoltageWire() ? 17 : 15),
+                "高压裸线厚(mm)", QString::number(input.hvBareThick_mm, 'g', input.isRoundHighVoltageWire() ? 17 : 15),
                 "hvBareWidth", "hvBareThick");
-    item(row - 1, 5)->setText(QStringLiteral("仅支持扁导线；宽=厚的圆线暂不支持"));
     addInputRow(row++, "高压导线绝缘种类", QString(),
                 "绝缘增厚(mm)", QString::number(input.hvWireInsulAdd_mm),
                 {}, "hvWireInsulAdd");
@@ -938,11 +1065,16 @@ void ParamTableWidget::loadParamsForConfig(const TransformerParams &params, cons
                                QStringLiteral("ZLB-0.3"), QStringLiteral("ZB-0.45"), QStringLiteral("ZLB-0.45")})
         m_wireInsulationCombo->addItem(type, type);
     m_wireInsulationCombo->addItem(QStringLiteral("自定义"), QStringLiteral("Custom"));
-    m_wireInsulationCombo->setCurrentIndex(m_wireInsulationCombo->findData(input.resolvedInsulationType()));
+    m_wireInsulationCombo->addItem(QStringLiteral("圆线表（计算单缓存）"), QStringLiteral("RoundTable"));
+    // 圆线表选项只由圆线模式启用，扁线不能选择该项。
+    m_wireInsulationCombo->setItemData(m_wireInsulationCombo->count() - 1, 0, Qt::UserRole - 1);
+    m_wireInsulationCombo->setCurrentIndex(m_wireInsulationCombo->findData(m_flatWireInsulation));
     setCellWidget(row - 1, 2, m_wireInsulationCombo);
     connect(m_wireInsulationCombo, &QComboBox::currentIndexChanged,
             this, [this](int) { updateWireInsulation(); });
-    updateWireInsulation();
+    connect(m_wireFormCombo, &QComboBox::currentIndexChanged, this, [this](int) { updateWireForm(); });
+    connect(m_roundWireSpecCombo, &QComboBox::currentIndexChanged, this, [this](int) { updateWireForm(); });
+    updateWireForm();
     addInputRow(row++, "高压总层数 W12", QString::number(input.hvTurnsPerLayer),
                 "层间绝缘厚(mm)", QString::number(input.hvLayerInsul_mm),
                 "hvTurnsPerLayer", "hvLayerInsul");
@@ -1036,6 +1168,12 @@ void ParamTableWidget::saveToInput(CalcInput &input) const
     // 高压绕组
     setDouble("hvBareWidth", input.hvBareWidth_mm);
     setDouble("hvBareThick", input.hvBareThick_mm);
+    if (m_wireFormCombo && m_wireFormCombo->currentData().toBool()) {
+        const double diameter = m_roundWireSpecCombo && m_roundWireSpecCombo->currentData().isValid()
+            ? m_roundWireSpecCombo->currentData().toDouble() : m_unlistedRoundDiameter_mm;
+        // 保存/切换普通专业模式也走此路径；无效规格不能因单元格显示舍入变成有效档。
+        input.hvBareWidth_mm = input.hvBareThick_mm = diameter;
+    }
     setInt("hvTurnsPerLayer", input.hvTurnsPerLayer);
     setDouble("hvLayerInsul", input.hvLayerInsul_mm);
     setInt("hvParallelCount", input.hvParallelCount);
@@ -1043,7 +1181,7 @@ void ParamTableWidget::saveToInput(CalcInput &input) const
     setDouble("hvWireInsulAdd", input.hvWireInsulAdd_mm);
     if (m_wireInsulationCombo) {
         input.hvWireInsulation = m_wireInsulationCombo->currentData().toString();
-        const double preset = CalcInput::insulationIncrement(input.hvWireInsulation);
+        const double preset = input.isRoundHighVoltageWire() ? -1.0 : CalcInput::insulationIncrement(input.hvWireInsulation);
         if (preset >= 0.0) input.hvWireInsulAdd_mm = preset;
     }
 
@@ -1157,10 +1295,10 @@ void ParamTableWidget::addProModeSections(int &row, const CalcInput &input)
     addInputRow(row++, "低压附加损耗(W)", QString::number(input.lvExtraLoss_W),
                 "", "",
                 "lvExtraLoss", {});
-    const QString lvExtraLossNote = QStringLiteral("当前扁线计算范围内，此值计入负载损耗的附加损耗合计，同时计入低压热负荷AK48并影响温升；不同于仅记录的引线损耗。原计算单AJ45/AS45口径仍待确认，本批不改算法。");
+    const QString lvExtraLossNote = QStringLiteral("扁线计入负载损耗及低压热负荷AK48；圆线按计算单L10不计入负载损耗，但仍进入低压热负荷。不同于仅记录的引线损耗；原表AJ45/AS45口径仍待核对。");
     item(row - 1, 1)->setToolTip(lvExtraLossNote);
     item(row - 1, 2)->setToolTip(lvExtraLossNote);
-    item(row - 1, 5)->setText(QStringLiteral("参与负载损耗和低压温升；原表口径待核对"));
+    item(row - 1, 5)->setText(QStringLiteral("扁线计入损耗及温升；圆线仅低压温升；原表口径待核对"));
     item(row - 1, 5)->setToolTip(lvExtraLossNote);
 
     // 十 油箱与结构

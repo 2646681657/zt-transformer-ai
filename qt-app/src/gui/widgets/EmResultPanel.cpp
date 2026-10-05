@@ -98,6 +98,7 @@ QVector<QPair<QString, QVector<QStringList>>> EmResultPanel::buildGroups(const C
                            r.core.lvTurnsRecommendation.error.isEmpty() ? QString::number(r.core.lvTurnsRecommendation.turns)
                                : QStringLiteral("不可用：%1").arg(r.core.lvTurnsRecommendation.error), QString()}
             << row(QStringLiteral("高压每层匝数 Y9"), double(w.layerCount), 0, QStringLiteral("匝/层"))
+            << QStringList{QStringLiteral("高压导线形状"), w.hvRoundWire ? QStringLiteral("圆线（计算单表）") : QStringLiteral("扁线"), QString()}
             << QStringList{QStringLiteral("高压导线绝缘种类"),
                            w.hvWireInsulation == QLatin1String("Custom") ? QStringLiteral("自定义") : w.hvWireInsulation,
                            QString()}
@@ -127,13 +128,21 @@ QVector<QPair<QString, QVector<QStringList>>> EmResultPanel::buildGroups(const C
             << QStringList{QStringLiteral("低压附加损耗（采用值）"), QString::number(w.lvExtraLoss_W, 'g', 15), QStringLiteral("W")}
             << QStringList{QStringLiteral("杂散损耗系数 J10"), QString::number(w.strayLossFactor, 'g', 15), QString()}
             << QStringList{QStringLiteral("杂散修正前损耗合计"), QString::number(w.loadLossBeforeStray_W, 'g', 15), QStringLiteral("W")}
-            << QStringList{QStringLiteral("低压附加项作用"), QStringLiteral("当前扁线范围内计入负载损耗及低压热负荷；原表AJ45/AS45口径仍需核对"), QString()}
+            << QStringList{QStringLiteral("低压附加项作用"), w.hvRoundWire
+                ? QStringLiteral("圆线按原表L10不计入负载损耗，仍进入低压热负荷；AJ45/AS45口径待核对")
+                : QStringLiteral("扁线计入负载损耗及低压热负荷；原表AJ45/AS45口径仍需核对"), QString()}
             << QStringList{QStringLiteral("负载损耗合成规则"), QStringLiteral("杂散修正前合计×(1+杂散系数)，最后取整到整瓦；引线损耗未计入"), QString()}
             << row(QStringLiteral("负载损耗"), w.loadLoss_W, 1, QStringLiteral("W"))
             << row(QStringLiteral("高压裸导线重 W21"), w.hvBareWireWeight_kg, 0, QStringLiteral("kg"))
             << row(QStringLiteral("高压绝缘导线重 Z21"), w.hvWireWeight_kg, 0, QStringLiteral("kg"))
             << row(QStringLiteral("低压导线重"), w.lvWireWeight_kg, 1, QStringLiteral("kg"))
             << row(QStringLiteral("导线总重"), w.wireWeightTotal_kg, 1, QStringLiteral("kg"));
+    if (w.hvRoundWire) {
+        winding << row(QStringLiteral("圆线裸直径"), w.hvRoundWireDiameter_mm, 3, QStringLiteral("mm"))
+                << row(QStringLiteral("圆线表绝缘增重"), w.hvRoundWeightAddPct, 2, QStringLiteral("%"))
+                << QStringList{QStringLiteral("圆线附加损耗说明"), QStringLiteral("原表AA45/AC45空值按0；高压热负荷只用电阻损耗"), QString()}
+                << QStringList{QStringLiteral("圆线表适用说明"), QStringLiteral("仅计算单缓存表内规格，不插值、不越界；不代表所有材料/绝缘等级"), QString()};
+    }
     groups.append({ QStringLiteral("绕组"), winding });
 
     // ---- 阻抗电压 ----
