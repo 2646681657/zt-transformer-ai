@@ -108,6 +108,42 @@ struct CalcInput {
     double lvDuctWidthSide[5] = {3.5, 3.5, 3.5, 3.5, 3.5};
     double lvDuctHeightSide[5] = {3.5, 3.5, 3.5, 3.5, 3.5};
 
+    QString oilDuctInputError() const
+    {
+        for (int side = 0; side < 2; ++side) {
+            const double *widths = side == 0 ? hvDuctWidthSide : lvDuctWidthSide;
+            const double *heights = side == 0 ? hvDuctHeightSide : lvDuctHeightSide;
+            const QString winding = side == 0 ? QStringLiteral("高压") : QStringLiteral("低压");
+            for (int i = 0; i < 5; ++i) {
+                if (!std::isfinite(widths[i]) || widths[i] < 0.0)
+                    return QStringLiteral("%1油道宽 %2（相间侧）必须是大于等于零的有效数值，0表示该侧停用").arg(winding).arg(i + 1);
+                if (!std::isfinite(heights[i]) || heights[i] < 0.0)
+                    return QStringLiteral("%1油道高 %2（端部侧）必须是大于等于零的有效数值，0表示该侧停用").arg(winding).arg(i + 1);
+            }
+        }
+        return QString();
+    }
+
+    // 原表独立判定两侧的0值；这些布局只提示，不擅自配对、重排或禁算。
+    QString oilDuctLayoutNote() const
+    {
+        QString note;
+        for (int side = 0; side < 2; ++side) {
+            const double *widths = side == 0 ? hvDuctWidthSide : lvDuctWidthSide;
+            const double *heights = side == 0 ? hvDuctHeightSide : lvDuctHeightSide;
+            const QString winding = side == 0 ? QStringLiteral("高压") : QStringLiteral("低压");
+            bool stopped = false;
+            for (int i = 0; i < 5; ++i) {
+                if ((widths[i] > 0.0) != (heights[i] > 0.0))
+                    note += QStringLiteral("%1油道%2仅单侧启用；").arg(winding).arg(i + 1);
+                if (heights[i] == 0.0) stopped = true;
+                else if (stopped)
+                    note += QStringLiteral("%1端部油道%2在停用油道之后仍启用；").arg(winding).arg(i + 1);
+            }
+        }
+        return note.isEmpty() ? QString() : note + QStringLiteral("分段与散热需人工核对，程序未自动重排或禁算");
+    }
+
     // ---- 主空道 ----
     double mainDuctWidth_mm = 3.5;    // AD43 高低压间油道
     double mainDuctInsul_mm = 1.0;    // AF43 纸板厚

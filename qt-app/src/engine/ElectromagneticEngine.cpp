@@ -1269,6 +1269,12 @@ bool ElectromagneticEngine::calcElectromagnetic(const CalcInput &input, CalcResu
     result = CalcResult();
     result.winding.recordedLeadLoss_W = input.leadLoss_W; // 只记录快照，不参与数值计算。
     result.testVoltage = testVoltageHints(input.hvRated_kV, input.lvRated_kV);
+    const QString ductError = input.oilDuctInputError();
+    if (!ductError.isEmpty()) {
+        result.error = ductError;
+        return false;
+    }
+    result.winding.oilDuctLayoutNote = input.oilDuctLayoutNote();
     if (!std::isfinite(input.coreLossCraftCoef) || input.coreLossCraftCoef <= 0.0
         || !std::isfinite(input.yokeLossCraftCoef) || input.yokeLossCraftCoef <= 0.0) {
         result.error = QStringLiteral("心柱和铁轭铁损工艺系数必须是大于零的有效数值。");
@@ -1394,6 +1400,9 @@ PrintOutputData ElectromagneticEngine::buildPrintOutput(const CalcInput &input,
     addRow(QStringLiteral("负载损耗中引线项"), QStringLiteral("未计入"), QString(),
            QStringLiteral("温升中引线项"), QStringLiteral("未计入"), QString());
     const auto &oil = result.oilExpansion;
+    const bool ductReview = !result.winding.oilDuctLayoutNote.isEmpty();
+    addRow(QStringLiteral("油道布局输入"), ductReview ? QStringLiteral("需人工核对") : QStringLiteral("无提示项"), QString(),
+           QStringLiteral("布局提示用途"), QStringLiteral("非合格判定"), QString());
     const auto oilValue = [&oil](double value, int prec) {
         return oil.available ? QString::number(value, 'f', prec) : QStringLiteral("需核对");
     };

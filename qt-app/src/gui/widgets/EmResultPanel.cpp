@@ -78,6 +78,9 @@ QVector<QPair<QString, QVector<QStringList>>> EmResultPanel::buildGroups(const C
     // ---- 绕组 ----
     const auto &w = r.winding;
     QVector<QStringList> winding;
+    winding << QStringList{QStringLiteral("油道布局输入提示（非合格判定）"),
+                           w.oilDuctLayoutNote.isEmpty() ? QStringLiteral("无单侧启用或端部不连续提示项") : w.oilDuctLayoutNote,
+                           QString()};
     winding << QStringList{QStringLiteral("引线损耗记录值（未参与计算）"),
                            QString::number(w.recordedLeadLoss_W, 'g', 15), QStringLiteral("W")}
             << QStringList{QStringLiteral("引线损耗作用"), QStringLiteral("未计入负载损耗、温升或寻优损耗判定"), QString()}

@@ -196,10 +196,10 @@ inline CalcInput fromJson(const QJsonObject &o)
     const QJsonArray dhs = o.value(QStringLiteral("hvDuctHeightSide")).toArray();
     for (int i = 0; i < 5; ++i) {
         if (i < dws.size()) {
-            in.hvDuctWidthSide[i] = dws.at(i).toDouble(in.hvDuctWidthSide[i]);
+            in.hvDuctWidthSide[i] = dws.at(i).toDouble(std::numeric_limits<double>::quiet_NaN());
         }
         if (i < dhs.size()) {
-            in.hvDuctHeightSide[i] = dhs.at(i).toDouble(in.hvDuctHeightSide[i]);
+            in.hvDuctHeightSide[i] = dhs.at(i).toDouble(std::numeric_limits<double>::quiet_NaN());
         }
     }
 
@@ -216,12 +216,22 @@ inline CalcInput fromJson(const QJsonObject &o)
     const QJsonArray lhs = o.value(QStringLiteral("lvDuctHeightSide")).toArray();
     for (int i = 0; i < 5; ++i) {
         if (i < lws.size()) {
-            in.lvDuctWidthSide[i] = lws.at(i).toDouble(in.lvDuctWidthSide[i]);
+            in.lvDuctWidthSide[i] = lws.at(i).toDouble(std::numeric_limits<double>::quiet_NaN());
         }
         if (i < lhs.size()) {
-            in.lvDuctHeightSide[i] = lhs.at(i).toDouble(in.lvDuctHeightSide[i]);
+            in.lvDuctHeightSide[i] = lhs.at(i).toDouble(std::numeric_limits<double>::quiet_NaN());
         }
     }
+
+    // 缺失/短数组保留旧方案默认值；显式错误容器或多余元素不能静默回退。
+    const auto guardDuctArray = [&o](const QString &key, double *values) {
+        if (o.contains(key) && (!o.value(key).isArray() || o.value(key).toArray().size() > 5))
+            values[0] = std::numeric_limits<double>::quiet_NaN();
+    };
+    guardDuctArray(QStringLiteral("hvDuctWidthSide"), in.hvDuctWidthSide);
+    guardDuctArray(QStringLiteral("hvDuctHeightSide"), in.hvDuctHeightSide);
+    guardDuctArray(QStringLiteral("lvDuctWidthSide"), in.lvDuctWidthSide);
+    guardDuctArray(QStringLiteral("lvDuctHeightSide"), in.lvDuctHeightSide);
 
     in.mainDuctWidth_mm = num("mainDuctWidth_mm", in.mainDuctWidth_mm);
     in.mainDuctInsul_mm = num("mainDuctInsul_mm", in.mainDuctInsul_mm);
