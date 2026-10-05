@@ -6,6 +6,7 @@
 #include <limits>
 
 #include "DesignDatabase.h"
+#include "HvCoilFormNotes.h"
 
 // ============================================================================
 // 工具函数：Excel 语义复现
@@ -1346,7 +1347,7 @@ bool ElectromagneticEngine::calcElectromagnetic(const CalcInput &input, CalcResu
 {
     result = CalcResult();
     if (input.hvCoilFormIdx != 1) {
-        result.error = QStringLiteral("两段及其他高压线圈暂不开放计算：型式对应与参考算例尚待核对，公式准备不代表已验证支持。");
+        result.error = HvCoilFormNotes::unavailableReason();
         return false;
     }
     result.winding.recordedLeadLoss_W = input.leadLoss_W; // 只记录快照，不参与数值计算。

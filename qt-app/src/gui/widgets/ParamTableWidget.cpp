@@ -4,6 +4,7 @@
 #include "CalculationApplicability.h"
 #include "ElectromagneticEngine.h"
 #include "TestVoltageHints.h"
+#include "HvCoilFormNotes.h"
 #include <QHeaderView>
 #include <QFont>
 #include <QLineEdit>
@@ -1078,7 +1079,7 @@ void ParamTableWidget::loadParamsForConfig(const TransformerParams &params, cons
     addInputRow(row++, "高压总层数 W12", QString::number(input.hvTurnsPerLayer),
                 "层间绝缘厚(mm)", QString::number(input.hvLayerInsul_mm),
                 "hvTurnsPerLayer", "hvLayerInsul");
-    item(row - 1, 5)->setText(QStringLiteral("W12为总层数；每层匝数Y9由最高分接匝数/W12取整后加1计算，不在此手填"));
+    updateHvCoilHints();
     addInputRow(row++, "高压并绕根数", QString::number(input.hvParallelCount),
                 "高压叠绕根数", QString::number(input.hvStackCount),
                 "hvParallelCount", "hvStackCount");
@@ -1100,6 +1101,22 @@ void ParamTableWidget::loadParamsForConfig(const TransformerParams &params, cons
     if (m_lossStandardsManual && m_lastLinkageKey.isEmpty())
         m_lastLinkageKey = standardKey();
     applyModelLinkage();
+}
+
+void ParamTableWidget::updateHvCoilHints()
+{
+    const auto ref = m_inputRefs.constFind(QStringLiteral("hvTurnsPerLayer"));
+    if (ref == m_inputRefs.constEnd()) return;
+    const QSignalBlocker blocker(this);
+    const QString detail = HvCoilFormNotes::layerNote();
+    for (int col : {1, 2, 5}) {
+        if (auto *cell = item(ref->first, col)) cell->setToolTip(detail);
+    }
+    if (auto *note = item(ref->first, 5)) {
+        note->setText(m_config.hvCoilStructure == StructureConfig::TwoSegCylinder
+            ? QStringLiteral("分段：两段串联、两段算一层；暂不开放计算")
+            : QStringLiteral("W12总层数；Y9自动计算；分段工艺口径见悬停提示"));
+    }
 }
 
 // 从表格设计变量节读回 CalcInput：空值/非法值保持原字段不变

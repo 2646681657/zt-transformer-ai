@@ -34,7 +34,11 @@ public:
     // 方案回显与输出元数据必须来自该方案，而不是寻优基准额定值。
     static TransformerParams paramsForInput(const TransformerParams &base, const CalcInput &input);
     QString standardStatus() const { return m_standardStatus; }
-    void setCalculationConfig(const StructureConfig &config) { m_config = config; applyModelLinkage(); }
+    void setCalculationConfig(const StructureConfig &config) {
+        m_config = config;
+        applyModelLinkage();
+        updateHvCoilHints();
+    }
 
 signals:
     // 内置叠铁芯损耗标准表的适用状态；阻抗始终保留当前设置。
@@ -53,6 +57,7 @@ private:
     void updateLvTurnsRecommendation();
     void updateYokePiece1();
     void updateTestVoltageHints();
+    void updateHvCoilHints(); // 只更新固定行说明与悬停提示，不重建表格或改数值
     int m_testVoltageRow = -1;
     QComboBox *m_yokePiece1ModeCombo = nullptr;
     double m_manualYokePiece1_mm = 4.0;

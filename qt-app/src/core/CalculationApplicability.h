@@ -4,6 +4,7 @@
 #include "StructureConfig.h"
 #include "TransformerParams.h"
 #include "CalcInput.h"
+#include "HvCoilFormNotes.h"
 #include <QStringList>
 #include <cmath>
 
@@ -30,7 +31,7 @@ inline QString calculationScopeError(const StructureConfig &config,
     if (config.windingForm != StructureConfig::Dual)
         reasons << QStringLiteral("双分裂绕组尚未接入对应算法");
     if (config.hvCoilStructure != StructureConfig::MultiLayerCylinder || input.hvCoilFormIdx != 1)
-        reasons << QStringLiteral("两段及其他高压线圈暂不开放计算：型式对应与参考算例尚待核对");
+        reasons << HvCoilFormNotes::unavailableReason();
     if (params.frequency_Hz != 50)
         reasons << QStringLiteral("当前公式固定按50Hz计算，不支持其他频率");
     if (!std::isfinite(params.calcRefTemp_C) || std::abs(params.calcRefTemp_C - 75.0) > 1e-9)
