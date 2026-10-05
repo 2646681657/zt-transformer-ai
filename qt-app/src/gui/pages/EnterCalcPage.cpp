@@ -2484,9 +2484,10 @@ void EnterCalcPage::onCalcSheetConfig()
     text += QStringLiteral("主空道: %1 mm（纸板 %2 mm）\n")
                 .arg(QString::number(in.mainDuctWidth_mm, 'f', 1),
                      QString::number(in.mainDuctInsul_mm, 'f', 1));
-    text += QStringLiteral("叠片系数: %1 / 工艺系数: %2\n")
+    text += QStringLiteral("叠片系数: %1 / 心柱工艺系数: %2 / 铁轭工艺系数: %3\n")
                 .arg(QString::number(in.stackFactor, 'f', 2),
-                     QString::number(in.coreLossCraftCoef, 'f', 2));
+                     QString::number(in.coreLossCraftCoef, 'g', 15),
+                     QString::number(in.yokeLossCraftCoef, 'g', 15));
     QMessageBox box(this);
     box.setWindowTitle(QStringLiteral("计算单配置关联"));
     box.setText(text);

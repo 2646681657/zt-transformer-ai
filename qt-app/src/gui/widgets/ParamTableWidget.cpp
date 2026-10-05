@@ -316,6 +316,10 @@ bool ParamTableWidget::collectForCalculation(TransformerParams &params, CalcInpu
     collectedInput.capacity_kVA = collectedParams.capacity_kVA;
     collectedInput.hvRated_kV = collectedParams.hvRatedVoltage_kV;
     collectedInput.lvRated_kV = collectedParams.lvRatedVoltage_kV;
+    if (collectedInput.coreLossCraftCoef <= 0.0 || collectedInput.yokeLossCraftCoef <= 0.0) {
+        error = QStringLiteral("心柱和铁轭铁损工艺系数必须是大于零的有效数值。");
+        return false;
+    }
     if (collectedInput.lvTurns <= 0 || collectedInput.hvTurnsPerLayer < 2 ||
         collectedInput.hvParallelCount <= 0 || collectedInput.hvStackCount <= 0 ||
         collectedInput.seamCount <= 0) {
@@ -870,9 +874,11 @@ void ParamTableWidget::loadParamsForConfig(const TransformerParams &params, cons
     for (int col : {2, 4})
         item(m_steelCurveRangeRow, col)->setFlags(item(m_steelCurveRangeRow, col)->flags() & ~Qt::ItemIsEditable);
     updateSteelThickness();
-    addInputRow(row++, "铁损工艺系数", QString::number(input.coreLossCraftCoef),
-                "接缝数", QString::number(input.seamCount),
-                "coreLossCraftCoef", "seamCount");
+    addInputRow(row++, "心柱铁损工艺系数", QString::number(input.coreLossCraftCoef, 'g', 15),
+                "铁轭铁损工艺系数", QString::number(input.yokeLossCraftCoef, 'g', 15),
+                "coreLossCraftCoef", "yokeLossCraftCoef");
+    item(row - 1, 5)->setText(QStringLiteral("分别作用；总铁损统一取整"));
+    addInputRow(row++, "接缝数", QString::number(input.seamCount), {}, {}, "seamCount", {});
 
     addInputRow(row++, "宽90补充片叠厚模式", QString(),
                 "实际叠厚(mm)", QString::number(input.yokePiece1Stack_mm, 'g', 15), {}, "yokePiece1Stack");
@@ -1008,6 +1014,7 @@ void ParamTableWidget::saveToInput(CalcInput &input) const
     setDouble("coreStraight", input.coreStraight_mm);
     setDouble("ellipseAngle", input.ellipseAngle_deg);
     setDouble("coreLossCraftCoef", input.coreLossCraftCoef);
+    setDouble("yokeLossCraftCoef", input.yokeLossCraftCoef);
     setInt("seamCount", input.seamCount);
     const QString grade = selectedSteelGrade();
     input.steelGrade = grade;

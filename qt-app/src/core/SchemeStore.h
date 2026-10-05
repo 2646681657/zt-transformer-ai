@@ -17,6 +17,7 @@
 #include <cmath>
 #include <algorithm>
 #include <numeric>
+#include <limits>
 #include "CalcInput.h"
 
 namespace SchemeStore {
@@ -45,6 +46,7 @@ inline QJsonObject toJson(const CalcInput &in)
     o.insert(QStringLiteral("steelGrade"), in.steelGrade);
     o.insert(QStringLiteral("seamCount"), in.seamCount);
     o.insert(QStringLiteral("coreLossCraftCoef"), in.coreLossCraftCoef);
+    o.insert(QStringLiteral("yokeLossCraftCoef"), in.yokeLossCraftCoef);
     o.insert(QStringLiteral("yokePiece1Stack_mm"), in.yokePiece1Stack_mm);
     o.insert(QStringLiteral("yokePiece1Auto"), in.yokePiece1Auto);
     o.insert(QStringLiteral("yokePiece2Stack_mm"), in.yokePiece2Stack_mm);
@@ -165,6 +167,9 @@ inline CalcInput fromJson(const QJsonObject &o)
     in.steelGrade = o.value(QStringLiteral("steelGrade")).toString(in.steelGrade);
     in.seamCount = integ("seamCount", in.seamCount);
     in.coreLossCraftCoef = num("coreLossCraftCoef", in.coreLossCraftCoef);
+    // 旧方案没有铁轭字段时沿用其原共同系数；显式非法新字段不能静默迁移。
+    in.yokeLossCraftCoef = !o.contains(QStringLiteral("yokeLossCraftCoef")) ? in.coreLossCraftCoef
+        : num("yokeLossCraftCoef", std::numeric_limits<double>::quiet_NaN());
     in.yokePiece1Stack_mm = num("yokePiece1Stack_mm", in.yokePiece1Stack_mm);
     in.yokePiece1Auto = o.value(QStringLiteral("yokePiece1Auto")).toBool(false); // 旧方案保持手工
     in.yokePiece2Stack_mm = num("yokePiece2Stack_mm", in.yokePiece2Stack_mm);
