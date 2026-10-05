@@ -1,5 +1,6 @@
 #include "EmResultPanel.h"
 #include "core/CostBasisNotes.h"
+#include "core/HvCoilFormNotes.h"
 #include <QTableWidget>
 #include <QHeaderView>
 #include <QVector>
@@ -98,6 +99,7 @@ QVector<QPair<QString, QVector<QStringList>>> EmResultPanel::buildGroups(const C
                            r.core.lvTurnsRecommendation.error.isEmpty() ? QString::number(r.core.lvTurnsRecommendation.turns)
                                : QStringLiteral("不可用：%1").arg(r.core.lvTurnsRecommendation.error), QString()}
             << row(QStringLiteral("高压每层匝数 Y9"), double(w.layerCount), 0, QStringLiteral("匝/层"))
+            << QStringList{QStringLiteral("高压层数与每层匝数口径（工艺参考）"), HvCoilFormNotes::layerNote(), QString()}
             << QStringList{QStringLiteral("高压导线形状"), w.hvRoundWire ? QStringLiteral("圆线（计算单表）") : QStringLiteral("扁线"), QString()}
             << QStringList{QStringLiteral("高压导线绝缘种类"),
                            w.hvWireInsulation == QLatin1String("Custom") ? QStringLiteral("自定义") : w.hvWireInsulation,
@@ -115,8 +117,7 @@ QVector<QPair<QString, QVector<QStringList>>> EmResultPanel::buildGroups(const C
             << row(QStringLiteral("主空道"), w.mainDuct_mm, 1, QStringLiteral("mm"))
             << row(QStringLiteral("高压轴向高"), w.hvAxial_mm, 1, QStringLiteral("mm"))
             << QStringList{QStringLiteral("实际高压线圈型式 AC9"), QString::number(w.hvCoilFormIdx)
-                           + (w.hvCoilFormIdx == 1 ? QStringLiteral("（圆筒式）")
-                              : QStringLiteral("（暂未开放）")), QString()}
+                           + QStringLiteral("：") + HvCoilFormNotes::name(w.hvCoilFormIdx), QString()}
             << row(QStringLiteral("高压段间距 AA29"), w.hvSegmentGap_mm, 2, QStringLiteral("mm"))
             << row(QStringLiteral("高压总轴向高 AA30（含段间距）"), w.hvTotalAxial_mm, 2, QStringLiteral("mm"))
             << row(QStringLiteral("高压内孔轴向高 AC30"), w.hvInnerAxial_mm, 2, QStringLiteral("mm"))

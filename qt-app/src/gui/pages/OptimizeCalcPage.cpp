@@ -12,6 +12,7 @@
 #include "ElectromagneticEngine.h"
 #include "SchemeConstraints.h"
 #include "CalculationApplicability.h"
+#include "HvCoilFormNotes.h"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -205,7 +206,10 @@ void OptimizeCalcPage::setupRibbon()
     auto *multiBtn = new RibbonButton(QStringLiteral("多层圆筒式"), ":/icons/coil_multi.svg", g5);
     multiBtn->setActive(true);
     g5->addButton(multiBtn);
-    g5->addButton(new RibbonButton(QStringLiteral("两段圆筒式"), ":/icons/coil_two.svg", g5));
+    auto *segmentBtn = new RibbonButton(QStringLiteral("分段圆筒式\n（两段串联）"), ":/icons/coil_two.svg", g5);
+    segmentBtn->setToolTip(HvCoilFormNotes::name(2) + QStringLiteral("\n")
+        + HvCoilFormNotes::processNote() + QStringLiteral("\n") + HvCoilFormNotes::unavailableReason());
+    g5->addButton(segmentBtn);
     m_ribbon->addSeparator();
 
     // Group 6: 确认设置 (非互斥，操作按钮)
@@ -395,7 +399,7 @@ void OptimizeCalcPage::applySchemeInput(const CalcInput &input)
 {
     if (input.hvCoilFormIdx != 1) {
         QMessageBox::warning(this, QStringLiteral("方案型式暂不支持"),
-            QStringLiteral("此方案的高压线圈型式暂不开放计算，未替换当前输入。两段型式对应与参考算例尚待核对。"));
+            HvCoilFormNotes::unavailableReason() + QStringLiteral("\n未替换当前输入。"));
         return;
     }
     m_input = input;
@@ -608,6 +612,7 @@ void OptimizeCalcPage::updateHelpPanel()
             "2. 在中间表格修改参数\n"
             "3. 确认后点击\"进入计算\"")) + QStringLiteral(
             "\n\n计算范围：油浸式、低压箔绕、叠铁芯、椭圆形、双绕组、多层圆筒式。\n固定50Hz/75℃；环境温度、海拔仅记录，不修正温升。\n波纹油箱算法；其他油箱算法未接入。")
+        + QStringLiteral("\n\n分段线圈工艺提示：") + HvCoilFormNotes::processNote()
         + (scope.isEmpty() ? QString() : QStringLiteral("\n\n当前配置不可计算：") + scope));
 }
 
@@ -640,7 +645,7 @@ void OptimizeCalcPage::updateConfigFromRibbon()
 
     idx = m_selectGroups[4]->selectedIndex();
     m_config.hvCoilStructure = (idx == 1) ? StructureConfig::TwoSegCylinder : StructureConfig::MultiLayerCylinder;
-    // 暂定对应原表第二公式分支，仅传递选型；适用范围检查仍禁止计算。
+    // 原表第二选项为分段圆筒式（两段串联），仅传递选型；仍禁止计算。
     m_input.hvCoilFormIdx = (idx == 1) ? 2 : 1;
 }
 

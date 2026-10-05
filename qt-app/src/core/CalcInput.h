@@ -92,7 +92,7 @@ struct CalcInput {
             ? hvWireInsulation : QStringLiteral("Custom");
     }
     bool hvCopperWire = true;         // 高压铜导线（false 铝导线）
-    int hvCoilFormIdx = 1;            // AC9：1=圆筒式，2=分段式公式分支；两段结构对应尚待确认
+    int hvCoilFormIdx = 1;            // AC9：1=圆筒式，2=分段圆筒式（两段串联）；2仍禁算
     // 高压轴向油道（宽侧 X30..X34 / 高侧 Y30..Y34，0=无）
     double hvDuctWidthSide[5] = {4, 4, 4, 4, 4};
     double hvDuctHeightSide[5] = {4, 4, 4, 4, 4};

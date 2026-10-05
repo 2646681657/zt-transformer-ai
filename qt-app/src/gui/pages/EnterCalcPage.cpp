@@ -720,7 +720,7 @@ void EnterCalcPage::showInitInfoDialog(int index)
     };
     const auto hvCoilStr = [this]() {
         return m_config.hvCoilStructure == StructureConfig::TwoSegCylinder
-                   ? QStringLiteral("两段圆筒式") : QStringLiteral("多层圆筒式");
+                   ? QStringLiteral("分段圆筒式（两段串联）") : QStringLiteral("多层圆筒式");
     };
 
     switch (index) {
