@@ -1109,12 +1109,16 @@ void calcThermal(EmCtx &c)
     c.out->thermal.hvHeatLoad = ab48;
     c.out->thermal.lvHeatLoad = ak48;
     c.out->thermal.hvSurface_m2 = ac47;
+    c.out->thermal.lvSurface_m2 = ak47;
     c.out->thermal.hvLayerGap_mm = layerGap;
     c.out->thermal.mainDuctSecond_mm = c.mainDuctSecond_mm;
     c.out->thermal.hvSurfaceRise_K = ac49;
     c.out->thermal.hvGapCorrection_K = ac51;
     c.out->thermal.hvLayerCorrection_K = ac52;
     c.out->thermal.hvRiseAboveOil_K = y53;
+    c.out->thermal.lvSurfaceRise_K = ak49;
+    c.out->thermal.lvLayerCorrection_K = ak50;
+    c.out->thermal.lvRiseAboveOil_K = ak51;
 }
 
 // ============================================================================
@@ -1528,6 +1532,15 @@ PrintOutputData ElectromagneticEngine::buildPrintOutput(const CalcInput &input,
     addRow(QStringLiteral("层间修正 AC52（负值不计入）"), QString::number(result.thermal.hvLayerCorrection_K, 'f', 1),
            QStringLiteral("K"), QStringLiteral("高压对油温升 Y53"),
            QString::number(result.thermal.hvRiseAboveOil_K, 'f', 1), QStringLiteral("K"));
+    addRow(QStringLiteral("低压散热面积 AK47"), QString::number(result.thermal.lvSurface_m2, 'f', 2),
+           QStringLiteral("m²"), QStringLiteral("低压热负荷 AK48"),
+           QString::number(result.thermal.lvHeatLoad, 'f', 2), QStringLiteral("W/m²"));
+    addRow(QStringLiteral("低压表面温升 AK49"), QString::number(result.thermal.lvSurfaceRise_K, 'f', 1),
+           QStringLiteral("K"), QStringLiteral("低压层间修正 AK50（负值不计入）"),
+           QString::number(result.thermal.lvLayerCorrection_K, 'f', 1), QStringLiteral("K"));
+    addRow(QStringLiteral("低压对油温升 AK51"), QString::number(result.thermal.lvRiseAboveOil_K, 'f', 1),
+           QStringLiteral("K"), QStringLiteral("低压绕组温升 AK52"),
+           QString::number(result.thermal.lvWindingRise_K, 'f', 1), QStringLiteral("K"));
     addRow(QStringLiteral("器身重"), QString::number(result.mass.activePartWeight_kg, 'f', 0),
            QStringLiteral("kg"),
            QStringLiteral("总重"), QString::number(result.mass.totalWeight_kg, 'f', 0),
