@@ -316,6 +316,11 @@ bool ParamTableWidget::collectForCalculation(TransformerParams &params, CalcInpu
     collectedInput.capacity_kVA = collectedParams.capacity_kVA;
     collectedInput.hvRated_kV = collectedParams.hvRatedVoltage_kV;
     collectedInput.lvRated_kV = collectedParams.lvRatedVoltage_kV;
+    const QString ductError = collectedInput.oilDuctInputError();
+    if (!ductError.isEmpty()) {
+        error = ductError;
+        return false;
+    }
     if (collectedInput.coreLossCraftCoef <= 0.0 || collectedInput.yokeLossCraftCoef <= 0.0) {
         error = QStringLiteral("心柱和铁轭铁损工艺系数必须是大于零的有效数值。");
         return false;
@@ -1110,6 +1115,12 @@ void ParamTableWidget::addProModeSections(int &row, const CalcInput &input)
 
     // 八 绕组工艺（油道与绝缘细节）
     addSectionRow(row++, QStringLiteral("八 绕组工艺（高级）"), {}, {}, true);
+    addInputRow(row++, QStringLiteral("油道宽/高含义"), QStringLiteral("相间侧/端部侧"),
+                QStringLiteral("各侧停用值"), QStringLiteral("0"), {}, {});
+    for (int col : {2, 4})
+        item(row - 1, col)->setFlags(item(row - 1, col)->flags() & ~Qt::ItemIsEditable);
+    item(row - 1, 5)->setText(QStringLiteral("两侧独立，尺寸非负；异常布局需核对"));
+    item(row - 1, 5)->setToolTip(QStringLiteral("原表按相间侧和端部侧分别判0；可单侧停用，不自动配对、重排或改变公式。单侧启用或端部不连续布局仅提示需人工核对。"));
     addInputRow(row++, "低压层间绝缘层数", QString::number(input.lvLayerInsulCount),
                 "", "", "lvLayerInsulCount", {});
     addInputRow(row++, "低压层间绝缘厚(mm)", QString::number(input.lvLayerInsul_mm),

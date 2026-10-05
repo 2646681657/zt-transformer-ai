@@ -13,6 +13,9 @@ inline QString calculationScopeError(const StructureConfig &config,
                                      const CalcInput &input)
 {
     QStringList reasons;
+    const QString ductError = input.oilDuctInputError();
+    if (!ductError.isEmpty())
+        reasons << ductError;
     const QString wireError = input.highVoltageWireError();
     if (!wireError.isEmpty())
         reasons << wireError;

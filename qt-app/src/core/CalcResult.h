@@ -56,6 +56,7 @@ struct CoreResult {
 
 // ---- 绕组（尺寸/导线/损耗）----
 struct WindingResult {
+    QString oilDuctLayoutNote;        // 布局提示快照，非散热合格判定
     // 匝数
     int hvTurnsMax = 0;                // V8 最高分接匝数
     int hvTurnsRated = 0;              // Y8 额定匝数
