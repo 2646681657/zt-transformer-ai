@@ -1,4 +1,5 @@
 #include "QuotePage.h"
+#include "CostBasisNotes.h"
 
 #include <QVBoxLayout>
 #include <QHBoxLayout>
@@ -129,6 +130,11 @@ void QuotePage::setupUi()
         connect(spin, &QDoubleSpinBox::valueChanged, this, &QuotePage::onParamsChanged);
         return spin;
     };
+
+    auto *basisNote = new QLabel(CostBasisNotes::quote(), paramWidget);
+    basisNote->setWordWrap(true);
+    basisNote->setToolTip(CostBasisNotes::quote());
+    paramLayout->addWidget(basisNote);
 
     // 材料单价组
     auto *priceGroup = new QGroupBox(QStringLiteral("材料单价"), paramWidget);
@@ -299,7 +305,8 @@ void QuotePage::onExportQuote()
     // 使用 QFile 需 include；导出为 UTF-8 带换行的纯文本
     if (f.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
         QString text;
-        text += QStringLiteral("产品报价单\n");
+        text += QStringLiteral("产品报价单（报价参数口径）\n");
+        text += CostBasisNotes::quote() + QLatin1Char('\n');
         text += QStringLiteral("========================================\n");
         text += QStringLiteral("生成时间：%1\n")
                     .arg(QDateTime::currentDateTime().toString(QStringLiteral("yyyy-MM-dd hh:mm")));

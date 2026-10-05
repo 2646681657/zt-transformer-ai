@@ -1475,8 +1475,12 @@ PrintOutputData ElectromagneticEngine::buildPrintOutput(const CalcInput &input,
            QStringLiteral("kg"),
            QStringLiteral("总重"), QString::number(result.mass.totalWeight_kg, 'f', 0),
            QStringLiteral("kg"));
-    addRow(QStringLiteral("材料成本"), QString::number(result.cost.materialCost, 'f', 0),
-           QStringLiteral("元"));
+    addRow(QStringLiteral("材料合计（内置基价）"), QString::number(result.cost.materialCost, 'f', 0),
+           QStringLiteral("元"), QStringLiteral("寻优依据"), QStringLiteral("材料合计"), QString());
+    addRow(QStringLiteral("价格口径"), QStringLiteral("内置基价"), QString(),
+           QStringLiteral("报价页调价"), QStringLiteral("不影响寻优"), QString());
+    addRow(QStringLiteral("含油与油箱"), QStringLiteral("是"), QString(),
+           QStringLiteral("费用/利润/税额"), QStringLiteral("不含"), QString());
     return data;
 }
 

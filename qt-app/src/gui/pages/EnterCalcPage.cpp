@@ -15,6 +15,7 @@
 #include "SelfLearnDialog.h"
 #include "AiAnalysisDialog.h"
 #include "QuoteCalculator.h"
+#include "CostBasisNotes.h"
 #include "ParamTableWidget.h"
 #include "CalculationApplicability.h"
 #include <QDateTime>
@@ -174,7 +175,7 @@ void EnterCalcPage::buildOptimizeRibbon()
             "硅钢片总重: %10 kg；导线总重: %11 kg\n"
             "油面温升: %12 K；高压绕组温升: %13 K；低压绕组温升: %14 K\n"
             "高压电密: %15 A/mm²；低压电密: %16 A/mm²\n"
-            "变压器总重: %17 kg；材料成本: %18 元\n"
+            "变压器总重: %17 kg；内置基价材料合计: %18 元\n"
             "性能标准：空载损耗标准 %19 W，负载损耗标准 %20 W，"
             "阻抗电压标准 %21%，空载电流标准 %22%\n"
             "约束校验：%23")
@@ -348,8 +349,9 @@ void EnterCalcPage::buildSchemeRibbon()
     row2->addWidget(m_observeChk);
     row2->addWidget(new QLabel(QStringLiteral("显示方式:"), rows));
     m_showModeCombo = new QComboBox(rows);
-    m_showModeCombo->addItems({QStringLiteral("主材成本"), QStringLiteral("铜铁"),
+    m_showModeCombo->addItems({QStringLiteral("材料合计"), QStringLiteral("铁芯导线"),
                                QStringLiteral("铁芯直径"), QStringLiteral("低压匝数")});
+    m_showModeCombo->setToolTip(CostBasisNotes::engine());
     m_showModeCombo->setFixedWidth(90);
     connect(m_showModeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
             this, &EnterCalcPage::onShowModeChanged);
@@ -460,7 +462,7 @@ void EnterCalcPage::buildSchemeRibbon()
             const auto &c = m_schemeData.value(idx);
             const auto &r = c.result;
             data += QStringLiteral(
-                "方案%1：主材成本 %2 元；空载损耗 %3 W；负载损耗 %4 W；"
+                "方案%1：内置基价材料合计 %2 元；空载损耗 %3 W；负载损耗 %4 W；"
                 "阻抗电压 %5%；心柱磁密 %6 T；油面温升 %7 K；"
                 "铁芯直径 %8 mm；低压匝数 %9\n")
                 .arg(idx)
@@ -549,7 +551,8 @@ void EnterCalcPage::buildPrintRibbon()
     b3->setCheckable(false);
     connect(b3, &QToolButton::clicked, this, &EnterCalcPage::onPrintPreview);
     g1->addButton(b3);
-    auto *quoteBtn = new RibbonButton(QStringLiteral("打开报价单"), ":/icons/quote_open.svg", g1);
+    auto *quoteBtn = new RibbonButton(QStringLiteral("材料成本明细"), ":/icons/quote_open.svg", g1);
+    quoteBtn->setToolTip(CostBasisNotes::engine());
     quoteBtn->setCheckable(false);
     connect(quoteBtn, &QToolButton::clicked, this, &EnterCalcPage::onOpenQuote);
     g1->addButton(quoteBtn);
@@ -1157,7 +1160,7 @@ void EnterCalcPage::onRunEmCalc()
 
     QString status = QStringLiteral(
         "电磁计算完成：空载损耗 %1 W | 负载损耗 %2 W | 阻抗电压 %3% | "
-        "油面温升 %4 K | 总重 %5 kg | 材料成本 %6 元")
+        "油面温升 %4 K | 总重 %5 kg | 内置基价材料合计 %6 元")
         .arg(QString::number(m_emResult.core.noLoadLoss_W, 'f', 0),
              QString::number(m_emResult.winding.loadLoss_W, 'f', 0),
              QString::number(m_emResult.impedance.impedance_pct, 'f', 2),
@@ -1375,7 +1378,7 @@ void EnterCalcPage::onOptimizeFinished(bool stopped, const OptimizeCandidate &be
     } else if (valid > 0) {
         m_statusBar->setText(
             QStringLiteral("寻优完成：评估 %1 个组合，%2 个通过约束（剔除 %3 个），"
-                           "最优材料成本 %4 元")
+                           "最优内置基价材料合计 %4 元（含油箱；报价调价不影响选优）")
                 .arg(total).arg(valid).arg(rejected)
                 .arg(QString::number(best.result.cost.materialCost, 'f', 0)));
     } else {
@@ -1549,7 +1552,7 @@ void EnterCalcPage::onFilterSchemes()
     bool ok = false;
     const double limit = QInputDialog::getDouble(
         this, QStringLiteral("筛选方案"),
-        QStringLiteral("主材成本上限（元，取消则清除筛选）："),
+        QStringLiteral("内置基价材料合计上限（元，取消则清除筛选）："),
         0.0, 0.0, 1e9, 1, &ok);
     int shown = 0;
     for (int r = 0; r < m_schemeTable->rowCount(); ++r) {
@@ -1562,7 +1565,7 @@ void EnterCalcPage::onFilterSchemes()
         }
     }
     m_statusBar->setText(ok
-        ? QStringLiteral("筛选：主材成本 ≤ %1，共 %2/%3 个方案")
+        ? QStringLiteral("筛选：内置基价材料合计 ≤ %1，共 %2/%3 个方案")
               .arg(QString::number(limit, 'f', 1)).arg(shown)
               .arg(m_schemeTable->rowCount())
         : QStringLiteral("已清除方案筛选"));
@@ -1642,7 +1645,7 @@ void EnterCalcPage::onSchemeSelected(int row)
             return QStringLiteral("尚未计算——点击\"计算\"按钮重算该方案");
         }
         return QStringLiteral(
-                   "主材成本 %1 元 | 空载损耗 %2 W | 负载损耗 %3 W | 阻抗电压 %4 % "
+                   "内置基价材料合计 %1 元 | 空载损耗 %2 W | 负载损耗 %3 W | 阻抗电压 %4 % "
                    "| 油顶层温升 %5 K")
             .arg(QString::number(r.cost.materialCost, 'f', 0),
                  QString::number(r.core.noLoadLoss_W, 'f', 1),
@@ -1720,7 +1723,7 @@ void EnterCalcPage::onSchemeSelected(int row)
         m_schemeTable->markRow(row);
         m_schemeTable->selectRow(row);
         m_statusBar->setText(
-            QStringLiteral("已选择方案 %1（主材成本 %2 元），点击\"方案确认\"进入输出打印")
+            QStringLiteral("已选择方案 %1（内置基价材料合计 %2 元），点击\"方案确认\"进入输出打印")
                 .arg(schemeIdx)
                 .arg(QString::number(pendingResult.cost.materialCost, 'f', 0)));
         dlg.accept();
@@ -1860,7 +1863,7 @@ void EnterCalcPage::confirmSchemeAt(int row)
         m_schemeIndexSpin->blockSignals(false);
     }
     m_statusBar->setText(
-        QStringLiteral("已确认方案 %1（主材成本 %2 元），输出打印已更新")
+        QStringLiteral("已确认方案 %1（内置基价材料合计 %2 元），输出打印已更新")
             .arg(schemeIdx)
             .arg(QString::number(m_emResult.cost.materialCost, 'f', 0)));
     m_tabBar->setCurrentIndex(2);
@@ -1880,7 +1883,7 @@ void EnterCalcPage::onFilterAdvanced()
     costSpin->setDecimals(1);
     costSpin->setSuffix(QStringLiteral(" 元"));
     costSpin->setValue(0.0);
-    form->addWidget(new QLabel(QStringLiteral("主材成本上限（0=不限）："), &dlg));
+    form->addWidget(new QLabel(QStringLiteral("内置基价材料合计上限（0=不限）："), &dlg));
     form->addWidget(costSpin);
     auto *dMinSpin = new QDoubleSpinBox(&dlg);
     dMinSpin->setRange(0.0, 2000.0);
@@ -2066,9 +2069,10 @@ void EnterCalcPage::onCompareLibrary()
     };
     QString text = QStringLiteral("【待比较】方案 %1  vs  【已确认】方案 %2\n\n")
                        .arg(curIdx).arg(m_confirmedSchemeIdx);
-    text += line(QStringLiteral("主材成本（铜铁油）"), a.costCuFeOil, b.costCuFeOil,
+    text += CostBasisNotes::engine() + QLatin1Char('\n');
+    text += line(QStringLiteral("材料合计（含油箱，内置基价）"), a.costCuFeOil, b.costCuFeOil,
                  QStringLiteral("元"), 0);
-    text += line(QStringLiteral("铜铁成本"), a.costCuFe, b.costCuFe, QStringLiteral("元"), 0);
+    text += line(QStringLiteral("铁芯导线成本（内置基价）"), a.costCuFe, b.costCuFe, QStringLiteral("元"), 0);
     text += line(QStringLiteral("铁芯直径"), a.coreD, b.coreD, QStringLiteral("mm"));
     text += line(QStringLiteral("铁芯长轴"), a.coreL, b.coreL, QStringLiteral("mm"));
     text += line(QStringLiteral("低压匝数"), double(a.lvTurns), double(b.lvTurns), QString(), 0);
@@ -2076,7 +2080,7 @@ void EnterCalcPage::onCompareLibrary()
                  QString(), 0);
     text += line(QStringLiteral("主空道尺寸"), a.mainDuct, b.mainDuct, QStringLiteral("mm"));
     const double diff = a.costCuFeOil - b.costCuFeOil;
-    text += QStringLiteral("\n结论：待比较方案主材成本比已确认方案%1 %2 元")
+    text += QStringLiteral("\n结论：待比较方案内置基价材料合计比已确认方案%1 %2 元")
                 .arg(diff <= 0 ? QStringLiteral("低") : QStringLiteral("高"))
                 .arg(QString::number(qAbs(diff), 'f', 0));
     QMessageBox::information(this, QStringLiteral("方案库比较"), text);
@@ -2273,7 +2277,8 @@ void EnterCalcPage::onOpenQuote()
         }
     }
     const auto &c = m_emResult.cost;
-    QString text = QStringLiteral("======== 报价单（材料成本明细） ========\n");
+    QString text = QStringLiteral("======== 材料成本明细（内置基价，非报价） ========\n");
+    text += CostBasisNotes::engine() + QLatin1Char('\n');
     text += QStringLiteral("硅钢片成本: %1 元\n").arg(QString::number(c.steelCost, 'f', 1));
     text += QStringLiteral("高压导线成本: %1 元\n").arg(QString::number(c.hvWireCost, 'f', 1));
     text += QStringLiteral("低压箔成本: %1 元\n").arg(QString::number(c.lvWireCost, 'f', 1));
@@ -2282,12 +2287,12 @@ void EnterCalcPage::onOpenQuote()
     text += QStringLiteral("----------------------------------------\n");
     text += QStringLiteral("材料成本合计: %1 元\n").arg(QString::number(c.materialCost, 'f', 1));
     QMessageBox box(this);
-    box.setWindowTitle(QStringLiteral("报价单"));
+    box.setWindowTitle(QStringLiteral("材料成本明细（内置基价）"));
     box.setText(text);
     box.setTextFormat(Qt::PlainText);
     box.setFont(QFont(QStringLiteral("Consolas")));
     box.exec();
-    m_statusBar->setText(QStringLiteral("报价单已打开"));
+    m_statusBar->setText(QStringLiteral("内置基价材料成本明细已打开"));
 }
 
 void EnterCalcPage::onOpenCalcSheet()
@@ -2583,7 +2588,8 @@ void EnterCalcPage::onExportDocuments()
     const QuoteResult quote =
         QuoteCalculator::calculate(currentResultParams(), m_lastInput, m_emResult,
                                    paramOk ? quoteParams : QuoteParams{});
-    QString costText = QStringLiteral("材料成本清单\n");
+    QString costText = QStringLiteral("材料成本清单（报价参数口径）\n");
+    costText += CostBasisNotes::quote() + QLatin1Char('\n');
     costText += QStringLiteral("========================================\n");
     costText += QStringLiteral("图号：%1　型号：%2\n").arg(drawingNo, model);
     costText += QStringLiteral("导出时间：%1\n").arg(stamp);
