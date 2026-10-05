@@ -1,4 +1,5 @@
 #include "EmResultPanel.h"
+#include "core/CostBasisNotes.h"
 #include <QTableWidget>
 #include <QHeaderView>
 #include <QVector>
@@ -181,7 +182,8 @@ QVector<QPair<QString, QVector<QStringList>>> EmResultPanel::buildGroups(const C
          << row(QStringLiteral("低压箔成本"), c.lvWireCost, 1, QStringLiteral("元"))
          << row(QStringLiteral("绝缘油成本"), c.oilCost, 1, QStringLiteral("元"))
          << row(QStringLiteral("油箱成本"), c.tankCost, 1, QStringLiteral("元"))
-         << row(QStringLiteral("材料成本合计"), c.materialCost, 1, QStringLiteral("元"));
+         << row(QStringLiteral("材料合计（内置基价）"), c.materialCost, 1, QStringLiteral("元"))
+         << QStringList{QStringLiteral("材料成本口径"), CostBasisNotes::engine(), QString()};
     groups.append({ QStringLiteral("重量与成本"), mass });
 
     const auto &o = r.oilExpansion;
