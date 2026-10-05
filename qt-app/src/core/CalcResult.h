@@ -90,6 +90,7 @@ struct WindingResult {
     double hvResistance_ohm = 0.0;     // X19
     double lvResistance_ohm = 0.0;     // AH19
     // 损耗
+    double recordedLeadLoss_W = 0.0;  // 本次计算输入快照，仅记录，未计入损耗或温升
     double hvCopperLoss_W = 0.0;       // Y20 高压电阻损耗
     double lvCopperLoss_W = 0.0;       // AH20 低压电阻损耗
     double hvExtraLossPct = 0.0;       // AA45 高压附加损耗 %
