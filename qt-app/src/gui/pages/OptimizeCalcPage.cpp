@@ -26,6 +26,7 @@
 #include <QLineEdit>
 #include <QFileDialog>
 #include <QApplication>
+#include <QSignalBlocker>
 
 OptimizeCalcPage::OptimizeCalcPage(QWidget *parent)
     : QWidget(parent)
@@ -392,7 +393,20 @@ bool OptimizeCalcPage::ensureSupportedCoreShape()
 // 避免其先把旧表格值存回 m_input 覆盖方案值）
 void OptimizeCalcPage::applySchemeInput(const CalcInput &input)
 {
+    if (input.hvCoilFormIdx != 1) {
+        QMessageBox::warning(this, QStringLiteral("方案型式暂不支持"),
+            QStringLiteral("此方案的高压线圈型式暂不开放计算，未替换当前输入。两段型式对应与参考算例尚待核对。"));
+        return;
+    }
     m_input = input;
+    // 可用旧方案明确回显圆筒式；不能用当前“两段”按钮标签包装单段输入。
+    {
+        const QSignalBlocker blocker(m_selectGroups[4]);
+        const auto &coilButtons = m_selectGroups[4]->buttons();
+        coilButtons[0]->setActive(true);
+        coilButtons[1]->setActive(false);
+    }
+    updateConfigFromRibbon();
     // 先收集用户在表格中编辑过的输入信息（海拔/环境温度等），
     // 重建表格时保留这些值；再同步额定值（容量/电压）
     m_params = m_paramTable->getParams();
@@ -412,6 +426,7 @@ void OptimizeCalcPage::applySchemeInput(const CalcInput &input)
     m_params.hvTapVoltagePercent = input.hvTapStep_pct;
     const bool proMode = (m_config.calcMode == StructureConfig::Professional);
     m_paramTable->loadParamsForConfig(m_params, m_config, m_input, proMode);
+    updateHelpPanel();
 }
 
 // 侧边栏方案按钮分发（0=导入参数表 1=AI助手 7=进入计算，均已独立连接，此处忽略；
@@ -625,6 +640,8 @@ void OptimizeCalcPage::updateConfigFromRibbon()
 
     idx = m_selectGroups[4]->selectedIndex();
     m_config.hvCoilStructure = (idx == 1) ? StructureConfig::TwoSegCylinder : StructureConfig::MultiLayerCylinder;
+    // 暂定对应原表第二公式分支，仅传递选型；适用范围检查仍禁止计算。
+    m_input.hvCoilFormIdx = (idx == 1) ? 2 : 1;
 }
 
 // 保存当前表格编辑内容（含设计变量）后按新配置重新加载参数表；

@@ -126,6 +126,7 @@ struct EmCtx {
     double hvRadial_mm = 0.0;     // W28 高压辐向厚
     double hvAxial_mm = 0.0;      // AA28 高压轴向高
     double hvInnerAxial_mm = 0.0; // AC30 高压内孔轴向高
+    double hvSegmentGap_mm = 0.0; // AA29；阻抗与散热共用，不独立推测
     double lvAxialOuter_mm = 0.0; // AA33 低压轴向（箔宽+端绝缘）
 
     // ---- 低压绕组布局 ----
@@ -498,7 +499,8 @@ void calcWindingLayout(EmCtx &c)
     const double aa26 = aa24 + aa25;                              // AA26
     c.hvAxial_mm = excelRound(aa26 * 1.01 / 5.0, 0) * 5.0 + 1.0;  // AA28
     c.lvAxialOuter_mm = in.lvFoilWidth_mm + 2.0 * in.lvEndInsul_mm; // AA33/J14
-    const double aa29 = (in.hvCoilFormIdx == 1) ? 0.0 : (kV > 24.0 ? 40.0 : 35.0);
+    c.hvSegmentGap_mm = (in.hvCoilFormIdx == 1) ? 0.0 : (kV > 24.0 ? 40.0 : 35.0);
+    const double aa29 = c.hvSegmentGap_mm;
     const double aa30 = c.hvAxial_mm + aa29;                      // AA30
     c.ac30_mm = excelRound(aa30 - c.hvAxialPerWire_mm, 2);        // AC30
 
@@ -578,6 +580,12 @@ void calcWindingLayout(EmCtx &c)
     c.out->winding.lvRadial_mm = c.lvRadial_mm;
     c.out->winding.mainDuct_mm = c.mainDuct_mm;
     c.out->winding.hvAxial_mm = c.hvAxial_mm;
+    c.out->winding.hvCoilFormIdx = in.hvCoilFormIdx;
+    c.out->winding.hvSegmentGap_mm = c.hvSegmentGap_mm;
+    c.out->winding.hvTotalAxial_mm = c.hvAxial_mm + c.hvSegmentGap_mm;
+    c.out->winding.hvInnerAxial_mm = c.ac30_mm;
+    c.out->winding.hvEndInsul_mm = (c.lvAxialOuter_mm - c.out->winding.hvTotalAxial_mm) / 2.0;
+    c.out->winding.hvEndInsulReference_mm = kV <= 12.0 ? 20.0 : (kV <= 24.0 ? 34.0 : 45.0);
     c.out->winding.hvMeanTurn_m = c.hvMeanTurn_m;
     c.out->winding.lvMeanTurn_m = c.lvMeanTurn_m;
     c.out->winding.layerCount = c.segTurnsPerLayer;
@@ -900,7 +908,8 @@ void calcImpedance(EmCtx &c)
             + a1 * c.hvMeanTurn_m * 1000.0, 2);
 
     // 电抗高（Q30..Q33）
-    const double q30 = std::fabs(c.ac30_mm - in.lvFoilWidth_mm);
+    const double q30 = std::fabs(c.ac30_mm - in.lvFoilWidth_mm) + c.hvSegmentGap_mm;
+    c.out->impedance.axialDifference_mm = q30;
     const double q31 = std::max(c.ac30_mm, in.lvFoilWidth_mm);
     const double q32 = excelRound(
         1.0 + q30 / 2.0 / q31 * (1.0 + 0.5 * M_PI * q30 / c.lambda_mm), 2);
@@ -1019,13 +1028,16 @@ void calcThermal(EmCtx &c)
             + M_PI * (c.majorR_mm + B28 + c.lvRadial_mm + sumLvDuctW
                       + c.mainDuct_mm + c.hvRadial_mm + sumHvDuctW) * S12, 1);
     // AC47：内表面只在 >12kV 时参与；原表此项只引用前三组低压端部油道。
-    // 当前仅开放 AC9=1 的单段线圈，不在这里放开两段线圈的适用范围。
+    // 补齐AC9=2原表高度因子，但入口仍禁用两段，不代表该型式已验证。
     const double perimHvInner = excelRound(
         M_PI * (B29 + c.lvRadial_mm + in.lvDuctHeightSide[0]
                 + in.lvDuctHeightSide[1] + in.lvDuctHeightSide[2] + c.mainDuct_mm)
             + c.ab39Long_mm, 1);
+    const double hvEffectiveHeight = in.hvCoilFormIdx == 2
+        ? c.ac30_mm - c.hvSegmentGap_mm : c.ac30_mm;
+    c.out->thermal.hvEffectiveHeight_mm = hvEffectiveHeight;
     const double ac47 = excelRound(
-        6.0 * c.ac30_mm * (perimHvInner * (in.hvRated_kV > 12.0 ? 0.85 : 0.0)
+        6.0 * hvEffectiveHeight * (perimHvInner * (in.hvRated_kV > 12.0 ? 0.85 : 0.0)
                           + ductTermHv * 1.7 + perimHv) / 1e6, 2);
     if (!requirePositiveArea(ac47, QStringLiteral("高压绕组散热面积 AC47"))) return;
 
@@ -1333,6 +1345,10 @@ bool ElectromagneticEngine::previewCoreGeometry(const CalcInput &input, CoreResu
 bool ElectromagneticEngine::calcElectromagnetic(const CalcInput &input, CalcResult &result)
 {
     result = CalcResult();
+    if (input.hvCoilFormIdx != 1) {
+        result.error = QStringLiteral("两段及其他高压线圈暂不开放计算：型式对应与参考算例尚待核对，公式准备不代表已验证支持。");
+        return false;
+    }
     result.winding.recordedLeadLoss_W = input.leadLoss_W; // 只记录快照，不参与数值计算。
     result.testVoltage = testVoltageHints(input.hvRated_kV, input.lvRated_kV);
     const QString ductError = input.oilDuctInputError();

@@ -191,7 +191,14 @@ inline CalcInput fromJson(const QJsonObject &o)
     // 旧文件没有型号证据，不按数值反推类型；未知类型/冲突值也保留为自定义。
     in.hvWireInsulation = o.value(QStringLiteral("hvWireInsulation")).toString(QStringLiteral("Custom"));
     in.hvWireInsulation = in.resolvedInsulationType();
-    in.hvCoilFormIdx = integ("hvCoilFormIdx", in.hvCoilFormIdx);
+    // 仅缺失字段的旧方案沿用默认1；显式非法值不能截断或默认成可算单段。
+    const QString coilFormKey = QStringLiteral("hvCoilFormIdx");
+    if (o.contains(coilFormKey)) {
+        const auto coilForm = o.value(coilFormKey);
+        const double index = coilForm.toDouble(std::numeric_limits<double>::quiet_NaN());
+        in.hvCoilFormIdx = coilForm.isDouble() && (index == 1.0 || index == 2.0)
+            ? static_cast<int>(index) : 0; // 0为不支持标记，适用范围及引擎入口均拒绝
+    }
     const QJsonArray dws = o.value(QStringLiteral("hvDuctWidthSide")).toArray();
     const QJsonArray dhs = o.value(QStringLiteral("hvDuctHeightSide")).toArray();
     for (int i = 0; i < 5; ++i) {
