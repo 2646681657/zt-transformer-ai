@@ -394,6 +394,26 @@ bool DesignDatabase::wireByBareWidth(double bareWidthMm, WireSpec &spec) const
     return true;
 }
 
+bool DesignDatabase::roundWireSpec(double diameterMm, WireSpec &spec) const
+{
+    if (!m_loaded || !std::isfinite(diameterMm) || m_wireSpecs.isEmpty()) return false;
+    if (diameterMm < m_wireSpecs.first().bareWidthMm || diameterMm > m_wireSpecs.last().bareWidthMm) return false;
+    // 导入表也必须完整、升序且唯一，不能把缺失字段的默认0用于圆线计算。
+    double previous = 0.0;
+    int match = -1;
+    for (int i = 0; i < m_wireSpecs.size(); ++i) {
+        const auto &w = m_wireSpecs[i];
+        if (!std::isfinite(w.bareWidthMm) || w.bareWidthMm <= previous
+                || !std::isfinite(w.insulatedWidthMm) || w.insulatedWidthMm <= w.bareWidthMm
+                || !std::isfinite(w.weightAddPct) || w.weightAddPct <= 0.0) return false;
+        previous = w.bareWidthMm;
+        if (w.bareWidthMm == diameterMm) match = i;
+    }
+    if (match < 0) return false;
+    spec = m_wireSpecs[match];
+    return true;
+}
+
 // ============================================================================
 // 数据导出/导入
 // ============================================================================
