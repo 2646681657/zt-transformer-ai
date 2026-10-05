@@ -76,6 +76,8 @@ public:
     // ---- 波纹油箱系数 ----
     // 波纹深 → Ks / Kp
     bool corrugatedCoefs(double depthMm, double &ks, double &kp) const;
+    // 仅为独立膨缩参考提供数据边界；不改变既有温升查表规则。
+    bool corrugatedDepthRange(double &minMm, double &maxMm) const;
 
     // ---- 线规表 ----
     // 裸线宽 → 线规（阶梯查）

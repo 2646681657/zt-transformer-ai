@@ -1166,6 +1166,50 @@ void calcMassCost(EmCtx &c)
                                + c.out->cost.tankCost;
 }
 
+void calcOilExpansionReference(EmCtx &c)
+{
+    auto &r = c.out->oilExpansion;
+    r.oilWeight_kg = c.out->mass.oilWeight_kg;
+    r.waveDepth_mm = c.in->waveDepth_mm;
+    r.waveHeight_mm = c.in->waveHeight_mm;
+    r.longSideCount = c.waveLongSides;
+    r.shortSideCount = c.waveShortSides;
+    if (!std::isfinite(r.oilWeight_kg) || r.oilWeight_kg <= 0.0
+        || r.waveDepth_mm <= 0.0 || r.waveHeight_mm <= 0.0 || c.in->wavePitch_mm <= 0
+        || !std::isfinite(r.longSideCount) || r.longSideCount <= 0.0
+        || !std::isfinite(r.shortSideCount) || r.shortSideCount < 0.0) {
+        r.error = QStringLiteral("油重、波纹尺寸或长短边数量无效");
+        return;
+    }
+    DesignDatabase &db = DesignDatabase::instance();
+    double minMm = 0.0, maxMm = 0.0, ks = 0.0;
+    if (!db.corrugatedDepthRange(minMm, maxMm)) {
+        r.error = QStringLiteral("缺少有效波纹系数数据");
+        return;
+    }
+    if (r.waveDepth_mm < minMm || r.waveDepth_mm > maxMm) {
+        r.error = QStringLiteral("波纹深%1mm超出Kp数据范围[%2, %3]mm")
+            .arg(r.waveDepth_mm).arg(minMm).arg(maxMm);
+        return;
+    }
+    if (!db.corrugatedCoefs(r.waveDepth_mm, ks, r.kp) || !std::isfinite(r.kp) || r.kp <= 0.0) {
+        r.error = QStringLiteral("未找到有效Kp系数");
+        return;
+    }
+    // 沿用原表常数、/100换算及先取两位小数再严格比较的顺序。
+    r.demand_kg = excelRound(r.oilWeight_kg * r.expansionCoefficient * r.referenceDeltaT_K, 2);
+    r.capacity_kg = excelRound(0.06 * r.waveHeight_mm / 100.0 * r.waveDepth_mm / 100.0
+        * 2.0 * (r.longSideCount + r.shortSideCount) * 0.9 * r.kp, 2);
+    if (!std::isfinite(r.demand_kg) || !std::isfinite(r.capacity_kg)) {
+        r.error = QStringLiteral("膨缩校核产生非有限数值");
+        return;
+    }
+    r.margin_kg = excelRound(r.capacity_kg - r.demand_kg, 2);
+    r.passed = r.capacity_kg > r.demand_kg; // 相等仍按原表判不合格。
+    r.available = true;
+    r.error.clear();
+}
+
 }  // namespace
 
 // ============================================================================
@@ -1280,6 +1324,7 @@ bool ElectromagneticEngine::calcElectromagnetic(const CalcInput &input, CalcResu
     calcImpedance(ctx);
     calcThermal(ctx);
     calcMassCost(ctx);
+    calcOilExpansionReference(ctx); // 仅填独立参考，不调用fail、不影响有效候选。
 
     // NaN 兜底防护：关键输出出现非有限值即判失败，
     // 避免几何/绕组参数失配的 NaN 一路传播到界面（如成本显示 nan）
@@ -1343,6 +1388,20 @@ PrintOutputData ElectromagneticEngine::buildPrintOutput(const CalcInput &input,
            QStringLiteral("低压提示来源"), QStringLiteral("计算单C8"), QString());
     addRow(QStringLiteral("试验电压提示用途"), QStringLiteral("仅参考"), QString(),
            QStringLiteral("绝缘合格判定"), QStringLiteral("不作判定"), QString());
+    const auto &oil = result.oilExpansion;
+    const auto oilValue = [&oil](double value, int prec) {
+        return oil.available ? QString::number(value, 'f', prec) : QStringLiteral("需核对");
+    };
+    addRow(QStringLiteral("油膨缩校核"), oil.status(), QString(),
+           QStringLiteral("校核依据"), QStringLiteral("N53/N54/P54"), QString());
+    addRow(QStringLiteral("膨胀需求 N53"), oilValue(oil.demand_kg, 2), QStringLiteral("kg"),
+           QStringLiteral("膨缩能力 N54"), oilValue(oil.capacity_kg, 2), QStringLiteral("kg"));
+    addRow(QStringLiteral("膨缩能力余量"), oilValue(oil.margin_kg, 2), QStringLiteral("kg"),
+           QStringLiteral("判定规则"), QStringLiteral("能力>需求"), QString());
+    addRow(QStringLiteral("原表固定温差"), QString::number(oil.referenceDeltaT_K, 'f', 0), QStringLiteral("K"),
+           QStringLiteral("膨胀系数"), QString::number(oil.expansionCoefficient, 'f', 4), QString());
+    addRow(QStringLiteral("波纹系数 Kp"), oilValue(oil.kp, 3), QString(),
+           QStringLiteral("寻优筛选"), QStringLiteral("不参与"), QString());
     addRow(QStringLiteral("铁芯截面"), QString::number(result.core.coreArea_cm2, 'f', 2),
            QStringLiteral("cm²"),
            QStringLiteral("磁密"), QString::number(result.core.fluxDensity_core_T, 'f', 3),
