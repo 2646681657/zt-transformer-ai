@@ -763,7 +763,7 @@ void EnterCalcPage::showInitInfoDialog(int index)
             { QStringLiteral("直线段长(mm)"),
               QString::number(m_calcInput.coreStraight_mm) },
             { QStringLiteral("低压匝数"), QString::number(m_calcInput.lvTurns) },
-            { QStringLiteral("高压每层匝数"),
+            { QStringLiteral("高压总层数 W12"),
               QString::number(m_calcInput.hvTurnsPerLayer) },
             { QStringLiteral("主空道宽(mm)"),
               QString::number(m_calcInput.mainDuctWidth_mm) },
@@ -857,7 +857,7 @@ std::optional<OptimizationSettings> EnterCalcPage::showLoopParamsDialog()
         { "铁芯直径(mm)", cur.diaStep_mm, cur.diaRange },
         { "直线段长(mm)", cur.straightStep_mm, cur.straightRange },
         { "低压匝数", 1.0, cur.lvTurnsRange },
-        { "高压每层匝数", 1.0, cur.hvTplRange },
+        { "高压总层数 W12", 1.0, cur.hvTplRange },
     };
     QVector<QDoubleSpinBox *> stepSpins;
     QVector<QSpinBox *> rangeSpins;
@@ -1290,7 +1290,7 @@ void EnterCalcPage::onOptimizeStart()
                       * (2 * settings.lvTurnsRange + 1) * (2 * settings.hvTplRange + 1);
     m_statusBar->setText(
         QStringLiteral("寻优已启动：围绕当前设计变量网格搜索（直径±%1mm/%2档、直线段±%3mm、"
-                       "低压匝数±%4、高压每层匝数±%5，共%6组合），损耗/阻抗/温升超差方案自动剔除")
+                       "低压匝数±%4、高压总层数W12±%5，共%6组合），损耗/阻抗/温升超差方案自动剔除")
             .arg(QString::number(settings.diaRange * settings.diaStep_mm),
                  QString::number(2 * settings.diaRange + 1),
                  QString::number(settings.straightRange * settings.straightStep_mm),
@@ -2076,7 +2076,7 @@ void EnterCalcPage::onCompareLibrary()
     text += line(QStringLiteral("铁芯直径"), a.coreD, b.coreD, QStringLiteral("mm"));
     text += line(QStringLiteral("铁芯长轴"), a.coreL, b.coreL, QStringLiteral("mm"));
     text += line(QStringLiteral("低压匝数"), double(a.lvTurns), double(b.lvTurns), QString(), 0);
-    text += line(QStringLiteral("高压线圈层数"), double(a.hvLayers), double(b.hvLayers),
+    text += line(QStringLiteral("高压每层匝数 Y9"), double(a.hvLayers), double(b.hvLayers),
                  QString(), 0);
     text += line(QStringLiteral("主空道尺寸"), a.mainDuct, b.mainDuct, QStringLiteral("mm"));
     const double diff = a.costCuFeOil - b.costCuFeOil;
@@ -2482,7 +2482,7 @@ void EnterCalcPage::onCalcSheetConfig()
                 .arg(in.lvTurns)
                 .arg(QString::number(in.lvFoilThick_mm, 'f', 2),
                      QString::number(in.lvFoilWidth_mm, 'f', 0));
-    text += QStringLiteral("高压: 裸线 %1×%2 mm / 每层 %3 匝\n")
+    text += QStringLiteral("高压: 裸线 %1×%2 mm / 总层数 W12: %3 层\n")
                 .arg(QString::number(in.hvBareThick_mm, 'f', 2),
                      QString::number(in.hvBareWidth_mm, 'f', 2))
                 .arg(in.hvTurnsPerLayer);

@@ -97,7 +97,7 @@ QVector<QPair<QString, QVector<QStringList>>> EmResultPanel::buildGroups(const C
             << QStringList{QStringLiteral("推荐低压匝数 AN8（未自动采用）"),
                            r.core.lvTurnsRecommendation.error.isEmpty() ? QString::number(r.core.lvTurnsRecommendation.turns)
                                : QStringLiteral("不可用：%1").arg(r.core.lvTurnsRecommendation.error), QString()}
-            << row(QStringLiteral("每段层数"), double(w.layerCount), 0, QString())
+            << row(QStringLiteral("高压每层匝数 Y9"), double(w.layerCount), 0, QStringLiteral("匝/层"))
             << QStringList{QStringLiteral("高压导线绝缘种类"),
                            w.hvWireInsulation == QLatin1String("Custom") ? QStringLiteral("自定义") : w.hvWireInsulation,
                            QString()}

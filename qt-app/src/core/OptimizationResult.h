@@ -16,7 +16,7 @@ struct OptimizationResult {
     double lvRuleW = 0.0;
     double hvRuleT = 0.0;
     double hvRuleW = 0.0;
-    int hvLayers = 0;
+    int hvLayers = 0; // Y9 高压每层匝数；沿用旧字段名，非W12总层数
     int lvOilDucts = 0;
     int hvOilDucts = 0;
     double lvToYoke = 0.0;

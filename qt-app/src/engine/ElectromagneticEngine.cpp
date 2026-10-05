@@ -380,7 +380,7 @@ void calcWindingLayout(EmCtx &c)
     c.out->winding.lvTurns = in.lvTurns;
 
     // 层分布（W9/W10/W11 段层数，Y9 每层匝数）
-    const int w12 = in.hvTurnsPerLayer;                       // W12
+    const int w12 = in.hvTurnsPerLayer;                       // W12 高压总层数（旧字段名保留）
     const bool hasDuct2 = in.hvDuctHeightSide[1] > 0.0;       // Y31
     c.segLayers[0] = (hasDuct2 ? excelInt(w12 / 3.0) : excelInt(w12 / 3.0) + 1) - 1;  // W9
     c.segTurnsPerLayer = excelInt(c.hvTurnsMax / double(w12)) + 1;                    // Y9
@@ -1042,7 +1042,7 @@ void calcThermal(EmCtx &c)
 
     // 层间油升修正（AC52/AK50）：gap = 层间绝缘均摊 + 漆膜厚
     if (in.hvTurnsPerLayer < 2) {
-        c.fail(QStringLiteral("高压每层匝数 W12 必须至少为2，层间间隙公式 W12-1 不能为零或负数"));
+        c.fail(QStringLiteral("高压总层数 W12 必须至少为2，层间间隙公式 W12-1 不能为零或负数"));
         return;
     }
     const double layerGap = excelRound(
