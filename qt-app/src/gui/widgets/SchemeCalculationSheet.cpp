@@ -12,6 +12,8 @@
 #include <QScrollBar>
 #include <QSignalBlocker>
 #include <QEvent>
+#include <QStyledItemDelegate>
+#include <QPersistentModelIndex>
 #include <algorithm>
 
 namespace {
@@ -20,7 +22,51 @@ struct Field {
     QString name, value, tip;
     int row = -1, col = -1;
     bool wide = false;
+    QString key;
 };
+// 原生单元格也在输入时提交给绑定源；同值回刷不重置光标/撤销历史。
+class LiveInputDelegate : public QStyledItemDelegate {
+public:
+    using QStyledItemDelegate::QStyledItemDelegate;
+    QWidget *createEditor(QWidget *parent, const QStyleOptionViewItem &option,
+                          const QModelIndex &index) const override
+    {
+        auto *editor = QStyledItemDelegate::createEditor(parent, option, index);
+        if (auto *line = qobject_cast<QLineEdit *>(editor)) {
+            const QPersistentModelIndex persistent(index);
+            connect(line, &QLineEdit::textEdited, line, [persistent](const QString &text) {
+                if (persistent.isValid()) const_cast<QAbstractItemModel *>(persistent.model())->setData(persistent, text, Qt::EditRole);
+            });
+        }
+        return editor;
+    }
+    void setEditorData(QWidget *editor, const QModelIndex &index) const override
+    {
+        auto *line = qobject_cast<QLineEdit *>(editor);
+        if (line && line->hasFocus() && line->text() == index.data(Qt::EditRole).toString()) return;
+        QStyledItemDelegate::setEditorData(editor, index);
+    }
+};
+
+auto sheetGroups(const CalcResult &result)
+{
+    auto groups = EmResultPanel::buildGroups(result);
+    // 预留条件分支字段，使圆线/油膨缩状态变化时无需重建正在编辑的表。
+    for (auto &group : groups) {
+        QStringList optional;
+        if (group.first == QStringLiteral("绕组")) optional = {QStringLiteral("圆线裸直径"), QStringLiteral("圆线表绝缘增重"),
+            QStringLiteral("圆线附加损耗说明"), QStringLiteral("圆线表适用说明")};
+        if (group.first == QStringLiteral("油膨缩校核")) optional = {QStringLiteral("采用总油重 C24"), QStringLiteral("膨胀需求 N53"),
+            QStringLiteral("膨缩能力 N54"), QStringLiteral("膨缩能力余量"), QStringLiteral("波纹深 S45"),
+            QStringLiteral("波纹高 S46"), QStringLiteral("波纹长边数量 S48"), QStringLiteral("波纹短边数量 S49"), QStringLiteral("波纹系数 Kp S51")};
+        for (const auto &name : optional) {
+            const bool exists = std::any_of(group.second.cbegin(), group.second.cend(), [&name](const QStringList &row) { return row.value(0) == name; });
+            if (!exists) group.second.append({name, group.first == QStringLiteral("绕组") ? QStringLiteral("不适用") : QStringLiteral("不可用"), QString()});
+        }
+        if (!result.valid) for (auto &row : group.second) { row[1] = QStringLiteral("未计算"); row[2] = QString(); }
+    }
+    return groups;
+}
 int inputZone(const QString &section, const QString &name)
 {
     if (section.startsWith(QStringLiteral("一 "))) return Basic;
@@ -65,6 +111,7 @@ SchemeCalculationSheet::SchemeCalculationSheet(const TransformerParams &params,
     m_input->loadParamsForConfig(params, config, input, proMode);
     m_input->hide();
     m_results = new QTableWidget(this);
+    m_results->setItemDelegate(new LiveInputDelegate(m_results));
     m_results->setColumnCount(12);
     m_results->horizontalHeader()->hide();
     m_results->verticalHeader()->setDefaultSectionSize(28);
@@ -155,6 +202,10 @@ QWidget *SchemeCalculationSheet::mirrorEditor(QWidget *source)
         }
     }
     if (copy) {
+        if (auto *spin = qobject_cast<QAbstractSpinBox *>(copy)) {
+            if (auto *edit = spin->findChild<QLineEdit *>())
+                connect(edit, &QLineEdit::textEdited, this, [this]() { markPending(); });
+        }
         copy->setMinimumWidth(0); copy->setToolTip(source->toolTip());
         copy->setEnabled(source->isEnabled()); copy->setVisible(!source->isHidden());
         m_editors.insert(source, copy); source->installEventFilter(this);
@@ -228,11 +279,13 @@ void SchemeCalculationSheet::rebuildSheet()
             fields[inputZone(section, name)].append({name, value->text(), tip, row, col, m_input->columnSpan(row, col) > 1});
         }
     }
-    if (m_snapshot.valid) {
-        for (const auto &group : EmResultPanel::buildGroups(m_snapshot)) {
+    {
+        for (const auto &group : sheetGroups(m_snapshot)) {
             for (const auto &values : group.second) {
                 const QString value = values.value(1) + (values.value(2).isEmpty() ? QString() : QLatin1Char(' ') + values.value(2));
-                fields[resultZone(group.first, values.value(0))].append({values.value(0), value, values.value(0) + QStringLiteral("\n计算值（只读）：") + value});
+                fields[resultZone(group.first, values.value(0))].append({values.value(0), value,
+                    values.value(0) + QStringLiteral("\n计算值（只读）：") + value, -1, -1, false,
+                    group.first + QLatin1Char('\n') + values.value(0)});
             }
         }
     }
@@ -241,7 +294,7 @@ void SchemeCalculationSheet::rebuildSheet()
         QStringLiteral("主空道与阻抗"), QStringLiteral("油箱、重量与成本"), QStringLiteral("工艺与参考")};
     const int scroll = m_results->verticalScrollBar()->value();
     const QSignalBlocker blocker(m_results);
-    m_bindings.clear(); m_editors.clear();
+    m_bindings.clear(); m_editors.clear(); m_resultBindings.clear();
     m_results->clearSpans(); m_results->setRowCount(0);
     int start = 0;
     for (int band = 0; band < 3; ++band) {
@@ -261,7 +314,8 @@ void SchemeCalculationSheet::rebuildSheet()
                 if (row >= m_results->rowCount()) m_results->setRowCount(row + 1);
                 const int col = base + slot * 2;
                 auto *name = new QTableWidgetItem(f.name);
-                name->setFlags(Qt::ItemIsEnabled | Qt::ItemIsSelectable); name->setToolTip(f.tip);
+                name->setFlags(Qt::ItemIsEnabled | Qt::ItemIsSelectable);
+                name->setToolTip(f.key.isEmpty() ? f.tip : f.name + QStringLiteral("\n计算结果（只读），当前值见相邻单元格"));
                 name->setTextAlignment(Qt::AlignLeft | Qt::AlignVCenter);
                 m_results->setItem(row, col, name);
                 auto *value = new QTableWidgetItem(f.value);
@@ -270,6 +324,7 @@ void SchemeCalculationSheet::rebuildSheet()
                 f.value.section(QLatin1Char(' '), 0, 0).toDouble(&numeric);
                 value->setTextAlignment((numeric ? Qt::AlignRight : Qt::AlignLeft) | Qt::AlignVCenter);
                 m_results->setItem(row, col + 1, value);
+                if (!f.key.isEmpty()) m_resultBindings.insert(f.key, value);
                 if (f.wide) m_results->setSpan(row, col + 1, 1, 3);
                 if (f.row >= 0) {
                     m_bindings.append({f.row, f.col, value});
@@ -299,7 +354,42 @@ void SchemeCalculationSheet::rebuildSheet()
 
 void SchemeCalculationSheet::markPending()
 {
-    m_resultStatus->setText(QStringLiteral("浅绿：可输入　白色：只读　计算结果为上次快照，输入已修改，待重算"));
+    m_resultStatus->setText(QStringLiteral("浅绿：可输入　白色：只读　输入已修改，正在自动更新；旧结果暂未刷新"));
+    emit inputEdited();
+}
+
+bool SchemeCalculationSheet::inputsReady(QString &error) const
+{
+    for (auto it = m_editors.constBegin(); it != m_editors.constEnd(); ++it) {
+        auto *spin = qobject_cast<QAbstractSpinBox *>(it.value().data());
+        if (spin && spin->isEnabled() && !spin->isHidden() && !spin->hasAcceptableInput()) {
+            error = QStringLiteral("调压数值尚未输入完整或超出范围，请补全后再计算。");
+            return false;
+        }
+    }
+    return true;
+}
+
+void SchemeCalculationSheet::showCalculationError(const QString &error)
+{
+    m_resultStatus->setText(QStringLiteral("自动计算未更新（原结果仅供查看）：") + error);
+}
+
+void SchemeCalculationSheet::refreshResult(const CalcResult &result)
+{
+    m_snapshot = result;
+    const QSignalBlocker blocker(m_results);
+    for (const auto &group : sheetGroups(result)) {
+        for (const auto &row : group.second) {
+            auto *cell = m_resultBindings.value(group.first + QLatin1Char('\n') + row.value(0), nullptr);
+            if (!cell) continue;
+            const QString value = row.value(1) + (row.value(2).isEmpty() ? QString() : QLatin1Char(' ') + row.value(2));
+            cell->setText(value); cell->setToolTip(row.value(0) + QStringLiteral("\n计算值（只读）：") + value);
+            bool numeric = false; row.value(1).toDouble(&numeric);
+            cell->setTextAlignment((numeric ? Qt::AlignRight : Qt::AlignLeft) | Qt::AlignVCenter);
+        }
+    }
+    m_resultStatus->setText(QStringLiteral("浅绿：可输入　白色：只读　已按当前参数自动计算"));
 }
 
 void SchemeCalculationSheet::loadResult(const CalcResult &result)
@@ -307,5 +397,5 @@ void SchemeCalculationSheet::loadResult(const CalcResult &result)
     m_snapshot = result;
     rebuildSheet();
     m_resultStatus->setText(result.valid ? QStringLiteral("浅绿：可输入　白色：只读　输入与计算值按分区就近排列（当前方案）")
-        : QStringLiteral("计算结果不可用，请计算当前方案；浅绿单元格可输入"));
+        : QStringLiteral("计算结果不可用，修改参数后自动计算；浅绿单元格可输入"));
 }

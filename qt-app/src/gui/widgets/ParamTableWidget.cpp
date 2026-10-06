@@ -253,7 +253,8 @@ TransformerParams ParamTableWidget::paramsForInput(const TransformerParams &base
     return params;
 }
 
-bool ParamTableWidget::collectForCalculation(TransformerParams &params, CalcInput &input, QString &error)
+bool ParamTableWidget::collectForCalculation(TransformerParams &params, CalcInput &input, QString &error,
+                                            bool interactive)
 {
     error.clear();
     // 增量输入只负责编辑期间联动；计算/确认时必须完整解析屏幕上的型号。
@@ -356,6 +357,10 @@ bool ParamTableWidget::collectForCalculation(TransformerParams &params, CalcInpu
         return false;
     }
     const QString unavailable = standardUnavailableReason();
+    if (!unavailable.isEmpty() && !interactive) {
+        error = unavailable + QStringLiteral("；请核对损耗标准后点击确认。自动预览不代替人工核对。");
+        return false;
+    }
     if (!unavailable.isEmpty() && QMessageBox::question(this, QStringLiteral("损耗标准需手工核对"),
         unavailable + QStringLiteral("\n当前保留的空载/负载/总损耗标准为 %1/%2/%3 W，不代表此规格已匹配标准表。\n是否已核对这些手工标准值并继续计算？")
             .arg(collectedParams.noLoadLossStd_W).arg(collectedParams.loadLossStd_W).arg(collectedParams.totalLossStd_W),
