@@ -94,6 +94,9 @@ private:
     TransformerParams m_baseParams;
     StructureConfig m_config;
     bool m_lossStandardsManual = false;
+    TransformerParams::StandardMode m_standardMode = TransformerParams::StandardMode::BuiltIn;
+    QComboBox *m_standardModeCombo = nullptr;
+    int m_standardModeRow = -1;
     QString m_standardStatus;
     bool m_loading = false;               // 加载期间抑制联动信号
 

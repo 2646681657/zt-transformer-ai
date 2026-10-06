@@ -137,6 +137,7 @@ private slots:
     void onExportDocuments();
 
 private:
+    void runEmCalcInput(const CalcInput &candidate); // 校验成功前不替换当前方案输入。
     void setupOptimizeTab();
     void setupSchemeTab();
     void setupPrintTab();

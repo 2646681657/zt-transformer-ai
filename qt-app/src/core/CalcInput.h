@@ -7,8 +7,12 @@
 #include <QRegularExpression>
 #include <QVector>
 #include <cmath>
+#include "PerformanceCriteria.h"
 
 struct CalcInput {
+    // 持久化/校核元数据，不参与电磁实际值公式。
+    bool hasPerformanceCriteria = false;
+    TransformerParams performanceCriteria;
     // 线圈型式!J17：牌号前两位代表硅钢片厚度的百分之一毫米。
     static double thicknessFromSteelGrade(const QString &grade)
     {

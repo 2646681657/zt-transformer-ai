@@ -26,6 +26,7 @@
 #include <QInputDialog>
 #include <QLineEdit>
 #include <QFileDialog>
+#include <QFileInfo>
 #include <QApplication>
 #include <QSignalBlocker>
 
@@ -414,6 +415,7 @@ void OptimizeCalcPage::applySchemeInput(const CalcInput &input)
     // 先收集用户在表格中编辑过的输入信息（海拔/环境温度等），
     // 重建表格时保留这些值；再同步额定值（容量/电压）
     m_params = m_paramTable->getParams();
+    m_params = ParamTableWidget::paramsForInput(m_params, input);
     m_params.capacity_kVA = input.capacity_kVA;
     m_params.hvRatedVoltage_kV = input.hvRated_kV;
     m_params.lvRatedVoltage_kV = input.lvRated_kV;
@@ -453,6 +455,11 @@ void OptimizeCalcPage::onSchemeButtonClicked(int index)
         break;
     }
     case 3: {  // 保存为我的方案（命名保存当前设计变量）
+        QString criteriaError;
+        if (!m_paramTable->collectForCalculation(m_params, m_input, criteriaError)) {
+            QMessageBox::warning(this, QStringLiteral("方案输入需核对"), criteriaError);
+            return;
+        }
         if (!m_paramTable->hasSupportedConnectionGroup()) {
             QMessageBox::warning(this, QStringLiteral("联结组别暂不支持"),
                 QStringLiteral("当前版本仅支持 Dyn11（可填 Dyn）和 Yyn0，请修改联结组别后再保存方案。"));
@@ -552,9 +559,38 @@ void OptimizeCalcPage::onImportParamsClicked()
     const QString path = QFileDialog::getOpenFileName(this,
         QStringLiteral("导入基础技术参数表"),
         QString(),
-        QStringLiteral("参数表文件 (*.xlsx *.xlsm *.xls *.csv);;所有文件 (*.*)"));
+        QStringLiteral("参数表或方案文件 (*.xlsx *.xlsm *.xls *.csv *.json);;所有文件 (*.*)"));
     if (path.isEmpty())
         return;
+
+    // 旧批量方案可在主设计页逐项核对来源，不在隐藏表格中猜测指标。
+    if (QFileInfo(path).suffix().compare(QLatin1String("json"), Qt::CaseInsensitive) == 0) {
+        auto entries = SchemeStore::loadEntries(path);
+        if (entries.isEmpty()) {
+            bool valid = false;
+            const auto inputs = SchemeStore::loadSchemes(path, &valid);
+            if (valid) {
+                for (int i = 0; i < inputs.size(); ++i) {
+                    SchemeStore::SchemeEntry entry;
+                    entry.name = QStringLiteral("方案%1").arg(i + 1);
+                    entry.input = inputs[i];
+                    entries.append(entry);
+                }
+            }
+        }
+        if (entries.isEmpty()) {
+            QMessageBox::warning(this, QStringLiteral("方案导入失败"), QStringLiteral("文件不是有效的非空方案库。当前输入未替换。"));
+            return;
+        }
+        if (entries.size() == 1) {
+            applySchemeInput(entries.first().input);
+        } else {
+            SchemePickDialog dlg(QStringLiteral("选择要核对的方案"), entries, QString(), this);
+            if (dlg.exec() != QDialog::Accepted || !dlg.hasSelection()) return;
+            applySchemeInput(dlg.selectedEntry().input);
+        }
+        return;
+    }
 
     // 以当前表格值为基底，导入只覆盖识别到的字段
     m_params = m_paramTable->getParams();

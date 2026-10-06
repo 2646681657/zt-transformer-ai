@@ -271,8 +271,7 @@ void EnterCalcPage::buildOptimizeRibbon()
         SchemePickDialog dlg(QStringLiteral("从记忆库中选择"), entries,
                              SchemeStore::memorySchemesPath(), this);
         if (dlg.exec() == QDialog::Accepted && dlg.hasSelection()) {
-            m_calcInput = dlg.selectedEntry().input;
-            onRunEmCalc();
+            runEmCalcInput(dlg.selectedEntry().input);
         }
     });
     gMem->addButton(memBtn);
@@ -1129,7 +1128,12 @@ void EnterCalcPage::onTabChanged(int index)
 
 void EnterCalcPage::onRunEmCalc()
 {
-    CalcInput input = m_calcInput;   // 参数设置页编辑的设计变量（默认 SB20-M-630-10）
+    runEmCalcInput(m_calcInput);
+}
+
+void EnterCalcPage::runEmCalcInput(const CalcInput &candidate)
+{
+    CalcInput input = candidate;
     // 侧栏方案库也走同一标准匹配/输入校验入口，不能绕过设计页。
     ParamTableWidget inputTable(this);
     inputTable.loadParamsForConfig(ParamTableWidget::paramsForInput(m_params, input),
@@ -1155,6 +1159,8 @@ void EnterCalcPage::onRunEmCalc()
     }
     m_hasResult = true;
     m_lastParams = resultParams;
+    m_calcInput = input;
+    m_params = resultParams;
 
     // 结果面板 + 打印表 + 方案入库
     m_emResultPanel->loadResult(m_emResult);
@@ -1194,8 +1200,7 @@ void EnterCalcPage::onSchemeButtonClicked(int index)
         }
         SchemePickDialog dlg(QStringLiteral("选用推荐方案"), entries, QString(), this);
         if (dlg.exec() == QDialog::Accepted && dlg.hasSelection()) {
-            m_calcInput = dlg.selectedEntry().input;
-            onRunEmCalc();
+            runEmCalcInput(dlg.selectedEntry().input);
         }
         break;
     }
@@ -1246,8 +1251,7 @@ void EnterCalcPage::onSchemeButtonClicked(int index)
         SchemePickDialog dlg(QStringLiteral("从方案库中选择"), entries,
                              SchemeStore::mySchemesPath(), this);
         if (dlg.exec() == QDialog::Accepted && dlg.hasSelection()) {
-            m_calcInput = dlg.selectedEntry().input;
-            onRunEmCalc();
+            runEmCalcInput(dlg.selectedEntry().input);
         }
         break;
     }
@@ -1257,8 +1261,7 @@ void EnterCalcPage::onSchemeButtonClicked(int index)
                 QStringLiteral("还没有计算记录，请先执行计算"));
             return;
         }
-        m_calcInput = m_lastInput;
-        onRunEmCalc();
+        runEmCalcInput(m_lastInput);
         break;
     }
     default:
@@ -1274,6 +1277,18 @@ void EnterCalcPage::onOptimizeStart()
         m_statusBar->setText(QStringLiteral("寻优正在进行中"));
         return;
     }
+    CalcInput checkedInput = m_calcInput;
+    TransformerParams checkedParams;
+    ParamTableWidget inputTable(this);
+    inputTable.loadParamsForConfig(ParamTableWidget::paramsForInput(m_params, checkedInput),
+        m_config, checkedInput, m_config.calcMode == StructureConfig::Professional);
+    QString inputError;
+    if (!inputTable.collectForCalculation(checkedParams, checkedInput, inputError, false)) {
+        QMessageBox::warning(this, QStringLiteral("寻优输入需核对"), inputError);
+        return;
+    }
+    m_calcInput = checkedInput;
+    m_params = checkedParams;
     const QString scopeError = calculationScopeError(m_config, m_params, m_calcInput);
     if (!scopeError.isEmpty()) {
         QMessageBox::warning(this, QStringLiteral("当前配置暂不支持"), scopeError);
@@ -1812,6 +1827,11 @@ void EnterCalcPage::onLoadSchemes()
         return;
     }
     for (const CalcInput &in : inputs) {
+        if (!in.hasPerformanceCriteria || in.performanceCriteria.standardMode == TransformerParams::StandardMode::Unconfirmed) {
+            QMessageBox::warning(this, QStringLiteral("方案指标来源待确认"),
+                QStringLiteral("文件中有旧方案或缺少完整指标来源的方案。当前方案表未替换；请先在设计输入页载入并核对来源，再保存新版方案。"));
+            return;
+        }
         const QString reason = calculationScopeError(m_config, m_params, in);
         if (!reason.isEmpty()) {
             QMessageBox::warning(this, QStringLiteral("方案库包含不支持的配置"),
