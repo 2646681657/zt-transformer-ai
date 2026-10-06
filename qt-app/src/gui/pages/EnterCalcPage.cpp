@@ -1741,6 +1741,8 @@ void EnterCalcPage::onSchemeSelected(int row)
 
     connect(cancelBtn, &QPushButton::clicked, &dlg, &QDialog::reject);
 
+    // 默认占满屏幕工作区，保留标题栏、关闭按钮和还原能力。
+    dlg.showMaximized();
     dlg.exec();
 }
 

@@ -79,9 +79,10 @@ SchemeCalculationSheet::SchemeCalculationSheet(const TransformerParams &params,
         "QLineEdit:focus,QComboBox:focus,QSpinBox:focus,QDoubleSpinBox:focus {border:1px solid #217346;}"
         "QComboBox QAbstractItemView {background:white; color:#24362B; selection-background-color:#CDE8D5;}"));
     for (int col = 0; col < 12; ++col) {
-        m_results->setColumnWidth(col, col % 2 == 0 ? 128 : 94);
-        m_results->horizontalHeader()->setSectionResizeMode(col, QHeaderView::Interactive);
+        // 等宽列构成三个等宽分区，随最大化/还原自动铺满，不留下右侧空白。
+        m_results->horizontalHeader()->setSectionResizeMode(col, QHeaderView::Stretch);
     }
+    m_results->horizontalHeader()->setMinimumSectionSize(70);
     outer->addWidget(m_results, 1);
     connect(m_results, &QTableWidget::itemChanged, this, [this](QTableWidgetItem *cell) {
         for (const auto &b : m_bindings) {
@@ -110,6 +111,7 @@ QWidget *SchemeCalculationSheet::mirrorEditor(QWidget *source)
         copy = d;
     } else if (auto *s = qobject_cast<QDoubleSpinBox *>(source)) {
         auto *d = new QDoubleSpinBox(m_results);
+        d->setAlignment(Qt::AlignRight);
         d->setDecimals(s->decimals()); d->setRange(s->minimum(), s->maximum()); d->setSingleStep(s->singleStep());
         d->setPrefix(s->prefix()); d->setSuffix(s->suffix()); d->setValue(s->value());
         connect(d, &QDoubleSpinBox::valueChanged, s, [s](double value) { s->setValue(value); });
@@ -117,6 +119,7 @@ QWidget *SchemeCalculationSheet::mirrorEditor(QWidget *source)
         copy = d;
     } else if (auto *s = qobject_cast<QSpinBox *>(source)) {
         auto *d = new QSpinBox(m_results);
+        d->setAlignment(Qt::AlignRight);
         d->setRange(s->minimum(), s->maximum()); d->setSingleStep(s->singleStep());
         d->setPrefix(s->prefix()); d->setSuffix(s->suffix()); d->setValue(s->value());
         connect(d, &QSpinBox::valueChanged, s, [s](int value) { s->setValue(value); });
@@ -190,6 +193,9 @@ void SchemeCalculationSheet::syncInputs()
         const auto *source = m_input->item(b.row, b.col);
         if (!source) continue;
         b.cell->setText(source->text());
+        bool numeric = false;
+        source->text().toDouble(&numeric);
+        b.cell->setTextAlignment((numeric ? Qt::AlignRight : Qt::AlignLeft) | Qt::AlignVCenter);
         auto flags = source->flags();
         if (m_input->cellWidget(b.row, b.col)) flags &= ~Qt::ItemIsEditable;
         b.cell->setFlags(flags);
@@ -245,6 +251,7 @@ void SchemeCalculationSheet::rebuildSheet()
             const int zone = band * 3 + block, base = block * 4;
             auto *title = new QTableWidgetItem(titles[zone]);
             title->setFlags(Qt::ItemIsEnabled | Qt::ItemIsSelectable);
+            title->setTextAlignment(Qt::AlignCenter);
             title->setBackground(QColor("#DCEEDF")); title->setForeground(QColor("#185C37"));
             QFont font = title->font(); font.setBold(true); title->setFont(font);
             m_results->setItem(start, base, title); m_results->setSpan(start, base, 1, 4);
@@ -255,9 +262,13 @@ void SchemeCalculationSheet::rebuildSheet()
                 const int col = base + slot * 2;
                 auto *name = new QTableWidgetItem(f.name);
                 name->setFlags(Qt::ItemIsEnabled | Qt::ItemIsSelectable); name->setToolTip(f.tip);
+                name->setTextAlignment(Qt::AlignLeft | Qt::AlignVCenter);
                 m_results->setItem(row, col, name);
                 auto *value = new QTableWidgetItem(f.value);
                 value->setFlags(Qt::ItemIsEnabled | Qt::ItemIsSelectable); value->setToolTip(f.tip);
+                bool numeric = false;
+                f.value.section(QLatin1Char(' '), 0, 0).toDouble(&numeric);
+                value->setTextAlignment((numeric ? Qt::AlignRight : Qt::AlignLeft) | Qt::AlignVCenter);
                 m_results->setItem(row, col + 1, value);
                 if (f.wide) m_results->setSpan(row, col + 1, 1, 3);
                 if (f.row >= 0) {
