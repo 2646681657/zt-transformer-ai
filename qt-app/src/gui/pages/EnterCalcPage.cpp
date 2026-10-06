@@ -1648,31 +1648,11 @@ void EnterCalcPage::onSchemeSelected(int row)
     TransformerParams pendingParams = originalParams;
 
     // 结果摘要（计算/确认后刷新）
-    const auto summaryText = [](const TransformerParams &p, const CalcResult &r) {
+    const auto summaryText = [](const CalcResult &r) {
         if (!r.valid) {
             return QStringLiteral("尚未计算，修改参数后自动更新");
         }
-        if (!r.linkageSnapshotAvailable) {
-            return QStringLiteral("旧结果缺少联动快照，正在重新计算；指标校核尚未更新。");
-        }
-        const auto check = checkSchemeConstraints(p, r);
-        QStringList skipped;
-        const auto noteSkipped = [&skipped](const QString &name, double limit) {
-            if (limit <= 0.0) skipped << name;
-        };
-        noteSkipped(QStringLiteral("空载损耗"), p.noLoadLossStd_W);
-        noteSkipped(QStringLiteral("负载损耗"), p.loadLossStd_W);
-        noteSkipped(QStringLiteral("总损耗"), p.totalLossStd_W);
-        noteSkipped(QStringLiteral("空载电流"), p.noLoadCurrentStd_pct);
-        noteSkipped(QStringLiteral("阻抗电压"), p.impedanceVoltageStd_pct);
-        noteSkipped(QStringLiteral("油顶层温升"), p.oilTopTempRise_K);
-        noteSkipped(QStringLiteral("高压绕组温升"), p.hvCoilTempRise_K);
-        noteSkipped(QStringLiteral("低压绕组温升"), p.lvCoilTempRise_K);
-        QString status = check.passed ? (skipped.isEmpty() ? QStringLiteral("当前指标均未超限")
-            : skipped.size() == 8 ? QStringLiteral("指标未校核") : QStringLiteral("已校核指标未超限（有项目未校核）"))
-            : QStringLiteral("指标超限：") + check.violations.join(QStringLiteral("；"));
-        if (!skipped.isEmpty()) status += QStringLiteral("\n未校核（指标≤0）：") + skipped.join(QStringLiteral("、"));
-        return QStringLiteral("计算成功 ｜ %1\n").arg(status) + QStringLiteral(
+        return QStringLiteral(
                    "内置基价材料合计 %1 元 | 空载损耗 %2 W | 负载损耗 %3 W | 阻抗电压 %4 % "
                    "| 油顶层温升 %5 K")
             .arg(QString::number(r.cost.materialCost, 'f', 0),
@@ -1681,18 +1661,9 @@ void EnterCalcPage::onSchemeSelected(int row)
                  QString::number(r.impedance.impedance_pct, 'f', 2),
                  QString::number(r.thermal.oilTopRise_K, 'f', 1));
     };
-    auto *summary = new QLabel(summaryText(pendingParams, pendingResult), &dlg);
-    summary->setTextFormat(Qt::PlainText);
-    summary->setToolTip(QStringLiteral("按当前指标及允许偏差校核，不构成标准符合性认证；计算成功不等于指标合格。超限仍沿用原确认保存规则。"));
+    auto *summary = new QLabel(summaryText(pendingResult), &dlg);
     summary->setWordWrap(true);
     summary->setStyleSheet("color: #607368; font-size: 12px;");
-    // 超限项目多少不改变表格可用高度；较长明细可悬停读取全文。
-    summary->setFixedHeight(summary->fontMetrics().lineSpacing() * 4 + 8);
-    const auto setSummary = [summary](const QString &text) {
-        summary->setText(text);
-        summary->setToolTip(text + QStringLiteral("\n按当前指标及允许偏差校核，不构成标准符合性认证；计算成功不等于指标合格。超限仍沿用原确认保存规则。"));
-    };
-    setSummary(summaryText(pendingParams, pendingResult));
     layout->addWidget(summary);
 
     QTimer autoCalcTimer(&dlg);
@@ -1712,14 +1683,14 @@ void EnterCalcPage::onSchemeSelected(int row)
         sheet->refreshInputValues(); // 完整型号提交时的屏蔽信号联动也要回显，失败时同样同步。
         if (!collected) {
             sheet->showCalculationError(inputError);
-            setSummary(QStringLiteral("当前参数未完成有效计算，旧结果及指标校核未更新：") + inputError);
+            summary->setText(QStringLiteral("当前参数未完成有效计算：") + inputError);
             if (interactive) QMessageBox::warning(&dlg, QStringLiteral("方案输入不可用"), inputError);
             return false;
         }
         CalcResult res;
         if (!m_engine.calcElectromagnetic(in, res) || !res.valid) {
             sheet->showCalculationError(res.error);
-            setSummary(QStringLiteral("当前参数计算失败，旧结果及指标校核未更新：") + res.error);
+            summary->setText(QStringLiteral("当前参数计算失败：") + res.error);
             if (interactive) QMessageBox::warning(&dlg, QStringLiteral("方案计算"), QStringLiteral("计算失败: %1").arg(res.error));
             return false;
         }
@@ -1727,7 +1698,7 @@ void EnterCalcPage::onSchemeSelected(int row)
         pendingResult = res;
         pendingParams = params;
         sheet->refreshResult(pendingResult);
-        setSummary(summaryText(pendingParams, pendingResult));
+        summary->setText(summaryText(pendingResult));
         return true;
     };
 
@@ -1753,10 +1724,7 @@ void EnterCalcPage::onSchemeSelected(int row)
     layout->addLayout(btnRow);
 
     connect(sheet, &SchemeCalculationSheet::inputEdited, &dlg, [&]() {
-        if (!recalculating) {
-            setSummary(QStringLiteral("输入已修改，旧结果及指标校核暂未更新，正在自动计算。"));
-            autoCalcTimer.start();
-        }
+        if (!recalculating) autoCalcTimer.start();
     });
     connect(&autoCalcTimer, &QTimer::timeout, &dlg, [&]() { recalc(false); });
 
@@ -1783,7 +1751,7 @@ void EnterCalcPage::onSchemeSelected(int row)
 
     connect(cancelBtn, &QPushButton::clicked, &dlg, &QDialog::reject);
     connect(&dlg, &QDialog::finished, &autoCalcTimer, &QTimer::stop);
-    if (!pendingResult.valid || !pendingResult.linkageSnapshotAvailable) autoCalcTimer.start(0);
+    if (!pendingResult.valid) autoCalcTimer.start(0);
 
     // 默认占满屏幕工作区，保留标题栏、关闭按钮和还原能力。
     dlg.showMaximized();
