@@ -51,6 +51,50 @@ public:
 auto sheetGroups(const CalcResult &result)
 {
     auto groups = EmResultPanel::buildGroups(result);
+    // 仅本弹窗扩展明细，共用结果页和打印布局不变。
+    for (auto &group : groups) {
+        if (group.first != QStringLiteral("铁芯")) continue;
+        for (auto &row : group.second) {
+            if (row[0] == QStringLiteral("心柱磁密")) row[0] = QStringLiteral("心柱设计磁密 F16");
+            else if (row[0] == QStringLiteral("铁轭磁密")) row[0] = QStringLiteral("铁轭查表磁密 O25");
+            else if (row[0] == QStringLiteral("心柱截面")) row[0] = QStringLiteral("心柱几何截面 F14");
+            else if (row[0] == QStringLiteral("铁轭截面")) row[0] = QStringLiteral("铁轭几何截面 J23");
+        }
+    }
+    const auto snapshotRow = [&result](const QString &name, double value, int decimals, const QString &unit) {
+        return QStringList{name, result.linkageSnapshotAvailable ? QString::number(value, 'f', decimals)
+            : QStringLiteral("待重新计算"), result.linkageSnapshotAvailable ? unit : QString()};
+    };
+    const auto &e = result.electrical;
+    groups.prepend({QStringLiteral("基础电量"), {
+        snapshotRow(QStringLiteral("高压额定线电压 Y5"), e.hvLineRated_V, 1, QStringLiteral("V")),
+        snapshotRow(QStringLiteral("高压最高线电压 V5"), e.hvLineMax_V, 1, QStringLiteral("V")),
+        snapshotRow(QStringLiteral("高压最低线电压 AA5"), e.hvLineMin_V, 1, QStringLiteral("V")),
+        snapshotRow(QStringLiteral("高压额定相电压 Y6"), e.hvPhaseRated_V, 0, QStringLiteral("V")),
+        snapshotRow(QStringLiteral("高压最高相电压 V6"), e.hvPhaseMax_V, 0, QStringLiteral("V")),
+        snapshotRow(QStringLiteral("高压最低相电压 AA6"), e.hvPhaseMin_V, 0, QStringLiteral("V")),
+        snapshotRow(QStringLiteral("高压线电流 W7"), e.hvLineCurrent_A, 2, QStringLiteral("A")),
+        snapshotRow(QStringLiteral("高压相电流 Z7"), e.hvPhaseCurrent_A, 2, QStringLiteral("A")),
+        snapshotRow(QStringLiteral("低压线电压 AH5"), e.lvLine_V, 1, QStringLiteral("V")),
+        snapshotRow(QStringLiteral("低压相电压 AH6"), e.lvPhase_V, 0, QStringLiteral("V")),
+        snapshotRow(QStringLiteral("低压相电流 AG7"), e.lvPhaseCurrent_A, 2, QStringLiteral("A"))}});
+    groups.append({QStringLiteral("铁芯联动"), {
+        snapshotRow(QStringLiteral("心柱实际截面 I24"), result.core.coreAreaActual_cm2, 3, QStringLiteral("cm²")),
+        snapshotRow(QStringLiteral("铁轭实际截面 O24"), result.core.yokeAreaActual_cm2, 3, QStringLiteral("cm²")),
+        snapshotRow(QStringLiteral("心柱查表磁密 I25"), result.core.fluxDensity_coreActual_T, 3, QStringLiteral("T")),
+        snapshotRow(QStringLiteral("心柱共重 P23"), result.core.coreLegsWeight_kg, 2, QStringLiteral("kg")),
+        snapshotRow(QStringLiteral("铁轭共重 U23"), result.core.yokesWeight_kg, 2, QStringLiteral("kg"))}});
+    QVector<QStringList> stacks;
+    // 固定16级占位，只刷新快照，不因片宽为0重排表格。
+    for (int i = 0; i < 16; ++i) {
+        const bool available = result.linkageSnapshotAvailable && i < result.core.widths_mm.size()
+            && i < result.core.stacks_mm.size();
+        stacks.append({QStringLiteral("叠积%1（片宽/几何叠厚）").arg(i + 1, 2, 10, QLatin1Char('0')),
+            available ? QStringLiteral("%1 / %2").arg(result.core.widths_mm[i], 0, 'f', 2)
+                .arg(result.core.stacks_mm[i], 0, 'f', 2) : QStringLiteral("待重新计算"),
+            available ? QStringLiteral("mm") : QString()});
+    }
+    groups.append({QStringLiteral("叠积快照"), stacks});
     // 预留条件分支字段，使圆线/油膨缩状态变化时无需重建正在编辑的表。
     for (auto &group : groups) {
         QStringList optional;
@@ -82,6 +126,8 @@ int inputZone(const QString &section, const QString &name)
 }
 int resultZone(const QString &group, const QString &name)
 {
+    if (group == QStringLiteral("基础电量")) return Basic;
+    if (group == QStringLiteral("铁芯联动") || group == QStringLiteral("叠积快照")) return Core;
     if (group == QStringLiteral("铁芯")) return name.contains(QStringLiteral("空载")) ? Performance : Core;
     if (group == QStringLiteral("温升")) return Thermal;
     if (group == QStringLiteral("阻抗电压")) return Duct;
@@ -105,6 +151,7 @@ SchemeCalculationSheet::SchemeCalculationSheet(const TransformerParams &params,
     m_resultStatus = new QLabel(this);
     m_resultStatus->setWordWrap(true);
     m_resultStatus->setStyleSheet(QStringLiteral("color:#185C37; padding:3px;"));
+    m_resultStatus->setFixedHeight(m_resultStatus->fontMetrics().lineSpacing() * 2 + 8);
     outer->addWidget(m_resultStatus);
     // 唯一输入数据源保持原行列、校验、控件和联动，仅隐藏其旧布局。
     m_input = new ParamTableWidget(this);
@@ -284,7 +331,8 @@ void SchemeCalculationSheet::rebuildSheet()
             for (const auto &values : group.second) {
                 const QString value = values.value(1) + (values.value(2).isEmpty() ? QString() : QLatin1Char(' ') + values.value(2));
                 fields[resultZone(group.first, values.value(0))].append({values.value(0), value,
-                    values.value(0) + QStringLiteral("\n计算值（只读）：") + value, -1, -1, false,
+                    values.value(0) + QStringLiteral("\n计算值（只读）：") + value, -1, -1,
+                    group.first == QStringLiteral("叠积快照"),
                     group.first + QLatin1Char('\n') + values.value(0)});
             }
         }
@@ -355,6 +403,7 @@ void SchemeCalculationSheet::rebuildSheet()
 void SchemeCalculationSheet::markPending()
 {
     m_resultStatus->setText(QStringLiteral("浅绿：可输入　白色：只读　输入已修改，正在自动更新；旧结果暂未刷新"));
+    m_resultStatus->setToolTip(m_resultStatus->text());
     emit inputEdited();
 }
 
@@ -373,6 +422,7 @@ bool SchemeCalculationSheet::inputsReady(QString &error) const
 void SchemeCalculationSheet::showCalculationError(const QString &error)
 {
     m_resultStatus->setText(QStringLiteral("自动计算未更新（原结果仅供查看）：") + error);
+    m_resultStatus->setToolTip(m_resultStatus->text());
 }
 
 void SchemeCalculationSheet::refreshResult(const CalcResult &result)
@@ -390,6 +440,7 @@ void SchemeCalculationSheet::refreshResult(const CalcResult &result)
         }
     }
     m_resultStatus->setText(QStringLiteral("浅绿：可输入　白色：只读　已按当前参数自动计算"));
+    m_resultStatus->setToolTip(m_resultStatus->text());
 }
 
 void SchemeCalculationSheet::loadResult(const CalcResult &result)
@@ -398,4 +449,5 @@ void SchemeCalculationSheet::loadResult(const CalcResult &result)
     rebuildSheet();
     m_resultStatus->setText(result.valid ? QStringLiteral("浅绿：可输入　白色：只读　输入与计算值按分区就近排列（当前方案）")
         : QStringLiteral("计算结果不可用，修改参数后自动计算；浅绿单元格可输入"));
+    m_resultStatus->setToolTip(m_resultStatus->text());
 }

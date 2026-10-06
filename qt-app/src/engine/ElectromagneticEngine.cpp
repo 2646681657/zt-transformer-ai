@@ -208,6 +208,18 @@ void calcElectrical(EmCtx &c)
 
     // 匝电压（AC4）：低压相电压 / 低压匝数
     c.out->core.turnVoltage_V = excelRound(c.lvPhase_V / in.lvTurns, 4);
+    auto &electrical = c.out->electrical;
+    electrical.hvLineRated_V = c.vLineRated_V;
+    electrical.hvLineMax_V = c.vLineMax_V;
+    electrical.hvLineMin_V = c.vLineMin_V;
+    electrical.hvPhaseRated_V = c.vPhaseRated_V;
+    electrical.hvPhaseMax_V = c.vPhaseMax_V;
+    electrical.hvPhaseMin_V = c.vPhaseMin_V;
+    electrical.hvLineCurrent_A = c.hvLineCurrent_A;
+    electrical.hvPhaseCurrent_A = c.hvPhaseCurrent_A;
+    electrical.lvLine_V = c.lvLine_V;
+    electrical.lvPhase_V = c.lvPhase_V;
+    electrical.lvPhaseCurrent_A = c.lvPhaseCurrent_A;
 }
 
 // ============================================================================
@@ -742,6 +754,7 @@ void calcCoreWeights(EmCtx &c)
     const double et = c.out->core.turnVoltage_V;
     const double bCore = excelCeiling(45.0 * et / c.coreAreaAct_cm2, 0.001);
     const double bYoke = excelCeiling(45.0 * et / c.yokeAreaAct_cm2, 0.001);
+    c.out->core.fluxDensity_coreActual_T = bCore;
     c.out->core.fluxDensity_yoke_T = bYoke;
 
     // 单位铁损插值（I26/O26）
@@ -1443,6 +1456,7 @@ bool ElectromagneticEngine::calcElectromagnetic(const CalcInput &input, CalcResu
     }
 
     result.valid = !ctx.failed;
+    result.linkageSnapshotAvailable = result.valid;
     result.error = ctx.error;
     return result.valid;
 }
