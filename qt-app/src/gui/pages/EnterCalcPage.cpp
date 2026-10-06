@@ -17,6 +17,7 @@
 #include "QuoteCalculator.h"
 #include "CostBasisNotes.h"
 #include "ParamTableWidget.h"
+#include "SchemeCalculationSheet.h"
 #include "CalculationApplicability.h"
 #include <QDateTime>
 #include <QDir>
@@ -51,6 +52,9 @@
 #include <QPainter>
 #include <QFormLayout>
 #include <QPlainTextEdit>
+#include <QScreen>
+#include <QTimer>
+#include <QScopedValueRollback>
 
 EnterCalcPage::EnterCalcPage(QWidget *parent)
     : QWidget(parent)
@@ -1621,18 +1625,22 @@ void EnterCalcPage::onSchemeSelected(int row)
     // 寻优基准 m_calcInput/参数设置页不受影响）；确认后返回本页并点亮行内按钮
     const OptimizeCandidate original = it.value();
     QDialog dlg(this);
-    dlg.setWindowTitle(QStringLiteral("方案参数 - 方案 %1").arg(schemeIdx));
+    dlg.setWindowTitle(QStringLiteral("方案计算单 - 方案 %1").arg(schemeIdx));
     dlg.setModal(true);
-    dlg.resize(720, 620);
+    dlg.setWindowFlags(dlg.windowFlags() | Qt::WindowMinMaxButtonsHint);
+    const QSize available = dlg.screen()->availableGeometry().size();
+    dlg.resize(qMin(1400, qMax(640, available.width() - 80)),
+               qMin(860, qMax(480, available.height() - 100)));
     auto *layout = new QVBoxLayout(&dlg);
     layout->setContentsMargins(12, 12, 12, 12);
 
-    auto *table = new ParamTableWidget(&dlg);
     const bool proMode = m_config.calcMode == StructureConfig::Professional;
     const TransformerParams originalParams = ParamTableWidget::paramsForInput(
         m_schemeParams.value(schemeIdx, m_params), original.input);
-    table->loadParamsForConfig(originalParams, m_config, original.input, proMode);
-    layout->addWidget(table, 1);
+    auto *sheet = new SchemeCalculationSheet(originalParams, m_config, original.input,
+                                             original.result, proMode, &dlg);
+    auto *table = sheet->inputTable();
+    layout->addWidget(sheet, 1);
 
     // 工作副本：弹窗内的编辑与重算不直接写回，确认时统一提交
     CalcInput working = original.input;
@@ -1642,7 +1650,7 @@ void EnterCalcPage::onSchemeSelected(int row)
     // 结果摘要（计算/确认后刷新）
     const auto summaryText = [](const CalcResult &r) {
         if (!r.valid) {
-            return QStringLiteral("尚未计算——点击\"计算\"按钮重算该方案");
+            return QStringLiteral("尚未计算，修改参数后自动更新");
         }
         return QStringLiteral(
                    "内置基价材料合计 %1 元 | 空载损耗 %2 W | 负载损耗 %3 W | 阻抗电压 %4 % "
@@ -1658,39 +1666,49 @@ void EnterCalcPage::onSchemeSelected(int row)
     summary->setStyleSheet("color: #607368; font-size: 12px;");
     layout->addWidget(summary);
 
-    // 表格当前值重算（计算/确认共用）：失败返回 false 并提示
-    const auto recalc = [&]() -> bool {
+    QTimer autoCalcTimer(&dlg);
+    autoCalcTimer.setSingleShot(true);
+    autoCalcTimer.setInterval(150); // 合并同一次编辑触发的多个联动，不要求额外点击。
+    bool recalculating = false;
+    // 自动预览无模态警告；确认仍执行完整校验及原人工核对规则。
+    const auto recalc = [&](bool interactive) -> bool {
+        autoCalcTimer.stop();
+        const QScopedValueRollback<bool> guard(recalculating, true);
+        sheet->markPending();
         CalcInput in = working;
         TransformerParams params;
         QString inputError;
-        if (!table->collectForCalculation(params, in, inputError)) {
-            QMessageBox::warning(&dlg, QStringLiteral("方案输入不可用"), inputError);
+        const bool collected = sheet->inputsReady(inputError)
+            && table->collectForCalculation(params, in, inputError, interactive);
+        sheet->refreshInputValues(); // 完整型号提交时的屏蔽信号联动也要回显，失败时同样同步。
+        if (!collected) {
+            sheet->showCalculationError(inputError);
+            summary->setText(QStringLiteral("当前参数未完成有效计算：") + inputError);
+            if (interactive) QMessageBox::warning(&dlg, QStringLiteral("方案输入不可用"), inputError);
             return false;
         }
         CalcResult res;
         if (!m_engine.calcElectromagnetic(in, res) || !res.valid) {
-            QMessageBox::warning(&dlg, QStringLiteral("方案计算"),
-                                 QStringLiteral("计算失败: %1").arg(res.error));
+            sheet->showCalculationError(res.error);
+            summary->setText(QStringLiteral("当前参数计算失败：") + res.error);
+            if (interactive) QMessageBox::warning(&dlg, QStringLiteral("方案计算"), QStringLiteral("计算失败: %1").arg(res.error));
             return false;
         }
         working = in;
         pendingResult = res;
         pendingParams = params;
+        sheet->refreshResult(pendingResult);
         summary->setText(summaryText(pendingResult));
         return true;
     };
 
     auto *btnRow = new QHBoxLayout;
-    auto *calcBtn = new QPushButton(QStringLiteral("计算"), &dlg);
     auto *okBtn = new QPushButton(QStringLiteral("确认"), &dlg);
     auto *cancelBtn = new QPushButton(QStringLiteral("取消"), &dlg);
-    calcBtn->setCursor(Qt::PointingHandCursor);
+    okBtn->setAutoDefault(false);
+    cancelBtn->setAutoDefault(false); // 在型号或单元格内按回车不意外提交方案。
     okBtn->setCursor(Qt::PointingHandCursor);
     cancelBtn->setCursor(Qt::PointingHandCursor);
-    calcBtn->setStyleSheet(
-        "QPushButton { background: #217346; color: #F3F5F4; font-size: 12px;"
-        " padding: 5px 18px; border: none; border-radius: 4px; font-weight: bold; }"
-        "QPushButton:hover { background: #185C37; }");
     okBtn->setStyleSheet(
         "QPushButton { background: #217346; color: #ffffff; font-size: 12px;"
         " padding: 5px 18px; border: none; border-radius: 4px; font-weight: bold; }"
@@ -1700,17 +1718,19 @@ void EnterCalcPage::onSchemeSelected(int row)
         " font-size: 12px; padding: 5px 18px; border: 1px solid #D3DDD6;"
         " border-radius: 4px; }"
         "QPushButton:hover { background: rgba(255,255,255,0.15); }");
-    btnRow->addWidget(calcBtn);
     btnRow->addStretch(1);
     btnRow->addWidget(okBtn);
     btnRow->addWidget(cancelBtn);
     layout->addLayout(btnRow);
 
-    connect(calcBtn, &QPushButton::clicked, this, [&]() { recalc(); });
+    connect(sheet, &SchemeCalculationSheet::inputEdited, &dlg, [&]() {
+        if (!recalculating) autoCalcTimer.start();
+    });
+    connect(&autoCalcTimer, &QTimer::timeout, &dlg, [&]() { recalc(false); });
 
     connect(okBtn, &QPushButton::clicked, this, [&]() {
         // 子控件未必发出 itemChanged：确认时始终收集、校验并重算。
-        if (!recalc()) {
+        if (!recalc(true)) {
             return;
         }
         OptimizeCandidate updated = original;
@@ -1730,7 +1750,11 @@ void EnterCalcPage::onSchemeSelected(int row)
     });
 
     connect(cancelBtn, &QPushButton::clicked, &dlg, &QDialog::reject);
+    connect(&dlg, &QDialog::finished, &autoCalcTimer, &QTimer::stop);
+    if (!pendingResult.valid) autoCalcTimer.start(0);
 
+    // 默认占满屏幕工作区，保留标题栏、关闭按钮和还原能力。
+    dlg.showMaximized();
     dlg.exec();
 }
 

@@ -279,7 +279,7 @@ void OptimizeCalcPage::setupMainArea()
     // 计算模式已在 setupRibbon 中从 QSettings 恢复）
     m_paramTable = new ParamTableWidget(this);
     m_paramTable->loadParamsForConfig(m_params, m_config, m_input,
-                                      m_config.calcMode == StructureConfig::Professional);
+                                      m_config.calcMode == StructureConfig::Professional, true);
     // 叠铁芯型号/容量联动：标准值覆盖结果实时显示在提示条
     connect(m_paramTable, &ParamTableWidget::stdValuesUpdated, this, [this](const QString &s) {
         m_linkStatusLabel->setText(s);
@@ -429,7 +429,7 @@ void OptimizeCalcPage::applySchemeInput(const CalcInput &input)
     m_params.hvTapMinusSteps = input.hvTapMinusSteps;
     m_params.hvTapVoltagePercent = input.hvTapStep_pct;
     const bool proMode = (m_config.calcMode == StructureConfig::Professional);
-    m_paramTable->loadParamsForConfig(m_params, m_config, m_input, proMode);
+    m_paramTable->loadParamsForConfig(m_params, m_config, m_input, proMode, true);
     updateHelpPanel();
 }
 
@@ -571,7 +571,7 @@ void OptimizeCalcPage::onImportParamsClicked()
 
     // 刷新表格显示导入后的参数（设计变量保持 m_input 当前值）
     const bool proMode = (m_config.calcMode == StructureConfig::Professional);
-    m_paramTable->loadParamsForConfig(m_params, m_config, m_input, proMode);
+    m_paramTable->loadParamsForConfig(m_params, m_config, m_input, proMode, true);
     QMessageBox::information(this, QStringLiteral("导入完成"),
         report + QStringLiteral("\n\n参数表已更新，请核对「一 输入信息」与「二 性能指标」。"));
 }
@@ -658,7 +658,7 @@ void OptimizeCalcPage::refreshParamTable()
     const bool wasUpdatesEnabled = updatesEnabled();
     setUpdatesEnabled(false);
     const bool proMode = (m_config.calcMode == StructureConfig::Professional);
-    m_paramTable->loadParamsForConfig(m_params, m_config, m_input, proMode);
+    m_paramTable->loadParamsForConfig(m_params, m_config, m_input, proMode, true);
     m_linkStatusLabel->setText(m_paramTable->standardStatus());
     m_linkStatusLabel->show();
     saveModePreference();

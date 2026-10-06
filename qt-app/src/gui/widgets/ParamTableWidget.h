@@ -22,7 +22,7 @@ public:
     // 设计变量节初值取自 input（默认即 SB20-M-630-10）；
     // proMode=true 时追加工艺/油道/损耗/油箱四节高级参数（专业模式）
     void loadParamsForConfig(const TransformerParams &params, const StructureConfig &config,
-                             const CalcInput &input, bool proMode = false);
+                             const CalcInput &input, bool proMode = false, bool designConnectionUi = false);
     TransformerParams getParams() const;
     // 当前联结组别是否能同时用于电磁计算与现有标准损耗表。
     bool hasSupportedConnectionGroup() const;
@@ -30,7 +30,8 @@ public:
     // 从表格设计变量节读回 CalcInput（未绑定或非法输入的域保持原值）
     void saveToInput(CalcInput &input) const;
     // 计算边界统一校验并提交完整型号；失败时不改变调用方输入。
-    bool collectForCalculation(TransformerParams &params, CalcInput &input, QString &error);
+    bool collectForCalculation(TransformerParams &params, CalcInput &input, QString &error,
+                               bool interactive = true);
     // 方案回显与输出元数据必须来自该方案，而不是寻优基准额定值。
     static TransformerParams paramsForInput(const TransformerParams &base, const CalcInput &input);
     QString standardStatus() const { return m_standardStatus; }
@@ -58,6 +59,11 @@ private:
     void updateYokePiece1();
     void updateTestVoltageHints();
     void updateHvCoilHints(); // 只更新固定行说明与悬停提示，不重建表格或改数值
+    void updateDesignConnection(); // 仅设计输入页，联结组别与基础电量联动。
+    bool m_designConnectionUi = false;
+    QComboBox *m_designConnectionCombo = nullptr;
+    int m_designConnectionRow = -1;
+    int m_designPhaseRow = -1;
     int m_testVoltageRow = -1;
     QComboBox *m_yokePiece1ModeCombo = nullptr;
     double m_manualYokePiece1_mm = 4.0;

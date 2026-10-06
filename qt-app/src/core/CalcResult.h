@@ -36,7 +36,8 @@ struct CoreResult {
     double yokeArea_cm2 = 0.0;         // J23 铁轭截面
     double coreAreaActual_cm2 = 0.0;   // I24 实际心柱截面
     double yokeAreaActual_cm2 = 0.0;   // O24 实际铁轭截面
-    double fluxDensity_core_T = 0.0;   // F16/I25 心柱磁密
+    double fluxDensity_core_T = 0.0;   // F16：设计心柱磁密，非I25实际查表磁密。
+    double fluxDensity_coreActual_T = 0.0; // I25：实际心柱截面对应的查表磁密。
     double fluxDensity_yoke_T = 0.0;   // O25 铁轭磁密
     // 重量
     double coreLegsWeight_kg = 0.0;    // P23 三相心柱共重
@@ -200,7 +201,24 @@ struct OilExpansionResult {
     }
 };
 
+// 保存已经计算的基础电量；界面不重复推导，避免读到后来改动的输入。
+struct ElectricalResult {
+    double hvLineRated_V = 0.0;
+    double hvLineMax_V = 0.0;
+    double hvLineMin_V = 0.0;
+    double hvPhaseRated_V = 0.0;
+    double hvPhaseMax_V = 0.0;
+    double hvPhaseMin_V = 0.0;
+    double hvLineCurrent_A = 0.0;
+    double hvPhaseCurrent_A = 0.0;
+    double lvLine_V = 0.0;
+    double lvPhase_V = 0.0;
+    double lvPhaseCurrent_A = 0.0;
+};
+
 struct CalcResult {
+    ElectricalResult electrical;
+    bool linkageSnapshotAvailable = false; // 旧快照不能把新增默认0显示为实际结果。
     OilExpansionResult oilExpansion;
     TestVoltageHints testVoltage;
     CoreResult core;
