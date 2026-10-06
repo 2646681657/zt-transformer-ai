@@ -19,6 +19,8 @@ public:
     // 适用范围与主引擎一致，调用界面须保证已支持的结构及50Hz配置。
     static LvTurnsRecommendation recommendLvTurns(const CalcInput &input);
     static bool previewCoreGeometry(const CalcInput &input, CoreResult &core, QString &error);
+    // 复用基础电量公式；不运行几何/损耗/温升，不代表全链可算。
+    static bool previewElectrical(const CalcInput &input, ElectricalResult &electrical, QString &error);
 
     // 电磁计算全链路：CalcInput（默认即 SB20-M-630-10）→ CalcResult
     bool calcElectromagnetic(const CalcInput &input, CalcResult &result) override;

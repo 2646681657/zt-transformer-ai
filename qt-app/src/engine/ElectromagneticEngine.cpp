@@ -1308,6 +1308,37 @@ void calcOilExpansionReference(EmCtx &c)
 // ============================================================================
 // 对外接口
 // ============================================================================
+bool ElectromagneticEngine::previewElectrical(const CalcInput &input, ElectricalResult &electrical, QString &error)
+{
+    electrical = ElectricalResult();
+    error.clear();
+    for (double value : {input.capacity_kVA, input.hvRated_kV, input.lvRated_kV}) {
+        if (!std::isfinite(value) || value <= 0.0) {
+            error = QStringLiteral("容量及高低压额定电压必须为正数");
+            return false;
+        }
+    }
+    if (input.lvTurns <= 0 || !std::isfinite(input.hvTapMax_pct) || !std::isfinite(input.hvTapMin_pct)
+        || input.hvTapMin_pct <= -100.0) {
+        error = QStringLiteral("实际低压匝数或调压幅度无效");
+        return false;
+    }
+    CalcResult snapshot;
+    EmCtx context;
+    context.in = &input;
+    context.out = &snapshot;
+    calcElectrical(context); // 与完整计算使用同一份公式和舍入。
+    const auto &e = snapshot.electrical;
+    for (double value : {e.hvPhaseRated_V, e.lvPhase_V, e.hvPhaseCurrent_A, e.lvPhaseCurrent_A}) {
+        if (!std::isfinite(value) || value <= 0.0) {
+            error = QStringLiteral("基础电量取整后无效或超出数值范围");
+            return false;
+        }
+    }
+    electrical = e;
+    return true;
+}
+
 LvTurnsRecommendation ElectromagneticEngine::recommendLvTurns(const CalcInput &input)
 {
     CoreResult core;

@@ -58,6 +58,7 @@ ParamTableWidget::ParamTableWidget(QWidget *parent)
         }
         updateYokePiece1();
         updateLvTurnsRecommendation();
+        updateDesignConnection();
     });
 }
 
@@ -553,6 +554,63 @@ void ParamTableWidget::applyModelLinkage()
     emit stdValuesUpdated(m_standardStatus);
     updateYokePiece1();
     updateLvTurnsRecommendation();
+    updateDesignConnection();
+}
+
+void ParamTableWidget::updateDesignConnection()
+{
+    if (m_loading || !m_designConnectionUi || m_designPhaseRow < 0) return;
+    const QSignalBlocker blocker(this);
+    QString error;
+    const bool supported = hasSupportedConnectionGroup();
+    const auto type = connectionType(item(m_designConnectionRow, 2)->text());
+    const QString note = supported
+        ? (type == SupportedConnection::Dyn11 ? QStringLiteral("高压D / 低压yn；匹配时标准按Dyn列")
+                                             : QStringLiteral("高压Y / 低压yn；匹配时标准按Yyn列"))
+        : QStringLiteral("当前接法尚未支持；禁止计算，不沿用旧接法");
+    item(m_designConnectionRow, 5)->setText(note + QStringLiteral("；仅50Hz"));
+    item(m_designConnectionRow, 5)->setToolTip(item(m_designConnectionRow, 5)->text());
+    if (!supported) error = QStringLiteral("当前联结组别未支持，请选择Dyn11或Yyn0");
+    static const QRegularExpression modelPattern(
+        QStringLiteral("^([A-Za-z0-9]+-M)-([0-9]+(?:\\.[0-9]+)?)/([0-9]+(?:\\.[0-9]+)?)-([0-9]+(?:\\.[0-9]+)?)$"),
+        QRegularExpression::CaseInsensitiveOption);
+    const auto model = modelPattern.match(m_productModelEdit->text().trimmed());
+    if (error.isEmpty() && (!model.hasMatch()
+        || model.captured(2).toDouble() != m_modelCapacity_kVA
+        || model.captured(3).toDouble() != m_modelHvRated_kV
+        || model.captured(4).toDouble() != m_modelLvRated_kV))
+        error = QStringLiteral("请补全产品型号；低压电压修改后按回车提交");
+    const auto frequency = m_inputRefs.value(QStringLiteral("frequency"));
+    if (error.isEmpty() && item(frequency.first, frequency.second)->text().toInt() != 50)
+        error = QStringLiteral("当前联动仅支持50Hz");
+    const auto turns = m_inputRefs.value(QStringLiteral("lvTurns"));
+    bool turnsOk = false;
+    const int lvTurns = item(turns.first, turns.second)->text().toInt(&turnsOk);
+    if (error.isEmpty() && (!turnsOk || lvTurns <= 0)) error = QStringLiteral("请填写有效的实际低压匝数");
+    if (error.isEmpty() && (!m_tapPlusSpin->hasAcceptableInput() || !m_tapMinusSpin->hasAcceptableInput()
+        || !m_tapStepSpin->hasAcceptableInput())) error = QStringLiteral("调压数值尚未输入完整");
+    ElectricalResult electrical;
+    if (error.isEmpty()) {
+        CalcInput preview = m_recommendationBaseInput;
+        saveToInput(preview);
+        preview.capacity_kVA = m_modelCapacity_kVA;
+        preview.hvRated_kV = m_modelHvRated_kV;
+        preview.lvRated_kV = m_modelLvRated_kV;
+        ElectromagneticEngine::previewElectrical(preview, electrical, error);
+    }
+    const double values[2][2] = {{electrical.hvPhaseRated_V, electrical.lvPhase_V},
+                                 {electrical.hvPhaseCurrent_A, electrical.lvPhaseCurrent_A}};
+    for (int r = 0; r < 2; ++r) {
+        for (int c = 0; c < 2; ++c) {
+            auto *cell = item(m_designPhaseRow + r, c == 0 ? 2 : 4);
+            cell->setText(error.isEmpty() ? QString::number(values[r][c], 'f', r == 0 ? 0 : 2) : QStringLiteral("不可用"));
+            cell->setTextAlignment(Qt::AlignRight | Qt::AlignVCenter);
+            cell->setToolTip(error.isEmpty() ? QStringLiteral("当前已提交额定值与接法，复用引擎基础电量公式；只读，不改实际匝数。") : error);
+        }
+        auto *remark = item(m_designPhaseRow + r, 5);
+        remark->setText(error.isEmpty() ? QStringLiteral("仅基础电量联动；不代表完整方案可算或合格") : error);
+        remark->setToolTip(remark->text());
+    }
 }
 
 void ParamTableWidget::updateTestVoltageHints()
@@ -739,7 +797,7 @@ void ParamTableWidget::updateWireForm()
 // 四/五/六节为可编辑设计变量，与 CalcInput 双向同步（saveToInput 读回）；
 // proMode=true 时追加七~十节高级参数（专业模式）
 void ParamTableWidget::loadParamsForConfig(const TransformerParams &params, const StructureConfig &config,
-                                           const CalcInput &input, bool proMode)
+                                           const CalcInput &input, bool proMode, bool designConnectionUi)
 {
     // 普通/专业模式会在同一对象上重载。销毁旧单元格前保留扁线会话备份；
     // 当前圆线输入不包含这份备份，不得用圆线增厚或默认宽厚覆盖它。
@@ -757,6 +815,10 @@ void ParamTableWidget::loadParamsForConfig(const TransformerParams &params, cons
         }
     }
     m_loading = true;
+    m_designConnectionUi = designConnectionUi;
+    m_designConnectionCombo = nullptr;
+    m_designConnectionRow = -1;
+    m_designPhaseRow = -1;
     m_recommendationBaseInput = input;
     m_yokePiece1ModeCombo = nullptr;
     m_manualYokePiece1_mm = input.yokePiece1Stack_mm;
@@ -848,6 +910,39 @@ void ParamTableWidget::loadParamsForConfig(const TransformerParams &params, cons
                 "频率(Hz)", QString::number(params.frequency_Hz),
                 "connectionGroup", "frequency");
     item(row - 1, 5)->setText(QStringLiteral("仅50Hz；其他频率禁止计算"));
+    if (m_designConnectionUi) {
+        m_designConnectionRow = row - 1;
+        m_designConnectionCombo = new QComboBox(this);
+        m_designConnectionCombo->addItem(QStringLiteral("Dyn（Dyn11）"), QStringLiteral("Dyn11"));
+        m_designConnectionCombo->addItem(QStringLiteral("Yyn（Yyn0）"), QStringLiteral("Yyn0"));
+        m_designConnectionCombo->addItem(QStringLiteral("Dd（暂不支持计算）"), QStringLiteral("Dd"));
+        m_designConnectionCombo->addItem(QStringLiteral("Yd（暂不支持计算）"), QStringLiteral("Yd"));
+        QString selected = params.connectionGroup.trimmed();
+        const auto type = connectionType(selected);
+        if (type == SupportedConnection::Dyn11) selected = QStringLiteral("Dyn11");
+        else if (type == SupportedConnection::Yyn0) selected = QStringLiteral("Yyn0");
+        int selectedIndex = m_designConnectionCombo->findData(selected);
+        if (selectedIndex < 0) {
+            m_designConnectionCombo->addItem(selected + QStringLiteral("（未支持，需修改）"), selected);
+            selectedIndex = m_designConnectionCombo->count() - 1;
+        }
+        m_designConnectionCombo->setCurrentIndex(selectedIndex);
+        item(m_designConnectionRow, 2)->setText(selected);
+        item(m_designConnectionRow, 2)->setFlags(item(m_designConnectionRow, 2)->flags() & ~Qt::ItemIsEditable);
+        setCellWidget(m_designConnectionRow, 2, m_designConnectionCombo);
+        auto* connectionCombo = m_designConnectionCombo;
+        connect(connectionCombo, &QComboBox::currentIndexChanged, this, [this, connectionCombo](int) {
+            if (m_loading || connectionCombo != m_designConnectionCombo) return;
+            item(m_designConnectionRow, 2)->setText(connectionCombo->currentData().toString());
+        });
+        m_designPhaseRow = row;
+        addParamRow(row++, QStringLiteral("高压额定相电压(V)"), QStringLiteral("待确认"),
+                    QStringLiteral("低压相电压(V)"), QStringLiteral("待确认"));
+        addParamRow(row++, QStringLiteral("高压相电流(A)"), QStringLiteral("待确认"),
+                    QStringLiteral("低压相电流(A)"), QStringLiteral("待确认"));
+        for (int r : {m_designPhaseRow, m_designPhaseRow + 1})
+            for (int col : {2, 4}) item(r, col)->setFlags(item(r, col)->flags() & ~Qt::ItemIsEditable);
+    }
     m_testVoltageRow = row;
     addParamRow(row++, QStringLiteral("高压试验电压(kV)"), QStringLiteral("需人工核对"),
                 QStringLiteral("低压试验电压(kV)"), QStringLiteral("需人工核对"));
@@ -1100,6 +1195,15 @@ void ParamTableWidget::loadParamsForConfig(const TransformerParams &params, cons
     // 七~十 高级参数（仅专业模式）
     if (proMode) {
         addProModeSections(row, input);
+    }
+    if (m_designConnectionUi) {
+        connect(m_productModelEdit, &QLineEdit::textEdited, this, [this]() { updateDesignConnection(); });
+        for (auto *spin : {m_tapPlusSpin, m_tapMinusSpin}) {
+            connect(spin, &QSpinBox::valueChanged, this, [this]() { updateDesignConnection(); });
+            connect(spin->findChild<QLineEdit *>(), &QLineEdit::textEdited, this, [this]() { updateDesignConnection(); });
+        }
+        connect(m_tapStepSpin, &QDoubleSpinBox::valueChanged, this, [this]() { updateDesignConnection(); });
+        connect(m_tapStepSpin->findChild<QLineEdit *>(), &QLineEdit::textEdited, this, [this]() { updateDesignConnection(); });
     }
     m_loading = false;
     // 导入的明确损耗指标没有会话来源键，视作本规格手工值，不覆盖。
