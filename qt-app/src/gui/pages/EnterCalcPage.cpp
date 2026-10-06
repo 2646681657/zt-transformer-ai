@@ -1134,6 +1134,13 @@ void EnterCalcPage::onRunEmCalc()
 void EnterCalcPage::runEmCalcInput(const CalcInput &candidate)
 {
     CalcInput input = candidate;
+    const auto reportFailure = [this](const QString &title, const QString &reason) {
+        const QString state = m_hasResult && m_emResult.valid
+            ? QStringLiteral("本次未更新；仍保留上一次成功方案的结果、指标及打印数据。")
+            : QStringLiteral("当前没有成功计算结果，本次未生成结果。 ");
+        m_statusBar->setText(QStringLiteral("本次计算失败：%1 ｜ %2").arg(reason, state));
+        QMessageBox::warning(this, title, reason + QStringLiteral("\n\n") + state);
+    };
     // 侧栏方案库也走同一标准匹配/输入校验入口，不能绕过设计页。
     ParamTableWidget inputTable(this);
     inputTable.loadParamsForConfig(ParamTableWidget::paramsForInput(m_params, input),
@@ -1141,22 +1148,24 @@ void EnterCalcPage::runEmCalcInput(const CalcInput &candidate)
     TransformerParams resultParams;
     QString inputError;
     if (!inputTable.collectForCalculation(resultParams, input, inputError)) {
-        QMessageBox::warning(this, QStringLiteral("方案输入不可用"), inputError);
+        reportFailure(QStringLiteral("方案输入不可用"), inputError);
         return;
     }
-    const QString scopeError = calculationScopeError(m_config, m_params, input);
+    const QString scopeError = calculationScopeError(m_config, resultParams, input);
     if (!scopeError.isEmpty()) {
-        QMessageBox::warning(this, QStringLiteral("当前配置暂不支持"), scopeError);
+        reportFailure(QStringLiteral("当前配置暂不支持"), scopeError);
         return;
     }
+    CalcResult result;
+    if (!m_engine.calcElectromagnetic(input, result) || !result.valid) {
+        reportFailure(QStringLiteral("电磁计算"), result.error.isEmpty()
+            ? QStringLiteral("电磁计算未成功，请核对设计参数。") : result.error);
+        return;
+    }
+    // 成功前不修改任何已显示结果的来源；输入、指标、结果一起提交。
     m_confirmedSchemeIdx = -1;
     m_lastInput = input;
-    if (!m_engine.calcElectromagnetic(input, m_emResult) || !m_emResult.valid) {
-        m_statusBar->setText(QStringLiteral("电磁计算失败: %1").arg(m_emResult.error));
-        QMessageBox::warning(this, QStringLiteral("电磁计算"),
-                             QStringLiteral("计算失败: %1").arg(m_emResult.error));
-        return;
-    }
+    m_emResult = result;
     m_hasResult = true;
     m_lastParams = resultParams;
     m_calcInput = input;
