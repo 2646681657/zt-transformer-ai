@@ -1670,7 +1670,9 @@ void EnterCalcPage::onSchemeSelected(int row)
         CalcInput in = working;
         TransformerParams params;
         QString inputError;
-        if (!table->collectForCalculation(params, in, inputError)) {
+        const bool collected = table->collectForCalculation(params, in, inputError);
+        sheet->refreshInputValues(); // 完整型号提交时的屏蔽信号联动也要回显，失败时同样同步。
+        if (!collected) {
             QMessageBox::warning(&dlg, QStringLiteral("方案输入不可用"), inputError);
             return false;
         }
