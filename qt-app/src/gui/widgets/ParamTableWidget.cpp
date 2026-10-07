@@ -52,6 +52,11 @@ ParamTableWidget::ParamTableWidget(QWidget *parent)
             if (key.endsWith(QStringLiteral("LossStd"))) {
                 m_lossStandardsManual = true;
                 m_lastLinkageKey = standardKey();
+                m_standardMode = TransformerParams::StandardMode::Custom;
+                if (m_standardModeCombo) {
+                    const QSignalBlocker blocker(m_standardModeCombo);
+                    m_standardModeCombo->setCurrentIndex(1);
+                }
             }
             applyModelLinkage();
             break;
@@ -209,6 +214,7 @@ TransformerParams ParamTableWidget::getParams() const
     setString("connectionGroup", params.connectionGroup);
     setInt("frequency", params.frequency_Hz);
     params.lossStandardsManual = m_lossStandardsManual;
+    params.standardMode = m_standardMode;
     params.lossStandardsKey = m_lastLinkageKey;
 
     // 性能指标
@@ -235,6 +241,13 @@ TransformerParams ParamTableWidget::getParams() const
 TransformerParams ParamTableWidget::paramsForInput(const TransformerParams &base, const CalcInput &input)
 {
     TransformerParams params = base;
+    if (input.hasPerformanceCriteria && PerformanceCriteria::validModel(input.performanceCriteria.productModel)) {
+        PerformanceCriteria::restore(input.performanceCriteria, params);
+    } else {
+        params.standardMode = TransformerParams::StandardMode::Unconfirmed;
+        params.lossStandardsManual = true;
+        params.lossStandardsKey.clear();
+    }
     params.capacity_kVA = input.capacity_kVA;
     params.hvRatedVoltage_kV = input.hvRated_kV;
     params.lvRatedVoltage_kV = input.lvRated_kV;
@@ -246,7 +259,7 @@ TransformerParams ParamTableWidget::paramsForInput(const TransformerParams &base
         : (input.hvDeltaConnected ? QStringLiteral("Dd（暂不支持）") : QStringLiteral("Yd（暂不支持）"));
     static const QRegularExpression seriesPattern(QStringLiteral("^(.+-M)(?:-|$)"),
                                                   QRegularExpression::CaseInsensitiveOption);
-    const auto match = seriesPattern.match(base.productModel.trimmed());
+    const auto match = seriesPattern.match(params.productModel.trimmed());
     const QString series = match.hasMatch() ? match.captured(1) : QStringLiteral("SB20-M");
     params.productModel = QStringLiteral("%1-%2/%3-%4")
         .arg(series, QString::number(input.capacity_kVA, 'g', 12),
@@ -258,6 +271,10 @@ bool ParamTableWidget::collectForCalculation(TransformerParams &params, CalcInpu
                                             bool interactive)
 {
     error.clear();
+    if (m_standardMode == TransformerParams::StandardMode::Unconfirmed) {
+        error = QStringLiteral("此方案未保存完整指标来源。请在设计输入页选择内置标准或非标，并核对性能指标后再计算。");
+        return false;
+    }
     // 增量输入只负责编辑期间联动；计算/确认时必须完整解析屏幕上的型号。
     static const QRegularExpression modelPattern(
         QStringLiteral("^([A-Za-z0-9]+-M)-([0-9]+(?:\\.[0-9]+)?)/([0-9]+(?:\\.[0-9]+)?)-([0-9]+(?:\\.[0-9]+)?)$"),
@@ -357,7 +374,8 @@ bool ParamTableWidget::collectForCalculation(TransformerParams &params, CalcInpu
         error = scopeError + QStringLiteral("。请使用油浸式、低压箔绕、叠铁芯、椭圆形、双绕组、多层圆筒式，50Hz/75℃配置。");
         return false;
     }
-    const QString unavailable = standardUnavailableReason();
+    const QString unavailable = m_standardMode == TransformerParams::StandardMode::BuiltIn
+        ? standardUnavailableReason() : QString();
     if (!unavailable.isEmpty() && !interactive) {
         error = unavailable + QStringLiteral("；请核对损耗标准后点击确认。自动预览不代替人工核对。");
         return false;
@@ -525,7 +543,11 @@ void ParamTableWidget::applyModelLinkage()
     };
     const QString key = standardKey();
     const QString unavailable = standardUnavailableReason();
-    if (!unavailable.isEmpty()) {
+    if (m_standardMode == TransformerParams::StandardMode::Unconfirmed) {
+        m_standardStatus = QStringLiteral("指标来源待确认：旧方案或指标数据缺失；保留当前值，请选择模式并逐项核对，不能视为该方案原指标。");
+    } else if (m_standardMode == TransformerParams::StandardMode::Custom) {
+        m_standardStatus = QStringLiteral("非标：使用手工性能指标；更改型号、容量和接法不自动覆盖指标，不代表已满足合同要求。");
+    } else if (!unavailable.isEmpty()) {
         m_standardStatus = unavailable + QStringLiteral("；需手工核对：保留原损耗值，未自动匹配当前规格。");
     } else {
         if (key != m_lastLinkageKey)
@@ -546,10 +568,20 @@ void ParamTableWidget::applyModelLinkage()
     }
     for (const QString &lossKey : {QStringLiteral("noLoadLossStd"), QStringLiteral("loadLossStd"), QStringLiteral("totalLossStd")}) {
         const auto ref = m_inputRefs.value(lossKey);
-        item(ref.first, 5)->setText(unavailable.isEmpty()
+        const QSignalBlocker blocker(this);
+        item(ref.first, 5)->setText(m_standardMode == TransformerParams::StandardMode::Unconfirmed
+            ? QStringLiteral("来源待确认（保留当前值）") : m_standardMode == TransformerParams::StandardMode::Custom
+            ? QStringLiteral("非标手工指标") : unavailable.isEmpty()
             ? (m_lossStandardsManual ? QStringLiteral("手工设置") : QStringLiteral("内置10kV表"))
             : QStringLiteral("需手工核对（保留原值）"));
         item(ref.first, ref.second)->setToolTip(m_standardStatus);
+    }
+    if (m_standardModeRow >= 0) {
+        const QSignalBlocker blocker(this);
+        item(m_standardModeRow, 5)->setText(m_standardMode == TransformerParams::StandardMode::BuiltIn
+            ? QStringLiteral("仅损耗表自动；其余指标手工") : m_standardMode == TransformerParams::StandardMode::Custom
+            ? QStringLiteral("全部指标手工；规格切换不覆盖") : QStringLiteral("旧方案来源缺失，请核对"));
+        item(m_standardModeRow, 5)->setToolTip(m_standardStatus);
     }
     emit stdValuesUpdated(m_standardStatus);
     updateYokePiece1();
@@ -565,8 +597,8 @@ void ParamTableWidget::updateDesignConnection()
     const bool supported = hasSupportedConnectionGroup();
     const auto type = connectionType(item(m_designConnectionRow, 2)->text());
     const QString note = supported
-        ? (type == SupportedConnection::Dyn11 ? QStringLiteral("高压D / 低压yn；匹配时标准按Dyn列")
-                                             : QStringLiteral("高压Y / 低压yn；匹配时标准按Yyn列"))
+        ? (type == SupportedConnection::Dyn11 ? QStringLiteral("高压D / 低压yn；内置匹配时按Dyn列")
+                                             : QStringLiteral("高压Y / 低压yn；内置匹配时按Yyn列"))
         : QStringLiteral("当前接法尚未支持；禁止计算，不沿用旧接法");
     item(m_designConnectionRow, 5)->setText(note + QStringLiteral("；仅50Hz"));
     item(m_designConnectionRow, 5)->setToolTip(item(m_designConnectionRow, 5)->text());
@@ -827,6 +859,11 @@ void ParamTableWidget::loadParamsForConfig(const TransformerParams &params, cons
     m_baseParams = params;
     m_config = config;
     m_lossStandardsManual = params.lossStandardsManual;
+    m_standardMode = params.standardMode;
+    if (m_standardMode == TransformerParams::StandardMode::BuiltIn && m_lossStandardsManual)
+        m_standardMode = TransformerParams::StandardMode::Custom;
+    m_standardModeCombo = nullptr;
+    m_standardModeRow = -1;
     m_lastLinkageKey = params.lossStandardsKey;
     m_tapPlusSpin = nullptr;
     m_tapMinusSpin = nullptr;
@@ -998,34 +1035,66 @@ void ParamTableWidget::loadParamsForConfig(const TransformerParams &params, cons
     // 二 性能指标
     addSectionRow(row++, QStringLiteral("二 性能指标"),
                   QStringLiteral("设计允许偏差:最小值(可选填)"), QStringLiteral("最大值(可选填)"));
-    addInputRow(row++, "空载损耗标准值(W)", QString::number(params.noLoadLossStd_W),
-                "", QString::number(params.noLoadLossMaxDev_pct),
+    if (m_designConnectionUi) {
+        m_standardModeRow = row;
+        addParamRow(row++, QStringLiteral("指标来源模式"), QString(), QString(), QString());
+        item(m_standardModeRow, 2)->setFlags(item(m_standardModeRow, 2)->flags() & ~Qt::ItemIsEditable);
+        m_standardModeCombo = new QComboBox(this);
+        auto *modeCombo = m_standardModeCombo;
+        modeCombo->addItem(QStringLiteral("内置标准（损耗表）"), int(TransformerParams::StandardMode::BuiltIn));
+        modeCombo->addItem(QStringLiteral("非标（手工指标）"), int(TransformerParams::StandardMode::Custom));
+        modeCombo->addItem(QStringLiteral("来源待确认"), int(TransformerParams::StandardMode::Unconfirmed));
+        modeCombo->setCurrentIndex(int(m_standardMode));
+        setCellWidget(m_standardModeRow, 2, modeCombo);
+        connect(modeCombo, &QComboBox::currentIndexChanged, this, [this, modeCombo](int index) {
+            if (m_loading || modeCombo != m_standardModeCombo) return;
+            const auto previous = m_standardMode;
+            const auto next = TransformerParams::StandardMode(modeCombo->itemData(index).toInt());
+            if (next == TransformerParams::StandardMode::BuiltIn) {
+                const QString unavailable = standardUnavailableReason();
+                if (!unavailable.isEmpty() || QMessageBox::question(this, QStringLiteral("切回内置损耗标准"),
+                    QStringLiteral("将按当前型号、容量和接法替换空载、负载及总损耗指标；其余指标和允许偏差保持手工值。是否继续？"),
+                    QMessageBox::Yes | QMessageBox::No, QMessageBox::No) != QMessageBox::Yes) {
+                    if (!unavailable.isEmpty()) QMessageBox::warning(this, QStringLiteral("内置表不适用"), unavailable);
+                    const QSignalBlocker blocker(modeCombo);
+                    modeCombo->setCurrentIndex(int(previous));
+                    return;
+                }
+            }
+            m_standardMode = next;
+            m_lossStandardsManual = (next != TransformerParams::StandardMode::BuiltIn);
+            m_lastLinkageKey = standardKey();
+            applyModelLinkage();
+        });
+    }
+    addInputRow(row++, "空载损耗标准值(W)", PerformanceCriteria::valueText(params.noLoadLossStd_W),
+                "", PerformanceCriteria::valueText(params.noLoadLossMaxDev_pct),
                 "noLoadLossStd", "noLoadLossMaxDev");
-    addInputRow(row++, "负载损耗标准值(W)", QString::number(params.loadLossStd_W),
-                "", QString::number(params.loadLossMaxDev_pct),
+    addInputRow(row++, "负载损耗标准值(W)", PerformanceCriteria::valueText(params.loadLossStd_W),
+                "", PerformanceCriteria::valueText(params.loadLossMaxDev_pct),
                 "loadLossStd", "loadLossMaxDev");
-    addInputRow(row++, "总损耗标准值(W)", QString::number(params.totalLossStd_W),
-                "", QString::number(params.totalLossMaxDev_pct),
+    addInputRow(row++, "总损耗标准值(W)", PerformanceCriteria::valueText(params.totalLossStd_W),
+                "", PerformanceCriteria::valueText(params.totalLossMaxDev_pct),
                 "totalLossStd", "totalLossMaxDev");
-    addInputRow(row++, "阻抗电压标准值(%)", QString::number(params.impedanceVoltageStd_pct),
-                QString::number(params.impedanceVoltageMinDev_pct),
-                QString::number(params.impedanceVoltageMaxDev_pct),
+    addInputRow(row++, "阻抗电压标准值(%)", PerformanceCriteria::valueText(params.impedanceVoltageStd_pct),
+                PerformanceCriteria::valueText(params.impedanceVoltageMinDev_pct),
+                PerformanceCriteria::valueText(params.impedanceVoltageMaxDev_pct),
                 "impedanceVoltageStd", "impedanceVoltageMaxDev");
     bindInput("impedanceVoltageMinDev", row - 1, 3);
-    addInputRow(row++, "空载电流标准值(%)", QString::number(params.noLoadCurrentStd_pct),
-                "", QString::number(params.noLoadCurrentMaxDev_pct),
+    addInputRow(row++, "空载电流标准值(%)", PerformanceCriteria::valueText(params.noLoadCurrentStd_pct),
+                "", PerformanceCriteria::valueText(params.noLoadCurrentMaxDev_pct),
                 "noLoadCurrentStd", "noLoadCurrentMaxDev");
 
     // 三 温升限值：油顶层限值参与所有方案校核，不应随铁芯类型隐藏。
     addSectionRow(row++, QStringLiteral("三 温升限值"));
-    addParamRow(row++, "油顶层温升限值(K)", QString::number(params.oilTopTempRise_K));
+    addParamRow(row++, "油顶层温升限值(K)", PerformanceCriteria::valueText(params.oilTopTempRise_K));
     bindInput("oilTopTempRise", row - 1, 2);
     item(row - 1, 5)->setText(QStringLiteral("方案校核上限；≤0不校核"));
     item(row - 1, 2)->setToolTip(QStringLiteral(
         "比较计算结果中的油顶层温升，不是油面温升。仅影响方案校核和筛选，不改变温升计算公式；沿用原规则，限值≤0时不校核此项。"));
-    addParamRow(row++, "高压线圈温升限值(K)", QString::number(params.hvCoilTempRise_K));
+    addParamRow(row++, "高压线圈温升限值(K)", PerformanceCriteria::valueText(params.hvCoilTempRise_K));
     bindInput("hvCoilTempRise", row - 1, 2);
-    addParamRow(row++, "低压线圈温升限值(K)", QString::number(params.lvCoilTempRise_K));
+    addParamRow(row++, "低压线圈温升限值(K)", PerformanceCriteria::valueText(params.lvCoilTempRise_K));
     bindInput("lvCoilTempRise", row - 1, 2);
 
     // 四 铁芯参数（设计变量，初值取自 CalcInput）
@@ -1231,6 +1300,8 @@ void ParamTableWidget::updateHvCoilHints()
 // 从表格设计变量节读回 CalcInput：空值/非法值保持原字段不变
 void ParamTableWidget::saveToInput(CalcInput &input) const
 {
+    input.hasPerformanceCriteria = true;
+    input.performanceCriteria = getParams();
     if (m_hvMaterialCombo && m_lvMaterialCombo) {
         input.hvCopperWire = (m_hvMaterialCombo->currentIndex() == 0);
         input.lvCopperFoil = (m_lvMaterialCombo->currentIndex() == 0);

@@ -5,6 +5,8 @@
 #include <QString>
 
 struct TransformerParams {
+    enum class StandardMode { BuiltIn, Custom, Unconfirmed };
+    StandardMode standardMode = StandardMode::BuiltIn;
     // 输入信息（默认值对齐 SB20-M-630-10 计算单）
     double capacity_kVA = 630.0;
     double hvRatedVoltage_kV = 10.0;
@@ -23,7 +25,7 @@ struct TransformerParams {
     double loadLossMaxDev_pct = 10.0;
     double totalLossStd_W = 5740.0;
     double totalLossMaxDev_pct = 10.0;
-    // 当前会话中记录损耗标准值的来源；不改变既有方案文件格式。
+    // 随方案指标快照保存；内置模式仅涵盖已收录的损耗表。
     bool lossStandardsManual = false;
     QString lossStandardsKey;
     double impedanceVoltageStd_pct = 6.93;

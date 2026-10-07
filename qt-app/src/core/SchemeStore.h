@@ -111,6 +111,22 @@ inline QJsonObject toJson(const CalcInput &in)
     o.insert(QStringLiteral("wavePitch_mm"), in.wavePitch_mm);
     o.insert(QStringLiteral("phaseGapBase_mm"), in.phaseGapBase_mm);
     o.insert(QStringLiteral("refFluxDens_T"), in.refFluxDens_T);
+    if (in.hasPerformanceCriteria) {
+        const auto &p = in.performanceCriteria;
+        QJsonObject criteria;
+        criteria.insert(QStringLiteral("version"), 1);
+        criteria.insert(QStringLiteral("mode"), p.standardMode == TransformerParams::StandardMode::BuiltIn
+            ? QStringLiteral("builtin") : p.standardMode == TransformerParams::StandardMode::Custom
+            ? QStringLiteral("custom") : QStringLiteral("unconfirmed"));
+        criteria.insert(QStringLiteral("productModel"), p.productModel);
+        criteria.insert(QStringLiteral("lossStandardsKey"), p.lossStandardsKey);
+        criteria.insert(QStringLiteral("lossStandardsManual"), p.lossStandardsManual);
+        int count;
+        const auto *fields = PerformanceCriteria::fields(count);
+        for (int i = 0; i < count; ++i)
+            criteria.insert(QLatin1String(fields[i].key), p.*(fields[i].member));
+        o.insert(QStringLiteral("performanceCriteria"), criteria);
+    }
     return o;
 }
 
@@ -118,6 +134,31 @@ inline QJsonObject toJson(const CalcInput &in)
 inline CalcInput fromJson(const QJsonObject &o)
 {
     CalcInput in;
+    const auto criteria = o.value(QStringLiteral("performanceCriteria")).toObject();
+    const QString mode = criteria.value(QStringLiteral("mode")).toString();
+    bool criteriaValid = criteria.value(QStringLiteral("version")).isDouble()
+        && criteria.value(QStringLiteral("version")).toDouble() == 1.0
+        && (mode == QLatin1String("builtin") || mode == QLatin1String("custom") || mode == QLatin1String("unconfirmed"))
+        && criteria.value(QStringLiteral("productModel")).isString()
+        && PerformanceCriteria::validModel(criteria.value(QStringLiteral("productModel")).toString())
+        && criteria.value(QStringLiteral("lossStandardsKey")).isString()
+        && criteria.value(QStringLiteral("lossStandardsManual")).isBool();
+    int fieldCount;
+    const auto *fields = PerformanceCriteria::fields(fieldCount);
+    for (int i = 0; i < fieldCount; ++i) {
+        const auto value = criteria.value(QLatin1String(fields[i].key));
+        criteriaValid = criteriaValid && value.isDouble() && std::isfinite(value.toDouble());
+        if (value.isDouble()) in.performanceCriteria.*(fields[i].member) = value.toDouble();
+    }
+    in.hasPerformanceCriteria = criteriaValid;
+    in.performanceCriteria.standardMode = criteriaValid && mode == QLatin1String("builtin")
+        ? TransformerParams::StandardMode::BuiltIn : criteriaValid && mode == QLatin1String("custom")
+        ? TransformerParams::StandardMode::Custom : TransformerParams::StandardMode::Unconfirmed;
+    if (criteriaValid) {
+        in.performanceCriteria.productModel = criteria.value(QStringLiteral("productModel")).toString();
+        in.performanceCriteria.lossStandardsKey = criteria.value(QStringLiteral("lossStandardsKey")).toString();
+        in.performanceCriteria.lossStandardsManual = criteria.value(QStringLiteral("lossStandardsManual")).toBool();
+    }
     const auto num = [&o](const char *key, double dst) {
         const auto v = o.value(QLatin1String(key));
         return v.isDouble() ? v.toDouble() : dst;
@@ -460,7 +501,7 @@ inline QVector<SchemeEntry> loadEntries(const QString &path)
     return entries;
 }
 
-// 设计变量是否完全一致（记忆库去重依据；借 JSON 序列化比较，免手写字段比对）
+// 设计变量及已保存指标是否完全一致（不同指标版本保留独立记录）。
 inline bool sameInput(const CalcInput &a, const CalcInput &b)
 {
     return toJson(a) == toJson(b);
