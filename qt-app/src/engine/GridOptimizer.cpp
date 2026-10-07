@@ -59,62 +59,70 @@ public slots:
         const int straightRange = m_settings.straightRadius();
         const int lvTurnsRange = m_settings.lvTurnsRadius();
         const int hvTplRange = m_settings.hvLayersRadius();
+        const int thickRange = m_settings.lvFoilThickRadius();
+        const int widthRange = m_settings.lvFoilWidthRadius();
+        const double thickStep = m_settings.searchLvFoilThick ? m_settings.lvFoilThickStep_mm : 0.0;
+        const double widthStep = m_settings.searchLvFoilWidth ? m_settings.lvFoilWidthStep_mm : 0.0;
+        const int ranges[] = {diaRange, straightRange, lvTurnsRange, hvTplRange, thickRange, widthRange};
 
         ElectromagneticEngine engine;
         OptimizeCandidate best;
         bool haveBest = false;
         bool stopped = false;
 
-        for (int di = -diaRange; di <= diaRange && !stopped; ++di) {
-            for (int si = -straightRange; si <= straightRange && !stopped; ++si) {
-                for (int li = -lvTurnsRange; li <= lvTurnsRange && !stopped; ++li) {
-                    for (int hi = -hvTplRange; hi <= hvTplRange && !stopped; ++hi) {
-                        if (!waitIfPaused()) {
-                            stopped = true;
-                            break;
-                        }
-                        CalcInput in = m_base;
-                        in.coreDiameter_mm += di * diaStep;
-                        in.coreStraight_mm += si * straightStep;
-                        in.lvTurns += li;
-                        in.hvTurnsPerLayer += hi;
+        // 混合进制枚举完整笛卡尔积；固定变量只有一档，旧四变量顺序保持不变。
+        for (int index = 0; index < summary.planned; ++index) {
+            int remaining = index;
+            int offsets[6];
+            for (int dimension = 5; dimension >= 0; --dimension) {
+                const int count = 2 * ranges[dimension] + 1;
+                offsets[dimension] = remaining % count - ranges[dimension];
+                remaining /= count;
+            }
+            if (!waitIfPaused()) {
+                stopped = true;
+                break;
+            }
+            CalcInput in = m_base;
+            in.coreDiameter_mm += offsets[0] * diaStep;
+            in.coreStraight_mm += offsets[1] * straightStep;
+            in.lvTurns += offsets[2];
+            in.hvTurnsPerLayer += offsets[3];
+            in.lvFoilThick_mm += offsets[4] * thickStep;
+            in.lvFoilWidth_mm += offsets[5] * widthStep;
 
-                        CalcResult r;
-                        ++summary.evaluated;
-                        const bool calculated = engine.calcElectromagnetic(in, r) && r.valid;
-                        const auto constraints = calculated ? checkSchemeConstraints(m_params, r)
-                                                            : SchemeConstraintsResult{};
-                        if (!calculated || !std::isfinite(optimizationMaterialCost(r))
-                                || optimizationMaterialCost(r) < 0.0) {
-                            ++summary.invalid;
-                            ++summary.rejectionReasons[QStringLiteral("计算失败或材料成本无效")];
-                            QString reason = calculated ? QStringLiteral("材料成本非有限值或为负数") : r.error.trimmed();
-                            if (reason.isEmpty()) reason = QStringLiteral("引擎未返回有效结果");
-                            reason = reason.left(240);
-                            if (!summary.calculationErrors.contains(reason) && summary.calculationErrors.size() >= 20)
-                                reason = QStringLiteral("其他计算失败原因");
-                            ++summary.calculationErrors[reason];
-                        } else if (!constraints.passed) {
-                            ++summary.constraintRejected;
-                            for (const auto &name : constraints.failedChecks)
-                                ++summary.rejectionReasons[name];
-                        } else {
-                            OptimizeCandidate c;
-                            c.input = in;
-                            c.result = r;
-                            c.scheme = makeScheme(0, in, r);  // 序号由接收端按入库顺序编排
-                            emit candidateReady(c);
-                            ++summary.accepted;
-                            if (!haveBest
-                                    || optimizationMaterialCost(r) < optimizationMaterialCost(best.result)) {
-                                best = c;
-                                haveBest = true;
-                            }
-                        }
-                        emit progressUpdated(summary.evaluated * 100 / summary.planned);
-                    }
+            CalcResult r;
+            ++summary.evaluated;
+            const bool calculated = engine.calcElectromagnetic(in, r) && r.valid;
+            const auto constraints = calculated ? checkSchemeConstraints(m_params, r)
+                                                : SchemeConstraintsResult{};
+            if (!calculated || !std::isfinite(optimizationMaterialCost(r))
+                    || optimizationMaterialCost(r) < 0.0) {
+                ++summary.invalid;
+                ++summary.rejectionReasons[QStringLiteral("计算失败或材料成本无效")];
+                QString reason = calculated ? QStringLiteral("材料成本非有限值或为负数") : r.error.trimmed();
+                if (reason.isEmpty()) reason = QStringLiteral("引擎未返回有效结果");
+                reason = reason.left(240);
+                if (!summary.calculationErrors.contains(reason) && summary.calculationErrors.size() >= 20)
+                    reason = QStringLiteral("其他计算失败原因");
+                ++summary.calculationErrors[reason];
+            } else if (!constraints.passed) {
+                ++summary.constraintRejected;
+                for (const auto &name : constraints.failedChecks)
+                    ++summary.rejectionReasons[name];
+            } else {
+                OptimizeCandidate c;
+                c.input = in;
+                c.result = r;
+                c.scheme = makeScheme(0, in, r);  // 序号由接收端按入库顺序编排
+                emit candidateReady(c);
+                ++summary.accepted;
+                if (!haveBest || optimizationMaterialCost(r) < optimizationMaterialCost(best.result)) {
+                    best = c;
+                    haveBest = true;
                 }
             }
+            emit progressUpdated(summary.evaluated * 100 / summary.planned);
         }
         summary.elapsed_ms = timer.elapsed();
         emit workFinished(stopped, best, summary);
