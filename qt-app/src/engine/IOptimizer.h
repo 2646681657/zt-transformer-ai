@@ -37,6 +37,12 @@ struct OptimizationSettings {
     int lvFoilWidthRange = 1;
     bool searchLvFoilThick = false; // 升级保留原135组合，新变量需显式开启
     bool searchLvFoilWidth = false;
+    double hvBareWidthStep_mm = 0.05;
+    int hvBareWidthRange = 1;
+    double hvBareThickStep_mm = 0.05;
+    int hvBareThickRange = 1;
+    bool searchHvBareWidth = false;
+    bool searchHvBareThick = false;
     static constexpr int maximumCombinations = 100000;
 
     int diameterRadius() const { return searchDiameter ? diaRange : 0; }
@@ -45,9 +51,11 @@ struct OptimizationSettings {
     int hvLayersRadius() const { return searchHvLayers ? hvTplRange : 0; }
     int lvFoilThickRadius() const { return searchLvFoilThick ? lvFoilThickRange : 0; }
     int lvFoilWidthRadius() const { return searchLvFoilWidth ? lvFoilWidthRange : 0; }
+    int hvBareWidthRadius() const { return searchHvBareWidth ? hvBareWidthRange : 0; }
+    int hvBareThickRadius() const { return searchHvBareThick ? hvBareThickRange : 0; }
     int plannedCount() const {
         const int ranges[] = {diameterRadius(), straightRadius(), lvTurnsRadius(), hvLayersRadius(),
-                              lvFoilThickRadius(), lvFoilWidthRadius()};
+                              lvFoilThickRadius(), lvFoilWidthRadius(), hvBareWidthRadius(), hvBareThickRadius()};
         int count = 1;
         for (int range : ranges) {
             if (range < 0 || range > 5) return 0;
@@ -56,10 +64,31 @@ struct OptimizationSettings {
         return count;
     }
     QString validationError(const CalcInput &base) const {
+        if (base.isRoundHighVoltageWire() && (searchHvBareWidth || searchHvBareThick))
+            return QStringLiteral("当前为圆线，不能使用扁线宽/厚寻优。请取消高压裸线宽、厚的参与勾选；圆线仍只支持有效表内规格。");
         if (plannedCount() == 0)
             return QStringLiteral("参与寻优的范围必须为0至5步。");
         if (plannedCount() > maximumCombinations)
             return QStringLiteral("单轮最多%1组合，请缩小搜索范围或固定部分变量。").arg(maximumCombinations);
+        const double wireBases[] = {base.hvBareWidth_mm, base.hvBareThick_mm};
+        const double wireSteps[] = {searchHvBareWidth ? hvBareWidthStep_mm : 0.0,
+                                    searchHvBareThick ? hvBareThickStep_mm : 0.0};
+        const bool wireSearch[] = {searchHvBareWidth, searchHvBareThick};
+        const int wireRanges[] = {hvBareWidthRadius(), hvBareThickRadius()};
+        for (int i = 0; i < 2; ++i) {
+            const double step = wireSteps[i];
+            if (wireSearch[i] && (!std::isfinite(step) || step < 0.01 || step > 1.0))
+                return QStringLiteral("高压扁线宽、厚步长须为0.01至1.00 mm。");
+            const double span = wireRanges[i] * step;
+            if (!std::isfinite(wireBases[i] - span) || wireBases[i] - span <= 0.0
+                    || !std::isfinite(wireBases[i] + span))
+                return QStringLiteral("高压裸线宽、厚的搜索下界须>0，上界须为有限值。请缩小范围或修改基准。");
+            if (wireRanges[i] > 0 && (wireBases[i] + step == wireBases[i] || wireBases[i] - step == wireBases[i]))
+                return QStringLiteral("高压裸线宽或厚步长小于当前数值的可表示精度，请核对基准与步长。");
+        }
+        if (!std::isfinite((wireBases[0] + wireRanges[0] * wireSteps[0])
+                            * (wireBases[1] + wireRanges[1] * wireSteps[1])))
+            return QStringLiteral("高压导线搜索截面积超出可计算数值范围。");
         const auto validStep = [](double step) { return std::isfinite(step) && step >= 1.0 && step <= 50.0; };
         if ((searchDiameter && !validStep(diaStep_mm)) || (searchStraight && !validStep(straightStep_mm)))
             return QStringLiteral("参与寻优的尺寸步长必须为1至50 mm。");
@@ -97,6 +126,7 @@ struct OptimizationSettings {
 struct OptimizationRunSummary {
     int planned = 0;
     int evaluated = 0;
+    int wireFormRejected = 0; // 扁线宽=厚预检剔除，未调用引擎，不算计算失败
     int accepted = 0;
     int invalid = 0;
     int constraintRejected = 0;
@@ -105,6 +135,7 @@ struct OptimizationRunSummary {
     QStringList skippedChecks;
     QMap<QString, int> rejectionReasons;
     QMap<QString, int> calculationErrors; // 最多20种失败描述，其余归入其他
+    int processedCount() const { return evaluated + wireFormRejected; }
 };
 Q_DECLARE_METATYPE(OptimizationRunSummary)
 
