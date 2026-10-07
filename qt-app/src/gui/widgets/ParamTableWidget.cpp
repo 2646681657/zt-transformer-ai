@@ -16,6 +16,7 @@
 #include <QLabel>
 #include <QSignalBlocker>
 #include <QMessageBox>
+#include <QTimer>
 #include <cmath>
 
 namespace {
@@ -40,6 +41,10 @@ ParamTableWidget::ParamTableWidget(QWidget *parent)
     : QTableWidget(parent)
 {
     setupTable();
+    m_corePreviewTimer = new QTimer(this);
+    m_corePreviewTimer->setSingleShot(true);
+    m_corePreviewTimer->setInterval(200);
+    connect(m_corePreviewTimer, &QTimer::timeout, this, &ParamTableWidget::updateDesignCore);
     connect(this, &QTableWidget::itemChanged, this, [this](QTableWidgetItem *changed) {
         if (m_loading)
             return;
@@ -64,6 +69,7 @@ ParamTableWidget::ParamTableWidget(QWidget *parent)
         updateYokePiece1();
         updateLvTurnsRecommendation();
         updateDesignConnection();
+        scheduleDesignCore();
     });
 }
 
@@ -439,6 +445,7 @@ void ParamTableWidget::updateSteelThickness()
     }
     updateYokePiece1();
     updateLvTurnsRecommendation();
+    scheduleDesignCore();
 }
 
 // 型号/容量联动：查 GB 20052-2024 叠铁芯标准值，覆盖空载/负载/总损耗标准值单元格，
@@ -587,6 +594,96 @@ void ParamTableWidget::applyModelLinkage()
     updateYokePiece1();
     updateLvTurnsRecommendation();
     updateDesignConnection();
+    scheduleDesignCore();
+}
+
+void ParamTableWidget::scheduleDesignCore()
+{
+    if (m_loading || !m_designConnectionUi || m_designCoreRow < 0) return;
+    showDesignCore(nullptr, QStringLiteral("正在更新当前输入；旧预览已失效"));
+    m_corePreviewTimer->start();
+}
+
+void ParamTableWidget::showDesignCore(const CalcResult *result, const QString &reason)
+{
+    if (!m_designConnectionUi || m_designCoreRow < 0) return;
+    const QSignalBlocker blocker(this);
+    const double values[3][2] = {
+        {result ? result->core.coreAreaActual_cm2 : 0.0, result ? result->core.yokeAreaActual_cm2 : 0.0},
+        {result ? result->core.fluxDensity_coreActual_T : 0.0, result ? result->core.fluxDensity_yoke_T : 0.0},
+        {result ? result->core.coreWeight_kg : 0.0, result ? result->core.noLoadLoss_W : 0.0}
+    };
+    for (int r = 0; r < 3; ++r) {
+        for (int c = 0; c < 2; ++c) {
+            auto *cell = item(m_designCoreRow + r, c == 0 ? 2 : 4);
+            cell->setText(result ? QString::number(values[r][c], 'f', r == 0 ? 2 : r == 1 ? 3 : 0)
+                                 : QStringLiteral("不可用"));
+            cell->setTextAlignment(Qt::AlignRight | Qt::AlignVCenter);
+            cell->setToolTip(result
+                ? QStringLiteral("本次引擎结果；截面与磁密采用片数取整后的实际值；只读预览，不代表指标合格。") : reason);
+        }
+        auto *remark = item(m_designCoreRow + r, 5);
+        remark->setText(result ? QStringLiteral("当前输入引擎预览；非合格判定") : reason);
+        remark->setToolTip(remark->text());
+    }
+}
+
+void ParamTableWidget::updateDesignCore()
+{
+    if (m_loading || !m_designConnectionUi || m_designCoreRow < 0) return;
+    QString error;
+    const QString modelText = m_productModelEdit->text().trimmed();
+    static const QRegularExpression pattern(
+        QStringLiteral("^([A-Za-z0-9]+-M)-([0-9]+(?:\\.[0-9]+)?)/([0-9]+(?:\\.[0-9]+)?)-([0-9]+(?:\\.[0-9]+)?)$"),
+        QRegularExpression::CaseInsensitiveOption);
+    const auto model = pattern.match(modelText);
+    if (!PerformanceCriteria::validModel(modelText) || !model.hasMatch()
+        || model.captured(2).toDouble() != m_modelCapacity_kVA
+        || model.captured(3).toDouble() != m_modelHvRated_kV
+        || model.captured(4).toDouble() != m_modelLvRated_kV)
+        error = QStringLiteral("请补全产品型号；低压额定电压修改后按回车提交");
+    if (error.isEmpty() && (!m_tapPlusSpin->hasAcceptableInput() || !m_tapMinusSpin->hasAcceptableInput()
+        || !m_tapStepSpin->hasAcceptableInput())) error = QStringLiteral("调压输入尚未完成");
+    // 隐藏表不能用宽=厚推断圆线，绕过主页面要求的显式线形选择。
+    if (error.isEmpty() && m_wireFormCombo && !m_wireFormCombo->currentData().toBool()) {
+        const auto width = m_inputRefs.value(QStringLiteral("hvBareWidth"));
+        const auto thick = m_inputRefs.value(QStringLiteral("hvBareThick"));
+        bool widthOk = false, thickOk = false;
+        const double w = item(width.first, width.second)->text().toDouble(&widthOk);
+        const double t = item(thick.first, thick.second)->text().toDouble(&thickOk);
+        if (widthOk && thickOk && w == t)
+            error = QStringLiteral("宽=厚按计算单属于圆线，请明确选择圆线并选取表内规格。");
+    }
+    CalcInput preview = m_recommendationBaseInput;
+    TransformerParams params = getParams();
+    CalcResult result;
+    if (error.isEmpty()) {
+        saveToInput(preview);
+        // 验证使用独立表格，不能让预览提交型号、覆盖原指标或改变手工匝数。
+        ParamTableWidget validation;
+        validation.loadParamsForConfig(params, m_config, preview,
+            m_config.calcMode == StructureConfig::Professional);
+        {
+            const QSignalBlocker blocker(&validation);
+            validation.m_productModelEdit->setText(modelText);
+            // 保留当前屏幕文本的精度和非法输入，不允许重新加载时回退旧值。
+            for (auto it = m_inputRefs.constBegin(); it != m_inputRefs.constEnd(); ++it) {
+                const auto target = validation.m_inputRefs.constFind(it.key());
+                if (target != validation.m_inputRefs.constEnd())
+                    validation.item(target->first, target->second)->setText(item(it->first, it->second)->text());
+            }
+        }
+        if (validation.collectForCalculation(params, preview, error, false)) {
+            CoreResult geometry;
+            if (ElectromagneticEngine::previewCoreGeometry(preview, geometry, error)) {
+                ElectromagneticEngine engine;
+                if (!engine.calcElectromagnetic(preview, result) || !result.valid)
+                    error = result.error.isEmpty() ? QStringLiteral("当前输入计算未成功") : result.error;
+            }
+        }
+    }
+    showDesignCore(error.isEmpty() && result.valid ? &result : nullptr,
+        error.isEmpty() ? QStringLiteral("当前输入尚不能生成铁芯预览") : error);
 }
 
 void ParamTableWidget::updateDesignConnection()
@@ -847,6 +944,8 @@ void ParamTableWidget::loadParamsForConfig(const TransformerParams &params, cons
         }
     }
     m_loading = true;
+    m_corePreviewTimer->stop();
+    m_designCoreRow = -1;
     m_designConnectionUi = designConnectionUi;
     m_designConnectionCombo = nullptr;
     m_designConnectionRow = -1;
@@ -1172,6 +1271,18 @@ void ParamTableWidget::loadParamsForConfig(const TransformerParams &params, cons
         updateLvTurnsRecommendation();
     });
 
+    if (m_designConnectionUi) {
+        m_designCoreRow = row;
+        addParamRow(row++, QStringLiteral("实际心柱截面(cm²)"), QStringLiteral("不可用"),
+                    QStringLiteral("实际铁轭截面(cm²)"), QStringLiteral("不可用"));
+        addParamRow(row++, QStringLiteral("实际心柱磁密(T)"), QStringLiteral("不可用"),
+                    QStringLiteral("铁轭磁密(T)"), QStringLiteral("不可用"));
+        addParamRow(row++, QStringLiteral("硅钢片重量(kg)"), QStringLiteral("不可用"),
+                    QStringLiteral("空载损耗(W)"), QStringLiteral("不可用"));
+        for (int r = m_designCoreRow; r < m_designCoreRow + 3; ++r)
+            for (int col : {2, 4}) item(r, col)->setFlags(item(r, col)->flags() & ~Qt::ItemIsEditable);
+    }
+
     // 五 绕组参数（设计变量，初值取自 CalcInput）
     addSectionRow(row++, QStringLiteral("五 绕组参数"));
     m_recommendationRow = row;
@@ -1266,13 +1377,18 @@ void ParamTableWidget::loadParamsForConfig(const TransformerParams &params, cons
         addProModeSections(row, input);
     }
     if (m_designConnectionUi) {
-        connect(m_productModelEdit, &QLineEdit::textEdited, this, [this]() { updateDesignConnection(); });
-        for (auto *spin : {m_tapPlusSpin, m_tapMinusSpin}) {
-            connect(spin, &QSpinBox::valueChanged, this, [this]() { updateDesignConnection(); });
-            connect(spin->findChild<QLineEdit *>(), &QLineEdit::textEdited, this, [this]() { updateDesignConnection(); });
+        connect(m_productModelEdit, &QLineEdit::textEdited, this, [this]() { updateDesignConnection(); scheduleDesignCore(); });
+        for (auto *combo : {m_designConnectionCombo, m_standardModeCombo, m_steelGradeCombo,
+                            m_yokePiece1ModeCombo, m_hvMaterialCombo, m_lvMaterialCombo,
+                            m_wireInsulationCombo, m_wireFormCombo, m_roundWireSpecCombo}) {
+            if (combo) connect(combo, &QComboBox::currentIndexChanged, this, [this](int) { scheduleDesignCore(); });
         }
-        connect(m_tapStepSpin, &QDoubleSpinBox::valueChanged, this, [this]() { updateDesignConnection(); });
-        connect(m_tapStepSpin->findChild<QLineEdit *>(), &QLineEdit::textEdited, this, [this]() { updateDesignConnection(); });
+        for (auto *spin : {m_tapPlusSpin, m_tapMinusSpin}) {
+            connect(spin, &QSpinBox::valueChanged, this, [this]() { updateDesignConnection(); scheduleDesignCore(); });
+            connect(spin->findChild<QLineEdit *>(), &QLineEdit::textEdited, this, [this]() { updateDesignConnection(); scheduleDesignCore(); });
+        }
+        connect(m_tapStepSpin, &QDoubleSpinBox::valueChanged, this, [this]() { updateDesignConnection(); scheduleDesignCore(); });
+        connect(m_tapStepSpin->findChild<QLineEdit *>(), &QLineEdit::textEdited, this, [this]() { updateDesignConnection(); scheduleDesignCore(); });
     }
     m_loading = false;
     // 导入的明确损耗指标没有会话来源键，视作本规格手工值，不覆盖。
