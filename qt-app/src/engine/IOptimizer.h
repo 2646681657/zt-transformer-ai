@@ -43,6 +43,10 @@ struct OptimizationSettings {
     int hvBareThickRange = 1;
     bool searchHvBareWidth = false;
     bool searchHvBareThick = false;
+    bool searchHvRoundWire = false;
+    int hvRoundWireRange = 1; // 表内相邻±N档，不是直径步长
+    QVector<double> hvRoundWireDiameters; // 启动前按当前基准与表生成，不持久化
+    QString hvRoundWireSelectionError;
     static constexpr int maximumCombinations = 100000;
 
     int diameterRadius() const { return searchDiameter ? diaRange : 0; }
@@ -61,9 +65,33 @@ struct OptimizationSettings {
             if (range < 0 || range > 5) return 0;
             count *= 2 * range + 1;
         }
+        if (searchHvRoundWire) {
+            if (hvRoundWireRange < 0 || hvRoundWireRange > 5 || hvRoundWireDiameters.isEmpty()
+                    || hvRoundWireDiameters.size() > 2 * hvRoundWireRange + 1)
+                return 0;
+            if (count > std::numeric_limits<int>::max() / hvRoundWireDiameters.size())
+                return std::numeric_limits<int>::max();
+            count *= int(hvRoundWireDiameters.size());
+        }
         return count;
     }
     QString validationError(const CalcInput &base) const {
+        if (searchHvRoundWire) {
+            if (!base.isRoundHighVoltageWire())
+                return QStringLiteral("当前为扁线，不能启用圆线规格寻优；请先在设计输入中选择有效圆线规格，或取消圆线参与。");
+            if (!hvRoundWireSelectionError.isEmpty()) return hvRoundWireSelectionError;
+            if (hvRoundWireRange < 0 || hvRoundWireRange > 5 || hvRoundWireDiameters.isEmpty()
+                    || hvRoundWireDiameters.size() > 2 * hvRoundWireRange + 1)
+                return QStringLiteral("圆线搜索档数须为0至5，且须先取得有效表内候选规格。");
+            double previous = 0.0;
+            for (double diameter : hvRoundWireDiameters) {
+                if (!std::isfinite(diameter) || diameter <= previous)
+                    return QStringLiteral("圆线候选直径必须大于零、有限、升序且唯一。");
+                previous = diameter;
+            }
+            if (!hvRoundWireDiameters.contains(base.hvBareWidth_mm))
+                return QStringLiteral("圆线候选规格必须包含当前基准直径，不允许取近似档替代。");
+        }
         if (base.isRoundHighVoltageWire() && (searchHvBareWidth || searchHvBareThick))
             return QStringLiteral("当前为圆线，不能使用扁线宽/厚寻优。请取消高压裸线宽、厚的参与勾选；圆线仍只支持有效表内规格。");
         if (plannedCount() == 0)
