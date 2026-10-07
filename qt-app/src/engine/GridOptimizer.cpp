@@ -6,19 +6,8 @@
 #include <QMutexLocker>
 #include <QWaitCondition>
 #include <QMetaObject>
-
-namespace {
-
-// 网格步进与邻域的默认值（OptimizationSettings 缺省即此，保持向后一致）：
-// 直径 ±10mm(步进5) × 直线段 ±5mm(步进5) × 低压匝数 ±1 × 高压总层数 W12 ±1 = 135 组合
-constexpr double kDiaStep = 5.0;
-constexpr int kDiaRange = 2;
-constexpr double kStraightStep = 5.0;
-constexpr int kStraightRange = 1;
-constexpr int kLvTurnsRange = 1;
-constexpr int kHvTplRange = 1;
-
-} // namespace
+#include <QElapsedTimer>
+#include <cmath>
 
 // 后台工作对象：网格遍历 + 电磁计算（引擎无状态，线程内独立实例）
 class GridOptimizer::Worker : public QObject {
@@ -53,22 +42,25 @@ public:
 public slots:
     void doWork()
     {
-        // 网格范围/步长取自设置（对话框可配，默认值与历史行为一致）
-        const double diaStep = m_settings.diaStep_mm > 0 ? m_settings.diaStep_mm : kDiaStep;
-        const int diaRange = m_settings.diaRange >= 0 ? m_settings.diaRange : kDiaRange;
-        const double straightStep = m_settings.straightStep_mm > 0
-                                        ? m_settings.straightStep_mm : kStraightStep;
-        const int straightRange = m_settings.straightRange >= 0
-                                      ? m_settings.straightRange : kStraightRange;
-        const int lvTurnsRange = m_settings.lvTurnsRange >= 0
-                                     ? m_settings.lvTurnsRange : kLvTurnsRange;
-        const int hvTplRange = m_settings.hvTplRange >= 0 ? m_settings.hvTplRange : kHvTplRange;
+        OptimizationRunSummary summary;
+        summary.planned = m_settings.plannedCount();
+        summary.error = m_settings.validationError(m_base);
+        // 未校核项仅依赖冻结的订单标准，与候选结果无关。
+        summary.skippedChecks = checkSchemeConstraints(m_params, CalcResult{}).skippedChecks;
+        if (!summary.error.isEmpty()) {
+            emit workFinished(false, OptimizeCandidate{}, summary);
+            return;
+        }
+        QElapsedTimer timer;
+        timer.start();
+        const double diaStep = m_settings.searchDiameter ? m_settings.diaStep_mm : 0.0;
+        const int diaRange = m_settings.diameterRadius();
+        const double straightStep = m_settings.searchStraight ? m_settings.straightStep_mm : 0.0;
+        const int straightRange = m_settings.straightRadius();
+        const int lvTurnsRange = m_settings.lvTurnsRadius();
+        const int hvTplRange = m_settings.hvLayersRadius();
 
-        const int total = (2 * diaRange + 1) * (2 * straightRange + 1)
-                          * (2 * lvTurnsRange + 1) * (2 * hvTplRange + 1);
         ElectromagneticEngine engine;
-        int done = 0;
-        int valid = 0;
         OptimizeCandidate best;
         bool haveBest = false;
         bool stopped = false;
@@ -88,34 +80,51 @@ public slots:
                         in.hvTurnsPerLayer += hi;
 
                         CalcResult r;
-                        if (engine.calcElectromagnetic(in, r) && r.valid
-                                && checkSchemeConstraints(m_params, r).passed) {
+                        ++summary.evaluated;
+                        const bool calculated = engine.calcElectromagnetic(in, r) && r.valid;
+                        const auto constraints = calculated ? checkSchemeConstraints(m_params, r)
+                                                            : SchemeConstraintsResult{};
+                        if (!calculated || !std::isfinite(optimizationMaterialCost(r))
+                                || optimizationMaterialCost(r) < 0.0) {
+                            ++summary.invalid;
+                            ++summary.rejectionReasons[QStringLiteral("计算失败或材料成本无效")];
+                            QString reason = calculated ? QStringLiteral("材料成本非有限值或为负数") : r.error.trimmed();
+                            if (reason.isEmpty()) reason = QStringLiteral("引擎未返回有效结果");
+                            reason = reason.left(240);
+                            if (!summary.calculationErrors.contains(reason) && summary.calculationErrors.size() >= 20)
+                                reason = QStringLiteral("其他计算失败原因");
+                            ++summary.calculationErrors[reason];
+                        } else if (!constraints.passed) {
+                            ++summary.constraintRejected;
+                            for (const auto &name : constraints.failedChecks)
+                                ++summary.rejectionReasons[name];
+                        } else {
                             OptimizeCandidate c;
                             c.input = in;
                             c.result = r;
                             c.scheme = makeScheme(0, in, r);  // 序号由接收端按入库顺序编排
                             emit candidateReady(c);
-                            ++valid;
+                            ++summary.accepted;
                             if (!haveBest
-                                    || r.cost.materialCost < best.result.cost.materialCost) {
+                                    || optimizationMaterialCost(r) < optimizationMaterialCost(best.result)) {
                                 best = c;
                                 haveBest = true;
                             }
                         }
-                        ++done;
-                        emit progressUpdated(done * 100 / total);
+                        emit progressUpdated(summary.evaluated * 100 / summary.planned);
                     }
                 }
             }
         }
-        emit workFinished(stopped, best, total, valid);
+        summary.elapsed_ms = timer.elapsed();
+        emit workFinished(stopped, best, summary);
     }
 
 signals:
     void progressUpdated(int percent);
     void candidateReady(const OptimizeCandidate &candidate);
     void workFinished(bool stopped, const OptimizeCandidate &best,
-                      int total, int valid);
+                      const OptimizationRunSummary &summary);
 
 private:
     // 暂停时阻塞等待；返回 false 表示已请求停止
@@ -142,6 +151,7 @@ GridOptimizer::GridOptimizer(QObject *parent)
 {
     // 跨线程 queued connection 传递自定义类型需注册
     qRegisterMetaType<OptimizeCandidate>("OptimizeCandidate");
+    qRegisterMetaType<OptimizationRunSummary>("OptimizationRunSummary");
 }
 
 GridOptimizer::~GridOptimizer()
@@ -176,8 +186,8 @@ void GridOptimizer::start(const TransformerParams &params, const StructureConfig
     connect(m_worker, &Worker::candidateReady,
             this, &GridOptimizer::candidateReady);
     connect(m_worker, &Worker::workFinished, this,
-            [this](bool stopped, const OptimizeCandidate &best, int total, int valid) {
-                emit finished(stopped, best, total, valid);
+            [this](bool stopped, const OptimizeCandidate &best, const OptimizationRunSummary &summary) {
+                emit finished(stopped, best, summary);
             });
     connect(m_worker, &Worker::workFinished, thread, &QThread::quit);
 

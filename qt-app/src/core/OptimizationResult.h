@@ -27,12 +27,17 @@ struct OptimizationResult {
 };
 
 // 电磁计算输入/输出 → 方案表行数据（快速计算与寻优共用映射）
+inline double optimizationMaterialCost(const CalcResult &result)
+{
+    return result.cost.materialCost; // 内置基价：铁芯、导线、油、油箱
+}
+
 inline OptimizationResult makeScheme(int schemeIdx, const CalcInput &input,
                                      const CalcResult &result)
 {
     OptimizationResult s;
     s.schemeIdx = schemeIdx;
-    s.costCuFeOil = result.cost.materialCost;
+    s.costCuFeOil = optimizationMaterialCost(result);
     s.costCuFe = result.cost.steelCost + result.cost.hvWireCost
                  + result.cost.lvWireCost;
     s.coreD = input.coreDiameter_mm;

@@ -61,7 +61,7 @@ private slots:
     void onOptimizeCandidate(const OptimizeCandidate &candidate);
     // 寻优结束：最优方案加载到结果面板
     void onOptimizeFinished(bool stopped, const OptimizeCandidate &best,
-                            int total, int valid);
+                            const OptimizationRunSummary &summary);
     // 对拍自检：SB20 计算单缓存值逐项对照
     void onSelfTest();
     // 保存当前电磁计算结果为计算单文本文件
@@ -155,6 +155,7 @@ private:
     OptimizationSettings loadOptimizeSettings() const;
     // 持久化寻优设置
     void saveOptimizeSettings(const OptimizationSettings &settings) const;
+    void showOptimizationSummary();
     // 当前计算结果映射为方案行，追加进方案表
     int appendScheme(const CalcInput &input, const CalcResult &result);
     // 确认指定行方案：记录基准并跳转输出打印 Tab
@@ -170,6 +171,13 @@ private:
     RibbonButton *m_pauseBtn = nullptr;   // 暂停/继续 切换按钮
     GridOptimizer *m_optimizer = nullptr; // 网格寻优器（后台线程）
     OptimizationSettings m_optSettings;   // 寻优网格设置（循环参数对话框可配）
+    OptimizationSettings m_runningOptSettings;
+    CalcInput m_runningOptInput;
+    TransformerParams m_runningOptParams;
+    OptimizationRunSummary m_optSummary;
+    bool m_optSummaryAvailable = false;
+    bool m_optStopped = false;
+    double m_optBestCost = 0.0;
     bool m_optRunning = false;            // 寻优运行中标志
     bool m_discardOptimizationResults = false; // 输入已更换，忽略旧寻优线程的后续信号
     SchemeTableWidget *m_schemeTable;

@@ -205,8 +205,11 @@ void EnterCalcPage::buildOptimizeRibbon()
             .arg(resultParams.noLoadCurrentStd_pct, 0, 'f', 2)
             .arg([&]() {
                 const auto check = checkSchemeConstraints(resultParams, m_emResult);
-                return check.passed ? QStringLiteral("全部通过")
-                                    : check.violations.join(QStringLiteral("；"));
+                QString text = check.passed ? QStringLiteral("已启用指标通过")
+                                            : check.violations.join(QStringLiteral("；"));
+                if (!check.skippedChecks.isEmpty())
+                    text += QStringLiteral("；未校核：") + check.skippedChecks.join(QStringLiteral("、"));
+                return text;
             }());
         AiAnalysisDialog dlg(QStringLiteral("AI 计算结果解读"),
             QStringLiteral("任务：解读该电磁计算结果，评估各项指标是否达标、"
@@ -222,17 +225,23 @@ void EnterCalcPage::buildOptimizeRibbon()
     auto *loopBtn = new RibbonButton(QStringLiteral("循环参数设置"), ":/icons/loop_param.svg", gLoop);
     loopBtn->setCheckable(false);
     connect(loopBtn, &QToolButton::clicked, this, [this]() {
+        if (m_optRunning) {
+            QMessageBox::information(this, QStringLiteral("寻优进行中"),
+                QStringLiteral("本轮订单与搜索设置已冻结。请在寻优结束后修改循环参数。"));
+            return;
+        }
         if (const auto settings = showLoopParamsDialog()) {
             m_optSettings = *settings;
             m_statusBar->setText(QStringLiteral(
                 "循环参数已更新：%1 组合，点击「开始运行计算」生效")
-                .arg(QString::number((2 * settings->diaRange + 1)
-                                     * (2 * settings->straightRange + 1)
-                                     * (2 * settings->lvTurnsRange + 1)
-                                     * (2 * settings->hvTplRange + 1))));
+                .arg(settings->plannedCount()));
         }
     });
     gLoop->addButton(loopBtn);
+    auto *statsBtn = new RibbonButton(QStringLiteral("寻优统计"), ":/icons/init_info.svg", gLoop);
+    statsBtn->setCheckable(false);
+    connect(statsBtn, &QToolButton::clicked, this, &EnterCalcPage::showOptimizationSummary);
+    gLoop->addButton(statsBtn);
     m_optimizeRibbon->addSeparator();
 
     auto *g1 = m_optimizeRibbon->addGroup(QStringLiteral("初始化设置(从左到右顺序查看)"));
@@ -838,16 +847,26 @@ std::optional<OptimizationSettings> EnterCalcPage::showLoopParamsDialog()
     auto *dlg = new QDialog(this);
     dlg->setWindowTitle(QStringLiteral("循环参数 - 寻优计算设置"));
     dlg->setModal(true);
+    dlg->resize(820, 430);
     auto *layout = new QVBoxLayout(dlg);
     layout->setContentsMargins(12, 12, 12, 12);
 
-    // 参数表（每行：标签 + 步长编辑 + 范围编辑）
-    auto *form = new QTableWidget(4, 3, dlg);
+    auto *notes = new QLabel(QStringLiteral("目标：在已启用约束通过的候选中，使内置基价材料合计最低。\n")
+        + CostBasisNotes::engine()
+        + QStringLiteral("\n订单容量、电压、联结组别、性能标准与偏差保持不变；本批为单轮网格搜索。"), dlg);
+    notes->setWordWrap(true);
+    layout->addWidget(notes);
+    const CalcInput base = m_calcInput;
+    auto *form = new QTableWidget(4, 5, dlg);
     form->setHorizontalHeaderLabels({QStringLiteral("搜索变量"),
-                                     QStringLiteral("步长"), QStringLiteral("范围(±N步)")});
+        QStringLiteral("参与寻优"), QStringLiteral("步长"), QStringLiteral("范围(±N步)"),
+        QStringLiteral("实际下界 ～ 上界")});
     form->verticalHeader()->setVisible(false);
     form->horizontalHeader()->setStretchLastSection(true);
     form->setColumnWidth(0, 130);
+    form->setColumnWidth(1, 90);
+    form->setColumnWidth(2, 120);
+    form->setColumnWidth(3, 110);
     form->setEditTriggers(QAbstractItemView::NoEditTriggers);
     form->setSelectionBehavior(QAbstractItemView::SelectRows);
     form->setAlternatingRowColors(true);
@@ -864,8 +883,15 @@ std::optional<OptimizationSettings> EnterCalcPage::showLoopParamsDialog()
     };
     QVector<QDoubleSpinBox *> stepSpins;
     QVector<QSpinBox *> rangeSpins;
+    QVector<QCheckBox *> searchChecks;
+    const bool enabled[] = {cur.searchDiameter, cur.searchStraight, cur.searchLvTurns, cur.searchHvLayers};
     for (int i = 0; i < 4; ++i) {
         form->setItem(i, 0, new QTableWidgetItem(QString::fromUtf8(rows[i].label)));
+        auto *check = new QCheckBox(QStringLiteral("参与"), dlg);
+        check->setChecked(enabled[i]);
+        form->setCellWidget(i, 1, check);
+        searchChecks.append(check);
+        form->setItem(i, 4, new QTableWidgetItem());
 
         if (i < 2) {   // 尺寸类步长可编辑
             auto *stepSpin = new QDoubleSpinBox(dlg);
@@ -874,30 +900,60 @@ std::optional<OptimizationSettings> EnterCalcPage::showLoopParamsDialog()
             stepSpin->setSingleStep(0.5);
             stepSpin->setValue(rows[i].stepValue);
             stepSpin->setSuffix(QStringLiteral(" mm"));
-            form->setCellWidget(i, 1, stepSpin);
+            form->setCellWidget(i, 2, stepSpin);
             stepSpins.append(stepSpin);
         } else {       // 匝数步长固定为 1（文本展示）
-            form->setItem(i, 1, new QTableWidgetItem(QStringLiteral("1")));
+            form->setItem(i, 2, new QTableWidgetItem(QStringLiteral("1")));
         }
 
         auto *rangeSpin = new QSpinBox(dlg);
         rangeSpin->setRange(0, 5);
         rangeSpin->setValue(rows[i].rangeValue);
-        form->setCellWidget(i, 2, rangeSpin);
+        form->setCellWidget(i, 3, rangeSpin);
         rangeSpins.append(rangeSpin);
     }
     layout->addWidget(form, 1);
 
     // 组合数实时预览
     auto *comboLabel = new QLabel(dlg);
-    const auto updateCombo = [comboLabel, rangeSpins]() {
-        const int total = (2 * rangeSpins[0]->value() + 1) * (2 * rangeSpins[1]->value() + 1)
-                          * (2 * rangeSpins[2]->value() + 1) * (2 * rangeSpins[3]->value() + 1);
-        comboLabel->setText(QStringLiteral("网格组合数：%1（范围越大寻优越慢）").arg(total));
+    const auto gather = [cur, stepSpins, rangeSpins, searchChecks]() {
+        OptimizationSettings s = cur;
+        s.diaStep_mm = stepSpins[0]->value();
+        s.straightStep_mm = stepSpins[1]->value();
+        s.diaRange = rangeSpins[0]->value();
+        s.straightRange = rangeSpins[1]->value();
+        s.lvTurnsRange = rangeSpins[2]->value();
+        s.hvTplRange = rangeSpins[3]->value();
+        s.searchDiameter = searchChecks[0]->isChecked();
+        s.searchStraight = searchChecks[1]->isChecked();
+        s.searchLvTurns = searchChecks[2]->isChecked();
+        s.searchHvLayers = searchChecks[3]->isChecked();
+        return s;
+    };
+    const auto updateCombo = [comboLabel, form, base, gather, rangeSpins, stepSpins, searchChecks]() {
+        const auto s = gather();
+        const double values[] = {base.coreDiameter_mm, base.coreStraight_mm,
+                                double(base.lvTurns), double(base.hvTurnsPerLayer)};
+        const double steps[] = {s.diaStep_mm, s.straightStep_mm, 1.0, 1.0};
+        for (int i = 0; i < 4; ++i) {
+            const bool search = searchChecks[i]->isChecked();
+            rangeSpins[i]->setEnabled(search);
+            if (i < 2) stepSpins[i]->setEnabled(search);
+            const double span = search ? rangeSpins[i]->value() * steps[i] : 0.0;
+            form->item(i, 4)->setText(QStringLiteral("%1 ～ %2%3")
+                .arg(QString::number(values[i] - span, 'g', 12),
+                     QString::number(values[i] + span, 'g', 12), search ? QString() : QStringLiteral("（固定）")));
+        }
+        const QString error = s.validationError(base);
+        comboLabel->setText(QStringLiteral("计划组合数：%1；不勾选即固定，原步长和范围保留。%2")
+            .arg(s.plannedCount()).arg(error.isEmpty() ? QString() : QStringLiteral("\n") + error));
     };
     for (auto *spin : rangeSpins) {
         connect(spin, &QSpinBox::valueChanged, updateCombo);
     }
+    for (auto *spin : stepSpins) connect(spin, &QDoubleSpinBox::valueChanged, updateCombo);
+    for (auto *check : searchChecks) connect(check, &QCheckBox::toggled, updateCombo);
+    comboLabel->setWordWrap(true);
     updateCombo();
     layout->addWidget(comboLabel, 0, Qt::AlignCenter);
 
@@ -906,20 +962,28 @@ std::optional<OptimizationSettings> EnterCalcPage::showLoopParamsDialog()
         QDialogButtonBox::Ok | QDialogButtonBox::Cancel, dlg);
     btnBox->button(QDialogButtonBox::Ok)->setText(QStringLiteral("保存"));
     btnBox->button(QDialogButtonBox::Cancel)->setText(QStringLiteral("取消"));
-    connect(btnBox, &QDialogButtonBox::accepted, dlg, &QDialog::accept);
+    connect(btnBox, &QDialogButtonBox::accepted, dlg, [this, dlg, base, gather, stepSpins, rangeSpins, searchChecks]() {
+        for (int i = 0; i < 4; ++i) {
+            if (searchChecks[i]->isChecked() && (!rangeSpins[i]->hasAcceptableInput()
+                    || (i < 2 && !stepSpins[i]->hasAcceptableInput()))) {
+                QMessageBox::warning(dlg, QStringLiteral("搜索设置无效"), QStringLiteral("请完整输入有效步长和范围。"));
+                return;
+            }
+        }
+        const QString error = gather().validationError(base);
+        if (!error.isEmpty()) {
+            QMessageBox::warning(dlg, QStringLiteral("搜索设置无效"), error);
+            return;
+        }
+        dlg->accept();
+    });
     connect(btnBox, &QDialogButtonBox::rejected, dlg, &QDialog::reject);
     layout->addWidget(btnBox);
 
     const int rc = dlg->exec();
     std::optional<OptimizationSettings> result;
     if (rc == QDialog::Accepted) {
-        OptimizationSettings s = cur;
-        s.diaStep_mm = qobject_cast<QDoubleSpinBox *>(form->cellWidget(0, 1))->value();
-        s.diaRange = rangeSpins[0]->value();
-        s.straightStep_mm = qobject_cast<QDoubleSpinBox *>(form->cellWidget(1, 1))->value();
-        s.straightRange = rangeSpins[1]->value();
-        s.lvTurnsRange = rangeSpins[2]->value();
-        s.hvTplRange = rangeSpins[3]->value();
+        const OptimizationSettings s = gather();
         saveOptimizeSettings(s);
         result = s;
     }
@@ -937,6 +1001,10 @@ OptimizationSettings EnterCalcPage::loadOptimizeSettings() const
     s.straightRange = settings.value("optimize/straightRange", s.straightRange).toInt();
     s.lvTurnsRange = settings.value("optimize/lvTurnsRange", s.lvTurnsRange).toInt();
     s.hvTplRange = settings.value("optimize/hvTplRange", s.hvTplRange).toInt();
+    s.searchDiameter = settings.value("optimize/searchDiameter", true).toBool();
+    s.searchStraight = settings.value("optimize/searchStraight", true).toBool();
+    s.searchLvTurns = settings.value("optimize/searchLvTurns", true).toBool();
+    s.searchHvLayers = settings.value("optimize/searchHvLayers", true).toBool();
     return s;
 }
 
@@ -949,6 +1017,10 @@ void EnterCalcPage::saveOptimizeSettings(const OptimizationSettings &s) const
     settings.setValue("optimize/straightRange", s.straightRange);
     settings.setValue("optimize/lvTurnsRange", s.lvTurnsRange);
     settings.setValue("optimize/hvTplRange", s.hvTplRange);
+    settings.setValue("optimize/searchDiameter", s.searchDiameter);
+    settings.setValue("optimize/searchStraight", s.searchStraight);
+    settings.setValue("optimize/searchLvTurns", s.searchLvTurns);
+    settings.setValue("optimize/searchHvLayers", s.searchHvLayers);
 }
 
 // 竖排"程序选择"导航按钮（点击返回主界面），三个 Tab 各自调用创建
@@ -1088,6 +1160,7 @@ void EnterCalcPage::setupPrintTab()
 
 void EnterCalcPage::setCalcInput(const CalcInput &input)
 {
+    m_optSummaryAvailable = false;
     if (m_optRunning) {
         m_discardOptimizationResults = true;
         m_optimizer->stop();
@@ -1133,6 +1206,11 @@ void EnterCalcPage::onRunEmCalc()
 
 void EnterCalcPage::runEmCalcInput(const CalcInput &candidate)
 {
+    if (m_optRunning) {
+        QMessageBox::information(this, QStringLiteral("寻优进行中"),
+            QStringLiteral("请先结束或停止本轮寻优，再快速计算或应用其他方案，避免混入本轮候选。"));
+        return;
+    }
     CalcInput input = candidate;
     const auto reportFailure = [this](const QString &title, const QString &reason) {
         const QString state = m_hasResult && m_emResult.valid
@@ -1192,6 +1270,8 @@ void EnterCalcPage::runEmCalcInput(const CalcInput &candidate)
     if (!check.passed) {
         status += QStringLiteral(" ｜ 注意：%1").arg(check.violations.join(QStringLiteral("，")));
     }
+    if (!check.skippedChecks.isEmpty())
+        status += QStringLiteral(" ｜ 未校核：") + check.skippedChecks.join(QStringLiteral("、"));
     m_statusBar->setText(status);
 }
 
@@ -1303,6 +1383,11 @@ void EnterCalcPage::onOptimizeStart()
         QMessageBox::warning(this, QStringLiteral("当前配置暂不支持"), scopeError);
         return;
     }
+    const QString searchError = m_optSettings.validationError(m_calcInput);
+    if (!searchError.isEmpty()) {
+        QMessageBox::warning(this, QStringLiteral("搜索设置无效"), searchError);
+        return;
+    }
     // 新一轮寻优：清空方案表与方案数据缓存，从当前设计变量（参数设置页传入）出发网格搜索
     m_schemeTable->clearResults();
     m_schemeData.clear();
@@ -1312,19 +1397,16 @@ void EnterCalcPage::onOptimizeStart()
     if (m_pauseBtn) {
         m_pauseBtn->setText(QStringLiteral("暂停计算"));
     }
-    OptimizationSettings settings = m_optSettings;
-    m_optimizer->start(m_params, m_config, m_calcInput, settings);
-    const int total = (2 * settings.diaRange + 1) * (2 * settings.straightRange + 1)
-                      * (2 * settings.lvTurnsRange + 1) * (2 * settings.hvTplRange + 1);
+    m_runningOptSettings = m_optSettings;
+    m_runningOptInput = m_calcInput;
+    m_runningOptParams = m_params;
+    m_optSummaryAvailable = false;
+    m_optSummary = {};
+    m_optimizer->start(m_runningOptParams, m_config, m_runningOptInput, m_runningOptSettings);
     m_statusBar->setText(
-        QStringLiteral("寻优已启动：围绕当前设计变量网格搜索（直径±%1mm/%2档、直线段±%3mm、"
-                       "低压匝数±%4、高压总层数W12±%5，共%6组合），损耗/阻抗/温升超差方案自动剔除")
-            .arg(QString::number(settings.diaRange * settings.diaStep_mm),
-                 QString::number(2 * settings.diaRange + 1),
-                 QString::number(settings.straightRange * settings.straightStep_mm),
-                 QString::number(settings.lvTurnsRange),
-                 QString::number(settings.hvTplRange),
-                 QString::number(total)));
+        QStringLiteral("寻优已启动：订单与搜索设置已冻结，单轮网格共%1组合；"
+                       "按已启用约束过滤，以内置基价材料合计最低选优（含油箱）。")
+            .arg(m_runningOptSettings.plannedCount()));
 }
 
 void EnterCalcPage::onOptimizePause()
@@ -1374,10 +1456,11 @@ void EnterCalcPage::onOptimizeCandidate(const OptimizeCandidate &candidate)
     OptimizeCandidate saved = candidate;
     saved.scheme = scheme;
     m_schemeData.insert(scheme.schemeIdx, saved);
+    m_schemeParams.insert(scheme.schemeIdx, m_runningOptParams);
 }
 
 void EnterCalcPage::onOptimizeFinished(bool stopped, const OptimizeCandidate &best,
-                                       int total, int valid)
+                                       const OptimizationRunSummary &summary)
 {
     m_optRunning = false;
     if (m_discardOptimizationResults) {
@@ -1389,31 +1472,103 @@ void EnterCalcPage::onOptimizeFinished(bool stopped, const OptimizeCandidate &be
     if (m_pauseBtn) {
         m_pauseBtn->setText(QStringLiteral("暂停计算"));
     }
-    if (valid > 0) {
+    m_optSummary = summary;
+    m_optSummaryAvailable = true;
+    m_optStopped = stopped;
+    m_optBestCost = summary.accepted > 0 ? optimizationMaterialCost(best.result) : 0.0;
+    if (summary.accepted > 0) {
         // 最优（材料成本最低）方案加载到结果面板与打印/保存链路
         m_confirmedSchemeIdx = -1;
         m_lastInput = best.input;
-        m_lastParams = m_params;
+        m_lastParams = m_runningOptParams;
         m_emResult = best.result;
         m_hasResult = true;
         m_emResultPanel->loadResult(m_emResult);
         m_printTable->loadData(ElectromagneticEngine::buildPrintOutput(best.input, best.result));
     }
-    const int rejected = total - valid;   // 计算失败或约束超差被剔除的组合数
-    if (stopped) {
-        m_statusBar->setText(QStringLiteral("寻优已停止：评估 %1 个组合，%2 个通过约束，"
-                                            "%3 个剔除").arg(total).arg(valid).arg(rejected));
-    } else if (valid > 0) {
-        m_statusBar->setText(
-            QStringLiteral("寻优完成：评估 %1 个组合，%2 个通过约束（剔除 %3 个），"
-                           "最优内置基价材料合计 %4 元（含油箱；报价调价不影响选优）")
-                .arg(total).arg(valid).arg(rejected)
-                .arg(QString::number(best.result.cost.materialCost, 'f', 0)));
-    } else {
-        m_statusBar->setText(QStringLiteral(
-            "寻优完成：评估 %1 个组合，全部被约束剔除——请在参数设置页核对"
-            "性能标准值与允许偏差").arg(total));
+    QString text = QStringLiteral("寻优%1：实际计算%2/%3组合，入库%4，计算失败%5，约束剔除%6。")
+        .arg(stopped ? QStringLiteral("已停止") : QStringLiteral("完成"))
+        .arg(summary.evaluated).arg(summary.planned).arg(summary.accepted)
+        .arg(summary.invalid).arg(summary.constraintRejected);
+    if (summary.accepted > 0)
+        text += QStringLiteral("已评估最优材料合计%1元。 ").arg(m_optBestCost, 0, 'f', 2);
+    if (!summary.error.isEmpty()) text += summary.error;
+    if (!summary.skippedChecks.isEmpty()) text += QStringLiteral("部分指标未校核。 ");
+    text += QStringLiteral("详见「寻优统计」。");
+    m_statusBar->setText(text);
+}
+
+void EnterCalcPage::showOptimizationSummary()
+{
+    if (m_optRunning || !m_optSummaryAvailable) {
+        QMessageBox::information(this, QStringLiteral("寻优统计"),
+            m_optRunning ? QStringLiteral("本轮寻优进行中，结束或停止后查看统计。")
+                         : QStringLiteral("尚无本轮寻优统计，请先运行寻优。"));
+        return;
     }
+    const auto &s = m_optSummary;
+    QString text = QStringLiteral("本轮：%1；单轮网格搜索，单后台计算线程。\n目标：已启用约束通过的候选中，内置基价材料合计最低。\n%2\n\n"
+        "计划组合：%3\n实际引擎计算：%4\n入库候选：%5\n计算失败或成本无效：%6\n约束剔除：%7\n未评估：%8\n耗时：%9秒（含暂停）\n")
+        .arg(m_optStopped ? QStringLiteral("已停止") : QStringLiteral("已结束"), CostBasisNotes::engine())
+        .arg(s.planned).arg(s.evaluated).arg(s.accepted).arg(s.invalid)
+        .arg(s.constraintRejected).arg(s.planned - s.evaluated).arg(s.elapsed_ms / 1000.0, 0, 'f', 3);
+    if (!s.error.isEmpty()) text += QStringLiteral("启动错误：") + s.error + QLatin1Char('\n');
+    if (s.accepted > 0)
+        text += QStringLiteral("已评估候选最低材料合计：%1元%2\n")
+            .arg(m_optBestCost, 0, 'f', 2)
+            .arg(m_optStopped ? QStringLiteral("（仅本次已算范围，不代表全部网格最优）") : QString());
+    else text += QStringLiteral("无入库候选，本轮没有最优方案。\n");
+    text += QStringLiteral("\n冻结订单：%1\n容量%2 kVA；高压%3 kV；低压%4 kV；联结组别%5\n")
+        .arg(m_runningOptParams.productModel).arg(m_runningOptInput.capacity_kVA)
+        .arg(m_runningOptInput.hvRated_kV).arg(m_runningOptInput.lvRated_kV)
+        .arg(m_runningOptParams.connectionGroup);
+    const auto &p = m_runningOptParams;
+    text += QStringLiteral("冻结标准：%1\n空载损耗%2 W，最大偏差%3%；负载损耗%4 W，最大偏差%5%；\n"
+        "总损耗%6 W，最大偏差%7%；空载电流%8%，最大偏差%9%；\n")
+        .arg(p.standardMode == TransformerParams::StandardMode::BuiltIn ? QStringLiteral("内置") : QStringLiteral("自定义"))
+        .arg(p.noLoadLossStd_W).arg(p.noLoadLossMaxDev_pct).arg(p.loadLossStd_W)
+        .arg(p.loadLossMaxDev_pct).arg(p.totalLossStd_W).arg(p.totalLossMaxDev_pct)
+        .arg(p.noLoadCurrentStd_pct).arg(p.noLoadCurrentMaxDev_pct);
+    text += QStringLiteral("阻抗电压%1%，允许偏差[%2%，%3%]；\n油顶层温升%4 K；高压绕组温升%5 K；低压绕组温升%6 K。\n")
+        .arg(p.impedanceVoltageStd_pct).arg(p.impedanceVoltageMinDev_pct).arg(p.impedanceVoltageMaxDev_pct)
+        .arg(p.oilTopTempRise_K).arg(p.hvCoilTempRise_K).arg(p.lvCoilTempRise_K);
+    text += QStringLiteral("\n搜索边界（基准 ± 步数×步长）：\n");
+    const auto &settings = m_runningOptSettings;
+    const double bases[] = {m_runningOptInput.coreDiameter_mm, m_runningOptInput.coreStraight_mm,
+                           double(m_runningOptInput.lvTurns), double(m_runningOptInput.hvTurnsPerLayer)};
+    const int ranges[] = {settings.diameterRadius(), settings.straightRadius(), settings.lvTurnsRadius(), settings.hvLayersRadius()};
+    const double steps[] = {settings.searchDiameter ? settings.diaStep_mm : 0.0,
+                           settings.searchStraight ? settings.straightStep_mm : 0.0, 1.0, 1.0};
+    const bool enabled[] = {settings.searchDiameter, settings.searchStraight, settings.searchLvTurns, settings.searchHvLayers};
+    const QStringList names = {QStringLiteral("铁芯直径mm"), QStringLiteral("直线段长mm"),
+                              QStringLiteral("低压匝数"), QStringLiteral("高压总层数W12")};
+    for (int i = 0; i < 4; ++i)
+        text += QStringLiteral("%1：%2 ～ %3；%4；步长%5，±%6步\n").arg(names[i])
+            .arg(bases[i] - ranges[i] * steps[i]).arg(bases[i] + ranges[i] * steps[i])
+            .arg(enabled[i] ? QStringLiteral("参与") : QStringLiteral("固定")).arg(steps[i]).arg(ranges[i]);
+    text += QStringLiteral("\n未校核指标（标准值≤0）：")
+        + (s.skippedChecks.isEmpty() ? QStringLiteral("无") : s.skippedChecks.join(QStringLiteral("、")))
+        + QStringLiteral("\n这里只检查引擎现有损耗、空载电流、阻抗、温升指标，不等于所有制造与试验校核。\n\n淘汰原因次数（同一组合可违反多项，不能相加作为剔除组合数）：\n");
+    for (auto it = s.rejectionReasons.cbegin(); it != s.rejectionReasons.cend(); ++it)
+        text += QStringLiteral("%1：%2\n").arg(it.key()).arg(it.value());
+    if (s.rejectionReasons.isEmpty()) text += QStringLiteral("无\n");
+    if (!s.calculationErrors.isEmpty()) {
+        text += QStringLiteral("\n引擎失败详情（最多20种，其余合并）：\n");
+        for (auto it = s.calculationErrors.cbegin(); it != s.calculationErrors.cend(); ++it)
+            text += QStringLiteral("%1：%2\n").arg(it.key()).arg(it.value());
+    }
+    QDialog dlg(this);
+    dlg.setWindowTitle(QStringLiteral("寻优统计 - 本轮冻结输入与实际评估"));
+    dlg.resize(780, 640);
+    QVBoxLayout layout(&dlg);
+    auto *report = new QPlainTextEdit(&dlg);
+    report->setReadOnly(true);
+    report->setPlainText(text);
+    layout.addWidget(report);
+    auto *buttons = new QDialogButtonBox(QDialogButtonBox::Close, &dlg);
+    connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+    layout.addWidget(buttons);
+    dlg.exec();
 }
 
 void EnterCalcPage::onSelfTest()
@@ -1635,6 +1790,11 @@ void EnterCalcPage::onConfirmScheme()
 
 void EnterCalcPage::onSchemeSelected(int row)
 {
+    if (m_optRunning) {
+        QMessageBox::information(this, QStringLiteral("寻优进行中"),
+            QStringLiteral("请先结束或停止本轮寻优，再打开方案修改弹窗。"));
+        return;
+    }
     if (row < 0 || row >= m_schemeTable->rowCount()) {
         return;
     }
@@ -1822,6 +1982,11 @@ void EnterCalcPage::onSaveSchemes()
 
 void EnterCalcPage::onLoadSchemes()
 {
+    if (m_optRunning) {
+        QMessageBox::information(this, QStringLiteral("寻优进行中"),
+            QStringLiteral("请先结束或停止本轮寻优，再打开方案库，避免替换本轮候选。"));
+        return;
+    }
     const QString path = QFileDialog::getOpenFileName(
         this, QStringLiteral("打开方案库"), QString(),
         QStringLiteral("方案库文件 (*.json)"));
