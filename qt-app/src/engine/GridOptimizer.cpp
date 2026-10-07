@@ -63,7 +63,10 @@ public slots:
         const int widthRange = m_settings.lvFoilWidthRadius();
         const double thickStep = m_settings.searchLvFoilThick ? m_settings.lvFoilThickStep_mm : 0.0;
         const double widthStep = m_settings.searchLvFoilWidth ? m_settings.lvFoilWidthStep_mm : 0.0;
-        const int ranges[] = {diaRange, straightRange, lvTurnsRange, hvTplRange, thickRange, widthRange};
+        const double hvWidthStep = m_settings.searchHvBareWidth ? m_settings.hvBareWidthStep_mm : 0.0;
+        const double hvThickStep = m_settings.searchHvBareThick ? m_settings.hvBareThickStep_mm : 0.0;
+        const int ranges[] = {diaRange, straightRange, lvTurnsRange, hvTplRange, thickRange, widthRange,
+                              m_settings.hvBareWidthRadius(), m_settings.hvBareThickRadius()};
 
         ElectromagneticEngine engine;
         OptimizeCandidate best;
@@ -73,8 +76,8 @@ public slots:
         // 混合进制枚举完整笛卡尔积；固定变量只有一档，旧四变量顺序保持不变。
         for (int index = 0; index < summary.planned; ++index) {
             int remaining = index;
-            int offsets[6];
-            for (int dimension = 5; dimension >= 0; --dimension) {
+            int offsets[8];
+            for (int dimension = 7; dimension >= 0; --dimension) {
                 const int count = 2 * ranges[dimension] + 1;
                 offsets[dimension] = remaining % count - ranges[dimension];
                 remaining /= count;
@@ -90,6 +93,14 @@ public slots:
             in.hvTurnsPerLayer += offsets[3];
             in.lvFoilThick_mm += offsets[4] * thickStep;
             in.lvFoilWidth_mm += offsets[5] * widthStep;
+            in.hvBareWidth_mm += offsets[6] * hvWidthStep;
+            in.hvBareThick_mm += offsets[7] * hvThickStep;
+            if (!m_base.isRoundHighVoltageWire() && in.isRoundHighVoltageWire()) {
+                ++summary.wireFormRejected;
+                ++summary.rejectionReasons[QStringLiteral("扁线宽=厚（禁止自动切换圆线）")];
+                emit progressUpdated(summary.processedCount() * 100 / summary.planned);
+                continue;
+            }
 
             CalcResult r;
             ++summary.evaluated;
@@ -122,7 +133,7 @@ public slots:
                     haveBest = true;
                 }
             }
-            emit progressUpdated(summary.evaluated * 100 / summary.planned);
+            emit progressUpdated(summary.processedCount() * 100 / summary.planned);
         }
         summary.elapsed_ms = timer.elapsed();
         emit workFinished(stopped, best, summary);

@@ -847,18 +847,19 @@ std::optional<OptimizationSettings> EnterCalcPage::showLoopParamsDialog()
     auto *dlg = new QDialog(this);
     dlg->setWindowTitle(QStringLiteral("循环参数 - 寻优计算设置"));
     dlg->setModal(true);
-    dlg->resize(880, 530);
+    dlg->resize(920, 640);
     auto *layout = new QVBoxLayout(dlg);
     layout->setContentsMargins(12, 12, 12, 12);
 
     auto *notes = new QLabel(QStringLiteral("目标：在已启用约束通过的候选中，使内置基价材料合计最低。\n")
         + CostBasisNotes::engine()
         + QStringLiteral("\n订单容量、电压、联结组别、性能标准与偏差保持不变；本批为单轮网格搜索。"
-                         "\n箔厚/箔宽为设计尺寸搜索，不是制造库存规格表；制造可用规格仍需核对。"), dlg);
+                         "\n低压箔尺寸及高压扁线宽/厚为设计尺寸搜索，非库存选型，制造规格仍需核对。"
+                         "\n扁线宽=厚的组合在计算前剔除，不切换圆线。圆线请关闭高压宽/厚参与勾选。"), dlg);
     notes->setWordWrap(true);
     layout->addWidget(notes);
     const CalcInput base = m_calcInput;
-    auto *form = new QTableWidget(6, 5, dlg);
+    auto *form = new QTableWidget(8, 5, dlg);
     form->setHorizontalHeaderLabels({QStringLiteral("搜索变量"),
         QStringLiteral("参与寻优"), QStringLiteral("步长"), QStringLiteral("范围(±N步)"),
         QStringLiteral("实际下界 ～ 上界")});
@@ -883,13 +884,15 @@ std::optional<OptimizationSettings> EnterCalcPage::showLoopParamsDialog()
         { "高压总层数 W12", 1.0, cur.hvTplRange },
         { "低压箔厚(mm)", cur.lvFoilThickStep_mm, cur.lvFoilThickRange },
         { "低压箔宽(mm)", cur.lvFoilWidthStep_mm, cur.lvFoilWidthRange },
+        { "高压裸线宽(mm)", cur.hvBareWidthStep_mm, cur.hvBareWidthRange },
+        { "高压裸线厚(mm)", cur.hvBareThickStep_mm, cur.hvBareThickRange },
     };
-    QVector<QDoubleSpinBox *> stepSpins(6, nullptr);
+    QVector<QDoubleSpinBox *> stepSpins(8, nullptr);
     QVector<QSpinBox *> rangeSpins;
     QVector<QCheckBox *> searchChecks;
     const bool enabled[] = {cur.searchDiameter, cur.searchStraight, cur.searchLvTurns, cur.searchHvLayers,
-                            cur.searchLvFoilThick, cur.searchLvFoilWidth};
-    for (int i = 0; i < 6; ++i) {
+                            cur.searchLvFoilThick, cur.searchLvFoilWidth, cur.searchHvBareWidth, cur.searchHvBareThick};
+    for (int i = 0; i < 8; ++i) {
         form->setItem(i, 0, new QTableWidgetItem(QString::fromUtf8(rows[i].label)));
         auto *check = new QCheckBox(QStringLiteral("参与"), dlg);
         check->setChecked(enabled[i]);
@@ -899,9 +902,10 @@ std::optional<OptimizationSettings> EnterCalcPage::showLoopParamsDialog()
 
         if (i < 2 || i >= 4) {   // 尺寸类步长可编辑
             auto *stepSpin = new QDoubleSpinBox(dlg);
-            stepSpin->setDecimals(i == 4 ? 2 : 1);
-            stepSpin->setRange(i == 4 ? 0.01 : 1.0, i == 4 ? 1.0 : 50.0);
-            stepSpin->setSingleStep(i == 4 ? 0.01 : 0.5);
+            const bool fineStep = i == 4 || i >= 6;
+            stepSpin->setDecimals(fineStep ? 2 : 1);
+            stepSpin->setRange(fineStep ? 0.01 : 1.0, fineStep ? 1.0 : 50.0);
+            stepSpin->setSingleStep(fineStep ? 0.01 : 0.5);
             stepSpin->setValue(rows[i].stepValue);
             stepSpin->setSuffix(QStringLiteral(" mm"));
             form->setCellWidget(i, 2, stepSpin);
@@ -938,14 +942,22 @@ std::optional<OptimizationSettings> EnterCalcPage::showLoopParamsDialog()
         s.lvFoilWidthRange = rangeSpins[5]->value();
         s.searchLvFoilThick = searchChecks[4]->isChecked();
         s.searchLvFoilWidth = searchChecks[5]->isChecked();
+        s.hvBareWidthStep_mm = stepSpins[6]->value();
+        s.hvBareThickStep_mm = stepSpins[7]->value();
+        s.hvBareWidthRange = rangeSpins[6]->value();
+        s.hvBareThickRange = rangeSpins[7]->value();
+        s.searchHvBareWidth = searchChecks[6]->isChecked();
+        s.searchHvBareThick = searchChecks[7]->isChecked();
         return s;
     };
     const auto updateCombo = [comboLabel, form, base, gather, rangeSpins, stepSpins, searchChecks]() {
         const auto s = gather();
         const double values[] = {base.coreDiameter_mm, base.coreStraight_mm,
-                                double(base.lvTurns), double(base.hvTurnsPerLayer), base.lvFoilThick_mm, base.lvFoilWidth_mm};
-        const double steps[] = {s.diaStep_mm, s.straightStep_mm, 1.0, 1.0, s.lvFoilThickStep_mm, s.lvFoilWidthStep_mm};
-        for (int i = 0; i < 6; ++i) {
+                                double(base.lvTurns), double(base.hvTurnsPerLayer), base.lvFoilThick_mm, base.lvFoilWidth_mm,
+                                base.hvBareWidth_mm, base.hvBareThick_mm};
+        const double steps[] = {s.diaStep_mm, s.straightStep_mm, 1.0, 1.0, s.lvFoilThickStep_mm, s.lvFoilWidthStep_mm,
+                               s.hvBareWidthStep_mm, s.hvBareThickStep_mm};
+        for (int i = 0; i < 8; ++i) {
             const bool search = searchChecks[i]->isChecked();
             rangeSpins[i]->setEnabled(search);
             if (stepSpins[i]) stepSpins[i]->setEnabled(search);
@@ -973,7 +985,7 @@ std::optional<OptimizationSettings> EnterCalcPage::showLoopParamsDialog()
     btnBox->button(QDialogButtonBox::Ok)->setText(QStringLiteral("保存"));
     btnBox->button(QDialogButtonBox::Cancel)->setText(QStringLiteral("取消"));
     connect(btnBox, &QDialogButtonBox::accepted, dlg, [this, dlg, base, gather, stepSpins, rangeSpins, searchChecks]() {
-        for (int i = 0; i < 6; ++i) {
+        for (int i = 0; i < 8; ++i) {
             if (searchChecks[i]->isChecked() && (!rangeSpins[i]->hasAcceptableInput()
                     || (stepSpins[i] && !stepSpins[i]->hasAcceptableInput()))) {
                 QMessageBox::warning(dlg, QStringLiteral("搜索设置无效"), QStringLiteral("请完整输入有效步长和范围。"));
@@ -1021,6 +1033,12 @@ OptimizationSettings EnterCalcPage::loadOptimizeSettings() const
     s.lvFoilWidthRange = settings.value("optimize/lvFoilWidthRange", s.lvFoilWidthRange).toInt();
     s.searchLvFoilThick = settings.value("optimize/searchLvFoilThick", false).toBool();
     s.searchLvFoilWidth = settings.value("optimize/searchLvFoilWidth", false).toBool();
+    s.hvBareWidthStep_mm = settings.value("optimize/hvBareWidthStep", s.hvBareWidthStep_mm).toDouble();
+    s.hvBareThickStep_mm = settings.value("optimize/hvBareThickStep", s.hvBareThickStep_mm).toDouble();
+    s.hvBareWidthRange = settings.value("optimize/hvBareWidthRange", s.hvBareWidthRange).toInt();
+    s.hvBareThickRange = settings.value("optimize/hvBareThickRange", s.hvBareThickRange).toInt();
+    s.searchHvBareWidth = settings.value("optimize/searchHvBareWidth", false).toBool();
+    s.searchHvBareThick = settings.value("optimize/searchHvBareThick", false).toBool();
     return s;
 }
 
@@ -1043,6 +1061,12 @@ void EnterCalcPage::saveOptimizeSettings(const OptimizationSettings &s) const
     settings.setValue("optimize/lvFoilWidthRange", s.lvFoilWidthRange);
     settings.setValue("optimize/searchLvFoilThick", s.searchLvFoilThick);
     settings.setValue("optimize/searchLvFoilWidth", s.searchLvFoilWidth);
+    settings.setValue("optimize/hvBareWidthStep", s.hvBareWidthStep_mm);
+    settings.setValue("optimize/hvBareThickStep", s.hvBareThickStep_mm);
+    settings.setValue("optimize/hvBareWidthRange", s.hvBareWidthRange);
+    settings.setValue("optimize/hvBareThickRange", s.hvBareThickRange);
+    settings.setValue("optimize/searchHvBareWidth", s.searchHvBareWidth);
+    settings.setValue("optimize/searchHvBareThick", s.searchHvBareThick);
 }
 
 // 竖排"程序选择"导航按钮（点击返回主界面），三个 Tab 各自调用创建
@@ -1514,6 +1538,8 @@ void EnterCalcPage::onOptimizeFinished(bool stopped, const OptimizeCandidate &be
         .arg(summary.invalid).arg(summary.constraintRejected);
     if (summary.accepted > 0)
         text += QStringLiteral("已评估最优材料合计%1元。 ").arg(m_optBestCost, 0, 'f', 2);
+    if (summary.wireFormRejected > 0)
+        text += QStringLiteral("另有%1组合因扁线宽=厚预检剔除，未调用引擎。 ").arg(summary.wireFormRejected);
     if (!summary.error.isEmpty()) text += summary.error;
     if (!summary.skippedChecks.isEmpty()) text += QStringLiteral("部分指标未校核。 ");
     text += QStringLiteral("详见「寻优统计」。");
@@ -1533,7 +1559,10 @@ void EnterCalcPage::showOptimizationSummary()
         "计划组合：%3\n实际引擎计算：%4\n入库候选：%5\n计算失败或成本无效：%6\n约束剔除：%7\n未评估：%8\n耗时：%9秒（含暂停）\n")
         .arg(m_optStopped ? QStringLiteral("已停止") : QStringLiteral("已结束"), CostBasisNotes::engine())
         .arg(s.planned).arg(s.evaluated).arg(s.accepted).arg(s.invalid)
-        .arg(s.constraintRejected).arg(s.planned - s.evaluated).arg(s.elapsed_ms / 1000.0, 0, 'f', 3);
+        .arg(s.constraintRejected).arg(s.planned - s.processedCount()).arg(s.elapsed_ms / 1000.0, 0, 'f', 3);
+    text += QStringLiteral("尺寸预检剔除（扁线宽=厚，未调用引擎）：%1\n已处理组合：%2\n"
+                           "已处理=实际引擎计算+尺寸预检剔除；计划=已处理+未评估。\n")
+        .arg(s.wireFormRejected).arg(s.processedCount());
     if (!s.error.isEmpty()) text += QStringLiteral("启动错误：") + s.error + QLatin1Char('\n');
     if (s.accepted > 0)
         text += QStringLiteral("已评估候选最低材料合计：%1元%2\n")
@@ -1558,23 +1587,30 @@ void EnterCalcPage::showOptimizationSummary()
     const auto &settings = m_runningOptSettings;
     const double bases[] = {m_runningOptInput.coreDiameter_mm, m_runningOptInput.coreStraight_mm,
                            double(m_runningOptInput.lvTurns), double(m_runningOptInput.hvTurnsPerLayer),
-                           m_runningOptInput.lvFoilThick_mm, m_runningOptInput.lvFoilWidth_mm};
+                           m_runningOptInput.lvFoilThick_mm, m_runningOptInput.lvFoilWidth_mm,
+                           m_runningOptInput.hvBareWidth_mm, m_runningOptInput.hvBareThick_mm};
     const int ranges[] = {settings.diameterRadius(), settings.straightRadius(), settings.lvTurnsRadius(), settings.hvLayersRadius(),
-                          settings.lvFoilThickRadius(), settings.lvFoilWidthRadius()};
+                          settings.lvFoilThickRadius(), settings.lvFoilWidthRadius(), settings.hvBareWidthRadius(), settings.hvBareThickRadius()};
     const double steps[] = {settings.searchDiameter ? settings.diaStep_mm : 0.0,
                            settings.searchStraight ? settings.straightStep_mm : 0.0, 1.0, 1.0,
                            settings.searchLvFoilThick ? settings.lvFoilThickStep_mm : 0.0,
-                           settings.searchLvFoilWidth ? settings.lvFoilWidthStep_mm : 0.0};
+                           settings.searchLvFoilWidth ? settings.lvFoilWidthStep_mm : 0.0,
+                           settings.searchHvBareWidth ? settings.hvBareWidthStep_mm : 0.0,
+                           settings.searchHvBareThick ? settings.hvBareThickStep_mm : 0.0};
     const bool enabled[] = {settings.searchDiameter, settings.searchStraight, settings.searchLvTurns, settings.searchHvLayers,
-                           settings.searchLvFoilThick, settings.searchLvFoilWidth};
+                           settings.searchLvFoilThick, settings.searchLvFoilWidth, settings.searchHvBareWidth, settings.searchHvBareThick};
     const QStringList names = {QStringLiteral("铁芯直径mm"), QStringLiteral("直线段长mm"),
                               QStringLiteral("低压匝数"), QStringLiteral("高压总层数W12"),
-                              QStringLiteral("低压箔厚mm"), QStringLiteral("低压箔宽mm")};
-    for (int i = 0; i < 6; ++i)
+                              QStringLiteral("低压箔厚mm"), QStringLiteral("低压箔宽mm"),
+                              QStringLiteral("高压裸线宽mm"), QStringLiteral("高压裸线厚mm")};
+    for (int i = 0; i < 8; ++i)
         text += QStringLiteral("%1：%2 ～ %3；%4；步长%5，±%6步\n").arg(names[i])
             .arg(bases[i] - ranges[i] * steps[i]).arg(bases[i] + ranges[i] * steps[i])
             .arg(enabled[i] ? QStringLiteral("参与") : QStringLiteral("固定")).arg(steps[i]).arg(ranges[i]);
-    text += QStringLiteral("低压箔厚/箔宽为设计尺寸搜索，非库存选型；制造规格仍需人工核对。\n");
+    text += QStringLiteral("低压箔尺寸及高压扁线宽/厚为设计尺寸搜索，非库存选型；制造规格仍需核对。\n");
+    text += QStringLiteral("冻结高压线型：%1；绝缘：%2。扁线宽=厚的组合预检剔除，不切换圆线。\n")
+        .arg(m_runningOptInput.isRoundHighVoltageWire() ? QStringLiteral("圆线（不参与本批高压尺寸搜索）") : QStringLiteral("扁线"),
+             m_runningOptInput.resolvedInsulationType());
     text += QStringLiteral("\n未校核指标（标准值≤0）：")
         + (s.skippedChecks.isEmpty() ? QStringLiteral("无") : s.skippedChecks.join(QStringLiteral("、")))
         + QStringLiteral("\n这里只检查引擎现有损耗、空载电流、阻抗、温升指标，不等于所有制造与试验校核。\n\n淘汰原因次数（同一组合可违反多项，不能相加作为剔除组合数）：\n");
