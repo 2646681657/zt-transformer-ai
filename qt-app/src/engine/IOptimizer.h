@@ -31,13 +31,23 @@ struct OptimizationSettings {
     bool searchStraight = true;
     bool searchLvTurns = true;
     bool searchHvLayers = true;
+    double lvFoilThickStep_mm = 0.05;
+    int lvFoilThickRange = 1;
+    double lvFoilWidthStep_mm = 5.0;
+    int lvFoilWidthRange = 1;
+    bool searchLvFoilThick = false; // 升级保留原135组合，新变量需显式开启
+    bool searchLvFoilWidth = false;
+    static constexpr int maximumCombinations = 100000;
 
     int diameterRadius() const { return searchDiameter ? diaRange : 0; }
     int straightRadius() const { return searchStraight ? straightRange : 0; }
     int lvTurnsRadius() const { return searchLvTurns ? lvTurnsRange : 0; }
     int hvLayersRadius() const { return searchHvLayers ? hvTplRange : 0; }
+    int lvFoilThickRadius() const { return searchLvFoilThick ? lvFoilThickRange : 0; }
+    int lvFoilWidthRadius() const { return searchLvFoilWidth ? lvFoilWidthRange : 0; }
     int plannedCount() const {
-        const int ranges[] = {diameterRadius(), straightRadius(), lvTurnsRadius(), hvLayersRadius()};
+        const int ranges[] = {diameterRadius(), straightRadius(), lvTurnsRadius(), hvLayersRadius(),
+                              lvFoilThickRadius(), lvFoilWidthRadius()};
         int count = 1;
         for (int range : ranges) {
             if (range < 0 || range > 5) return 0;
@@ -48,9 +58,28 @@ struct OptimizationSettings {
     QString validationError(const CalcInput &base) const {
         if (plannedCount() == 0)
             return QStringLiteral("参与寻优的范围必须为0至5步。");
+        if (plannedCount() > maximumCombinations)
+            return QStringLiteral("单轮最多%1组合，请缩小搜索范围或固定部分变量。").arg(maximumCombinations);
         const auto validStep = [](double step) { return std::isfinite(step) && step >= 1.0 && step <= 50.0; };
         if ((searchDiameter && !validStep(diaStep_mm)) || (searchStraight && !validStep(straightStep_mm)))
             return QStringLiteral("参与寻优的尺寸步长必须为1至50 mm。");
+        if ((searchLvFoilThick && (!std::isfinite(lvFoilThickStep_mm)
+                || lvFoilThickStep_mm < 0.01 || lvFoilThickStep_mm > 1.0))
+                || (searchLvFoilWidth && !validStep(lvFoilWidthStep_mm)))
+            return QStringLiteral("低压箔厚步长须为0.01至1.00 mm，箔宽步长须为1至50 mm。");
+        const double thickSpan = lvFoilThickRadius() * (searchLvFoilThick ? lvFoilThickStep_mm : 0.0);
+        const double widthSpan = lvFoilWidthRadius() * (searchLvFoilWidth ? lvFoilWidthStep_mm : 0.0);
+        if (!std::isfinite(base.lvFoilThick_mm - thickSpan) || base.lvFoilThick_mm - thickSpan <= 0.0
+                || !std::isfinite(base.lvFoilWidth_mm - widthSpan) || base.lvFoilWidth_mm - widthSpan <= 0.0
+                || !std::isfinite(base.lvFoilThick_mm + thickSpan)
+                || !std::isfinite(base.lvFoilWidth_mm + widthSpan)
+                || !std::isfinite((base.lvFoilThick_mm + thickSpan) * (base.lvFoilWidth_mm + widthSpan)))
+            return QStringLiteral("低压箔厚、箔宽的搜索下界须>0，上界及截面积须为有限值。请缩小范围或修改基准。");
+        if ((lvFoilThickRadius() > 0 && (base.lvFoilThick_mm + lvFoilThickStep_mm == base.lvFoilThick_mm
+                || base.lvFoilThick_mm - lvFoilThickStep_mm == base.lvFoilThick_mm))
+                || (lvFoilWidthRadius() > 0 && (base.lvFoilWidth_mm + lvFoilWidthStep_mm == base.lvFoilWidth_mm
+                || base.lvFoilWidth_mm - lvFoilWidthStep_mm == base.lvFoilWidth_mm)))
+            return QStringLiteral("箔厚或箔宽步长小于当前数值的可表示精度，请核对基准与步长。");
         const double d = base.coreDiameter_mm - diameterRadius() * (searchDiameter ? diaStep_mm : 0.0);
         const double l = base.coreStraight_mm - straightRadius() * (searchStraight ? straightStep_mm : 0.0);
         if (!std::isfinite(d) || d <= 0 || !std::isfinite(l) || l < 0
