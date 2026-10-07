@@ -371,8 +371,10 @@ void OptimizeCalcPage::onVerifySheetClicked()
     report += QStringLiteral("低压绕组温升: %1 K\n\n")
                   .arg(result.thermal.lvWindingRise_K, 0, 'f', 1);
 
+    if (!check.skippedChecks.isEmpty())
+        report += QStringLiteral("未校核（标准值≤0）：%1\n\n").arg(check.skippedChecks.join(QStringLiteral("、")));
     if (check.passed) {
-        report += QStringLiteral("校验结论：全部指标在限值范围内");
+        report += QStringLiteral("校验结论：已启用指标在限值范围内（不代表所有制造与试验校核）");
         QMessageBox::information(this, QStringLiteral("校验算单（约束预检）"), report);
     } else {
         report += QStringLiteral("校验结论：以下指标超差——\n%1")

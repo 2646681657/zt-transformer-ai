@@ -13,6 +13,8 @@ class QLineEdit;
 class QSpinBox;
 class QDoubleSpinBox;
 class QComboBox;
+class QTimer;
+struct CalcResult;
 
 class ParamTableWidget : public QTableWidget {
     Q_OBJECT
@@ -60,6 +62,11 @@ private:
     void updateTestVoltageHints();
     void updateHvCoilHints(); // 只更新固定行说明与悬停提示，不重建表格或改数值
     void updateDesignConnection(); // 仅设计输入页，联结组别与基础电量联动。
+    void scheduleDesignCore();
+    void updateDesignCore();
+    void showDesignCore(const CalcResult *result, const QString &reason);
+    QTimer *m_corePreviewTimer = nullptr;
+    int m_designCoreRow = -1;
     bool m_designConnectionUi = false;
     QComboBox *m_designConnectionCombo = nullptr;
     int m_designConnectionRow = -1;

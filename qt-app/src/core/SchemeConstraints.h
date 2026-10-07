@@ -12,6 +12,8 @@
 struct SchemeConstraintsResult {
     bool passed = true;
     QStringList violations;   // 未通过项描述
+    QStringList failedChecks; // 稳定的失败项名称，用于统计（同一组合可能多项失败）
+    QStringList skippedChecks;
 };
 
 inline SchemeConstraintsResult checkSchemeConstraints(const TransformerParams &p,
@@ -23,11 +25,13 @@ inline SchemeConstraintsResult checkSchemeConstraints(const TransformerParams &p
     const auto upper = [&ret](const QString &name, double actual, double stdVal,
                               double devPct) {
         if (stdVal <= 0.0) {
+            ret.skippedChecks << name;
             return;   // 标准值未填：跳过该项
         }
         const double limit = stdVal * (1.0 + devPct / 100.0);
         if (actual > limit) {
             ret.passed = false;
+            ret.failedChecks << name;
             ret.violations << QStringLiteral("%1 %2 超出限值 %3")
                                   .arg(name)
                                   .arg(QString::number(actual, 'f', 1))
@@ -55,11 +59,14 @@ inline SchemeConstraintsResult checkSchemeConstraints(const TransformerParams &p
                           * (1.0 + p.impedanceVoltageMaxDev_pct / 100.0);
         if (r.impedance.impedance_pct < lo || r.impedance.impedance_pct > hi) {
             ret.passed = false;
+            ret.failedChecks << QStringLiteral("阻抗电压%");
             ret.violations << QStringLiteral("阻抗电压%1 超出范围 [%2, %3]")
                                   .arg(QString::number(r.impedance.impedance_pct, 'f', 2))
                                   .arg(QString::number(lo, 'f', 2))
                                   .arg(QString::number(hi, 'f', 2));
         }
+    } else {
+        ret.skippedChecks << QStringLiteral("阻抗电压%");
     }
     return ret;
 }
