@@ -38,6 +38,7 @@
 #include <QMessageBox>
 #include <QFileDialog>
 #include <QFile>
+#include <QSaveFile>
 #include <QTextStream>
 #include <QInputDialog>
 #include <QDoubleSpinBox>
@@ -2042,6 +2043,44 @@ void EnterCalcPage::showOptimizationSummary()
     report->setPlainText(text);
     layout.addWidget(report);
     auto *buttons = new QDialogButtonBox(QDialogButtonBox::Close, &dlg);
+    auto *exportReport = buttons->addButton(QStringLiteral("导出报告…"), QDialogButtonBox::ActionRole);
+    exportReport->setToolTip(QStringLiteral("保存当前显示的本轮统计为UTF-8文本，仅供留档，不能恢复或重放计算。"));
+    connect(exportReport, &QPushButton::clicked, &dlg, [this, &dlg, text]() {
+        QFileDialog fileDialog(&dlg, QStringLiteral("导出本轮寻优报告"));
+        fileDialog.setAcceptMode(QFileDialog::AcceptSave);
+        fileDialog.setFileMode(QFileDialog::AnyFile);
+        fileDialog.setNameFilter(QStringLiteral("文本报告 (*.txt)"));
+        fileDialog.setDefaultSuffix(QStringLiteral("txt"));
+        fileDialog.selectFile(QStringLiteral("寻优报告_%1.txt")
+            .arg(QDateTime::currentDateTime().toString(QStringLiteral("yyyyMMdd-HHmmss"))));
+        if (fileDialog.exec() != QDialog::Accepted) return;
+        const QString path = fileDialog.selectedFiles().value(0);
+        if (path.isEmpty()) return;
+        // 原子写入：失败时不损坏已存在的报告，不退回直接截断写入。
+        QSaveFile file(path);
+        file.setDirectWriteFallback(false);
+        if (!file.open(QIODevice::WriteOnly)) {
+            QMessageBox::warning(&dlg, QStringLiteral("报告保存失败"),
+                QStringLiteral("无法保存到%1：\n%2").arg(path, file.errorString()));
+            return;
+        }
+        const QByteArray data = text.toUtf8();
+        if (file.write(data) != data.size()) {
+            const QString error = file.errorString();
+            file.cancelWriting();
+            QMessageBox::warning(&dlg, QStringLiteral("报告保存失败"),
+                QStringLiteral("报告写入不完整：%1\n%2").arg(path, error));
+            return;
+        }
+        if (!file.commit()) {
+            QMessageBox::warning(&dlg, QStringLiteral("报告保存失败"),
+                QStringLiteral("无法完成报告保存：%1\n%2").arg(path, file.errorString()));
+            return;
+        }
+        m_statusBar->setText(QStringLiteral("本轮寻优报告已导出（UTF-8文本）：%1").arg(path));
+        QMessageBox::information(&dlg, QStringLiteral("报告已保存"),
+            QStringLiteral("已保存当前显示的统计：\n%1\n此文件仅供留档，不能恢复或重放计算。").arg(path));
+    });
     connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
     layout.addWidget(buttons);
     dlg.exec();
