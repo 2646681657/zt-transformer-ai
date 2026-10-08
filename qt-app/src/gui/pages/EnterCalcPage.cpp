@@ -1909,6 +1909,19 @@ void EnterCalcPage::showOptimizationSummary()
             .arg(m_optBestCost, 0, 'f', 2)
             .arg(m_optStopped ? QStringLiteral("（仅本次已算范围，不代表全部网格最优）") : QString());
     else text += QStringLiteral("无入库候选，本轮没有最优方案。\n");
+    text += QStringLiteral("\n最低成本可行方案触边提示（本轮冻结范围）：\n");
+    if (!s.hasBest) {
+        text += QStringLiteral("没有已评估可行方案，不判断触边；不能记为未触边。\n");
+    } else if (s.boundarySearchDimensions == 0) {
+        text += QStringLiteral("无可判断的尺寸/规格搜索方向：尺寸固定或范围为0，圆线固定或只有1档；不判断触边。\n");
+    } else if (s.bestBoundaryHits.isEmpty()) {
+        text += QStringLiteral("当前最低成本可行方案未达到参与搜索的尺寸/规格端点；不代表全局最优。\n");
+    } else {
+        text += s.bestBoundaryHits.join(QLatin1Char('\n')) + QLatin1Char('\n');
+        text += QStringLiteral("可人工核对这些方向是否需要扩大范围后重新寻优；触边不说明范围外一定存在更优方案。程序不自动扩大范围或放宽约束。\n");
+    }
+    text += QStringLiteral("仅针对本轮已评估可行方案中的最低材料成本候选；同成本取遍历中先遇到的方案，不汇总全部并列方案。\n"
+        "人工停止或提前结束时未评估区域不作推断；固定项和零范围不计触边，硅钢牌号是分类变量、不判断上下限。\n");
     text += QStringLiteral("\n硅钢牌号：%1\n")
         .arg(m_runningOptSettings.searchSteelGrade
             ? QStringLiteral("联合寻优，冻结参与清单：") + m_runningOptSettings.steelGrades.join(QStringLiteral("、"))
