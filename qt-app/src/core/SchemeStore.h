@@ -48,6 +48,14 @@ inline QJsonObject toJson(const CalcInput &in)
     // 两种模式均显式记录实际采用的价格；内置模式始终为17，不受闲置字段影响。
     o.insert(QStringLiteral("steelPricePerKg"), in.useCustomSteelPrice ? in.steelPricePerKg : 17.0);
     o.insert(QStringLiteral("steelPriceGrade"), in.useCustomSteelPrice ? in.steelPriceGrade : in.steelGrade.trimmed());
+    const auto prices = in.materialPrices.effective();
+    QJsonObject materialPrices;
+    materialPrices.insert(QStringLiteral("custom"), prices.custom);
+    materialPrices.insert(QStringLiteral("copper"), prices.copper);
+    materialPrices.insert(QStringLiteral("aluminum"), prices.aluminum);
+    materialPrices.insert(QStringLiteral("oil"), prices.oil);
+    materialPrices.insert(QStringLiteral("tank"), prices.tank);
+    o.insert(QStringLiteral("materialPrices"), materialPrices);
     o.insert(QStringLiteral("seamCount"), in.seamCount);
     o.insert(QStringLiteral("coreLossCraftCoef"), in.coreLossCraftCoef);
     o.insert(QStringLiteral("yokeLossCraftCoef"), in.yokeLossCraftCoef);
@@ -224,6 +232,24 @@ inline CalcInput fromJson(const QJsonObject &o)
         in.steelPriceGrade = in.steelGrade.trimmed();
     }
     in.seamCount = integ("seamCount", in.seamCount);
+    if (o.contains(QStringLiteral("materialPrices"))) {
+        const auto value = o.value(QStringLiteral("materialPrices"));
+        const auto prices = value.toObject();
+        const auto mode = prices.value(QStringLiteral("custom"));
+        // 缺整个对象的旧方案用原基价；显式损坏对象/模式不能按旧文件迁移。
+        in.materialPrices.custom = !value.isObject() || !mode.isBool() || mode.toBool();
+        if (in.materialPrices.custom) {
+            const auto price = [&prices, &mode](const char *key) {
+                const auto v = prices.value(QString::fromLatin1(key));
+                return mode.isBool() && v.isDouble() ? v.toDouble()
+                    : std::numeric_limits<double>::quiet_NaN();
+            };
+            in.materialPrices.copper = price("copper");
+            in.materialPrices.aluminum = price("aluminum");
+            in.materialPrices.oil = price("oil");
+            in.materialPrices.tank = price("tank");
+        }
+    }
     in.coreLossCraftCoef = num("coreLossCraftCoef", in.coreLossCraftCoef);
     // 旧方案没有铁轭字段时沿用其原共同系数；显式非法新字段不能静默迁移。
     in.yokeLossCraftCoef = !o.contains(QStringLiteral("yokeLossCraftCoef")) ? in.coreLossCraftCoef

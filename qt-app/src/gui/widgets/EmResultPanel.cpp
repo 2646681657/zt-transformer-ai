@@ -221,7 +221,7 @@ QVector<QPair<QString, QVector<QStringList>>> EmResultPanel::buildGroups(const C
          << row(QStringLiteral("油箱成本"), c.tankCost, 1, QStringLiteral("元"))
          << row(QStringLiteral("材料合计（本方案口径）"), c.materialCost, 1, QStringLiteral("元"))
          << QStringList{QStringLiteral("材料成本口径"), CostBasisNotes::engine(c.useCustomSteelPrice,
-                c.steelPricePerKg, c.steelPriceGrade), QString()};
+                c.steelPricePerKg, c.steelPriceGrade, c.materialPrices), QString()};
     groups.append({ QStringLiteral("重量与成本"), mass });
 
     const auto &o = r.oilExpansion;

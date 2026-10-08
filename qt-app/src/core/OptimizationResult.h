@@ -43,7 +43,7 @@ inline OptimizationResult makeScheme(int schemeIdx, const CalcInput &input,
     s.costCuFe = result.cost.steelCost + result.cost.hvWireCost
                  + result.cost.lvWireCost;
     s.costBasis = CostBasisNotes::engine(result.cost.useCustomSteelPrice, result.cost.steelPricePerKg,
-                                       result.cost.steelPriceGrade);
+                                       result.cost.steelPriceGrade, result.cost.materialPrices);
     s.coreD = input.coreDiameter_mm;
     s.coreL = result.core.minorAxis_mm;
     s.lvTurns = input.lvTurns;

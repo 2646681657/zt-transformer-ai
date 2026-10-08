@@ -55,6 +55,7 @@ public:
         in.steelPriceGrade = in.steelGrade.trimmed();
         in.steelPricePerKg = in.useCustomSteelPrice
             ? m_settings.steelGradePrices.value(in.steelGrade.trimmed().toUpper(), 0.0) : 17.0;
+        in.materialPrices = m_settings.materialPrices.effective();
         return in;
     }
 

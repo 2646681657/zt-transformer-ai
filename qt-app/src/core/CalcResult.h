@@ -6,6 +6,7 @@
 #include <QString>
 #include <QVector>
 #include "TestVoltageHints.h"
+#include "MaterialPrices.h"
 
 // AM8→AN8，仅建议，不参与实际匝数的写回。
 struct LvTurnsRecommendation {
@@ -171,6 +172,7 @@ struct MassResult {
 };
 
 struct CostResult {
+    MaterialPrices materialPrices; // 实际采用的基价与模式
     bool useCustomSteelPrice = false;
     double steelPricePerKg = 17.0;
     QString steelPriceGrade;

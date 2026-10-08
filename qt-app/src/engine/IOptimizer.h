@@ -55,6 +55,8 @@ struct OptimizationSettings {
     SteelPricing steelPricing = BuiltInSteelPrice;
     QMap<QString, double> steelGradePrices; // 键为trim+大写；用户填写，候选生成时冻结
     QMap<QString, QString> steelGradePriceTexts; // 保留用户输入及空/非法值，设置持久化用
+    MaterialPrices materialPrices;
+    QStringList materialPriceTexts{QStringLiteral("60"), QStringLiteral("60"), QStringLiteral("10"), QStringLiteral("9")};
     static constexpr int maximumCombinations = 100000;
     static constexpr int fineSeedLimit = 3;
     static constexpr int maximumFineRounds = 5;
@@ -115,6 +117,8 @@ struct OptimizationSettings {
                 * fineNeighborhoodUpperBound() : 0);
     }
     QString validationError(const CalcInput &base) const {
+        const auto materialPriceError = materialPrices.validationError();
+        if (!materialPriceError.isEmpty()) return materialPriceError;
         if (steelPricing != BuiltInSteelPrice && steelPricing != CustomSteelPrices)
             return QStringLiteral("硅钢价模式无效，请重新选择内置基价或按牌号自定义价。");
         if (method != Exhaustive && method != CoarseFine && method != MultiRound)
