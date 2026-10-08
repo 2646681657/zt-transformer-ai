@@ -135,6 +135,7 @@ public slots:
                 if (!haveBest || optimizationMaterialCost(r) < optimizationMaterialCost(best.result)) {
                     best = c;
                     bestPoint = point;
+                    summary.bestPerformanceMargins = schemeConstraintMarginText(constraints);
                     haveBest = true;
                 }
             }
