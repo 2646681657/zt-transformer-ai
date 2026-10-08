@@ -44,6 +44,10 @@ inline QJsonObject toJson(const CalcInput &in)
     o.insert(QStringLiteral("stackFactor"), in.stackFactor);
     o.insert(QStringLiteral("steelThickness_mm"), in.steelThickness_mm);
     o.insert(QStringLiteral("steelGrade"), in.steelGrade);
+    o.insert(QStringLiteral("useCustomSteelPrice"), in.useCustomSteelPrice);
+    // 两种模式均显式记录实际采用的价格；内置模式始终为17，不受闲置字段影响。
+    o.insert(QStringLiteral("steelPricePerKg"), in.useCustomSteelPrice ? in.steelPricePerKg : 17.0);
+    o.insert(QStringLiteral("steelPriceGrade"), in.useCustomSteelPrice ? in.steelPriceGrade : in.steelGrade.trimmed());
     o.insert(QStringLiteral("seamCount"), in.seamCount);
     o.insert(QStringLiteral("coreLossCraftCoef"), in.coreLossCraftCoef);
     o.insert(QStringLiteral("yokeLossCraftCoef"), in.yokeLossCraftCoef);
@@ -206,6 +210,19 @@ inline CalcInput fromJson(const QJsonObject &o)
     in.stackFactor = num("stackFactor", in.stackFactor);
     in.steelThickness_mm = num("steelThickness_mm", in.steelThickness_mm);
     in.steelGrade = o.value(QStringLiteral("steelGrade")).toString(in.steelGrade);
+    const auto customSteel = o.value(QStringLiteral("useCustomSteelPrice"));
+    // 旧方案无字段时保持17基价；显式非法新字段不能静默按旧方案迁移。
+    in.useCustomSteelPrice = o.contains(QStringLiteral("useCustomSteelPrice"))
+        && (!customSteel.isBool() || customSteel.toBool());
+    if (in.useCustomSteelPrice) {
+        in.steelPricePerKg = customSteel.isBool()
+            ? num("steelPricePerKg", std::numeric_limits<double>::quiet_NaN())
+            : std::numeric_limits<double>::quiet_NaN();
+        in.steelPriceGrade = o.value(QStringLiteral("steelPriceGrade")).toString();
+    } else {
+        in.steelPricePerKg = 17.0;
+        in.steelPriceGrade = in.steelGrade.trimmed();
+    }
     in.seamCount = integ("seamCount", in.seamCount);
     in.coreLossCraftCoef = num("coreLossCraftCoef", in.coreLossCraftCoef);
     // 旧方案没有铁轭字段时沿用其原共同系数；显式非法新字段不能静默迁移。

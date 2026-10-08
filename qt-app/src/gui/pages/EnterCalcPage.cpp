@@ -189,7 +189,7 @@ void EnterCalcPage::buildOptimizeRibbon()
             "硅钢片总重: %10 kg；导线总重: %11 kg\n"
             "油面温升: %12 K；高压绕组温升: %13 K；低压绕组温升: %14 K\n"
             "高压电密: %15 A/mm²；低压电密: %16 A/mm²\n"
-            "变压器总重: %17 kg；内置基价材料合计: %18 元\n"
+            "变压器总重: %17 kg；本方案材料合计: %18 元\n"
             "性能标准：空载损耗标准 %19 W，负载损耗标准 %20 W，"
             "阻抗电压标准 %21%，空载电流标准 %22%\n"
             "约束校验：%23")
@@ -484,7 +484,7 @@ void EnterCalcPage::buildSchemeRibbon()
             const auto &c = m_schemeData.value(idx);
             const auto &r = c.result;
             data += QStringLiteral(
-                "方案%1：内置基价材料合计 %2 元；空载损耗 %3 W；负载损耗 %4 W；"
+                "方案%1：本方案材料合计 %2 元；空载损耗 %3 W；负载损耗 %4 W；"
                 "阻抗电压 %5%；心柱磁密 %6 T；油面温升 %7 K；"
                 "铁芯直径 %8 mm；低压匝数 %9\n")
                 .arg(idx)
@@ -861,7 +861,7 @@ std::optional<OptimizationSettings> EnterCalcPage::showLoopParamsDialog()
     auto *layout = new QVBoxLayout(dlg);
     layout->setContentsMargins(12, 12, 12, 12);
 
-    auto *notes = new QLabel(QStringLiteral("目标：在已启用约束通过的候选中，使内置基价材料合计最低。\n")
+    auto *notes = new QLabel(QStringLiteral("目标：在已启用约束通过的候选中，使本轮价格口径下材料合计最低。\n")
         + CostBasisNotes::engine()
         + QStringLiteral("\n订单容量、电压、联结组别、性能标准与偏差保持不变；保留单轮及一轮细搜，新增多轮细化。"
                          "\n低压箔尺寸及高压扁线宽/厚为设计尺寸搜索，非库存选型，制造规格仍需核对。"
@@ -896,17 +896,28 @@ std::optional<OptimizationSettings> EnterCalcPage::showLoopParamsDialog()
     auto *steelLayout = new QHBoxLayout;
     auto *steelCheck = new QCheckBox(QStringLiteral("硅钢牌号参与寻优"), dlg);
     steelCheck->setChecked(cur.searchSteelGrade);
-    auto *steelButton = new QPushButton(QStringLiteral("勾选候选牌号…"), dlg);
+    auto *steelButton = new QPushButton(QStringLiteral("候选牌号及单价…"), dlg);
     auto *steelLabel = new QLabel(dlg);
     steelLabel->setWordWrap(true);
     steelLayout->addWidget(steelCheck);
     steelLayout->addWidget(steelButton);
     steelLayout->addWidget(steelLabel, 1);
     layout->addLayout(steelLayout);
-    auto *steelNote = new QLabel(QStringLiteral("各牌号均按17元/kg内置基价比较，不是实际采购成本最优；片厚随牌号联动。细搜沿用全体可行方案最低成本3中心，未保证每个牌号都有细搜中心。"), dlg);
+    auto *priceMode = new QComboBox(dlg);
+    priceMode->addItem(QStringLiteral("计算单内置基价（硅钢17元/kg）"), int(OptimizationSettings::BuiltInSteelPrice));
+    priceMode->addItem(QStringLiteral("按牌号自定义硅钢价（其余材料仍用内置基价）"), int(OptimizationSettings::CustomSteelPrices));
+    int priceIndex = priceMode->findData(int(cur.steelPricing));
+    if (priceIndex < 0) {
+        priceMode->addItem(QStringLiteral("无效价格模式，请重新选择"), int(cur.steelPricing));
+        priceIndex = priceMode->count() - 1;
+    }
+    priceMode->setCurrentIndex(priceIndex);
+    layout->addWidget(priceMode);
+    auto *steelNote = new QLabel(QStringLiteral("自定义模式需显式填写每个参与牌号价格；价格随候选冻结，报价页仍独立、不自动同步。片厚随牌号联动；细搜为全体最低成本3中心，不保证每个牌号都细搜。"), dlg);
     steelNote->setWordWrap(true);
     layout->addWidget(steelNote);
     auto gradeChoices = std::make_shared<QStringList>(cur.selectedSteelGrades);
+    auto priceTexts = std::make_shared<QMap<QString, QString>>(cur.steelGradePriceTexts);
     auto *form = new QTableWidget(9, 5, dlg);
     form->setHorizontalHeaderLabels({QStringLiteral("搜索变量"),
         QStringLiteral("参与寻优"), QStringLiteral("步长"), QStringLiteral("范围(±N步)"),
@@ -975,12 +986,20 @@ std::optional<OptimizationSettings> EnterCalcPage::showLoopParamsDialog()
 
     // 组合数实时预览
     auto *comboLabel = new QLabel(dlg);
-    const auto gather = [cur, base, mode, roundSpin, steelCheck, gradeChoices, stepSpins, rangeSpins, searchChecks]() {
+    const auto gather = [cur, base, mode, roundSpin, steelCheck, gradeChoices, priceMode, priceTexts, stepSpins, rangeSpins, searchChecks]() {
         OptimizationSettings s = cur;
         s.method = static_cast<OptimizationSettings::Method>(mode->currentData().toInt());
         s.maxFineRounds = roundSpin->value();
         s.searchSteelGrade = steelCheck->isChecked();
         s.selectedSteelGrades = *gradeChoices;
+        s.steelPricing = static_cast<OptimizationSettings::SteelPricing>(priceMode->currentData().toInt());
+        s.steelGradePriceTexts = *priceTexts;
+        s.steelGradePrices.clear();
+        for (auto it = priceTexts->cbegin(); it != priceTexts->cend(); ++it) {
+            bool ok = false;
+            const double price = it.value().trimmed().toDouble(&ok);
+            s.steelGradePrices[it.key()] = ok ? price : std::numeric_limits<double>::quiet_NaN();
+        }
         s.diaStep_mm = stepSpins[0]->value();
         s.straightStep_mm = stepSpins[1]->value();
         s.diaRange = rangeSpins[0]->value();
@@ -1012,7 +1031,7 @@ std::optional<OptimizationSettings> EnterCalcPage::showLoopParamsDialog()
     const auto updateCombo = [comboLabel, form, base, gather, roundSpin, steelButton, steelLabel,
                               rangeSpins, stepSpins, searchChecks]() {
         const auto s = gather();
-        steelButton->setEnabled(s.searchSteelGrade);
+        steelButton->setEnabled(s.searchSteelGrade || s.steelPricing == OptimizationSettings::CustomSteelPrices);
         steelLabel->setText(s.searchSteelGrade
             ? QStringLiteral("已选%1个；有效参与%2个").arg(s.selectedSteelGrades.size()).arg(s.steelGrades.size())
             : QStringLiteral("固定：%1（片厚%2 mm）").arg(base.steelGrade).arg(CalcInput::thicknessFromSteelGrade(base.steelGrade)));
@@ -1050,6 +1069,9 @@ std::optional<OptimizationSettings> EnterCalcPage::showLoopParamsDialog()
             .arg(error.isEmpty() ? QString() : QStringLiteral("\n") + error));
         if (s.searchSteelGrade && !s.steelGrades.isEmpty())
             comboLabel->setText(comboLabel->text() + QStringLiteral("\n冻结候选牌号：") + s.steelGrades.join(QStringLiteral("、")));
+        comboLabel->setText(comboLabel->text() + (s.steelPricing == OptimizationSettings::CustomSteelPrices
+            ? QStringLiteral("\n本轮将冻结各牌号自定义硅钢价，其余材料沿用内置基价。")
+            : QStringLiteral("\n本轮硅钢仍统一17元/kg；已填自定义价仅保留，不参与本轮。")));
     };
     for (auto *spin : rangeSpins) {
         connect(spin, &QSpinBox::valueChanged, updateCombo);
@@ -1059,20 +1081,50 @@ std::optional<OptimizationSettings> EnterCalcPage::showLoopParamsDialog()
     connect(mode, &QComboBox::currentIndexChanged, updateCombo);
     connect(roundSpin, &QSpinBox::valueChanged, updateCombo);
     connect(steelCheck, &QCheckBox::toggled, updateCombo);
-    connect(steelButton, &QPushButton::clicked, dlg, [dlg, gradeChoices, updateCombo]() {
+    connect(priceMode, &QComboBox::currentIndexChanged, updateCombo);
+    connect(steelButton, &QPushButton::clicked, dlg, [dlg, base, steelCheck, priceMode, gradeChoices, priceTexts, updateCombo]() {
         auto &db = DesignDatabase::instance();
         if (!db.isLoaded() && !db.load()) {
             QMessageBox::warning(dlg, QStringLiteral("硅钢曲线加载失败"), db.lastError());
             return;
         }
         QDialog selector(dlg);
-        selector.setWindowTitle(QStringLiteral("勾选候选硅钢牌号"));
-        selector.resize(540, 460);
+        selector.setWindowTitle(QStringLiteral("候选硅钢牌号及寻优单价"));
+        selector.resize(740, 460);
         QVBoxLayout selectorLayout(&selector);
-        auto *hint = new QLabel(QStringLiteral("仅勾选具有有效片厚、磁密、铁损和磁化容量曲线的牌号。不会自动加入当前牌号；失效的旧选择需取消勾选。"), &selector);
+        const bool search = steelCheck->isChecked();
+        const bool custom = priceMode->currentData().toInt() == int(OptimizationSettings::CustomSteelPrices);
+        auto *hint = new QLabel(search
+            ? QStringLiteral("显式勾选候选，失效旧选择需取消。自定义模式填写正单价（元/kg），空值不自动套17。")
+            : QStringLiteral("牌号搜索关闭，仅固定当前设计牌号；可填写当前牌号单价，不改原候选选择。"), &selector);
         hint->setWordWrap(true);
         selectorLayout.addWidget(hint);
-        auto *list = new QListWidget(&selector);
+        auto *list = new QTableWidget(0, 3, &selector);
+        list->setHorizontalHeaderLabels({QStringLiteral("参与牌号"), QStringLiteral("片厚/曲线范围"), QStringLiteral("自定义单价(元/kg)")});
+        list->verticalHeader()->hide();
+        list->horizontalHeader()->setStretchLastSection(true);
+        list->setColumnWidth(0, 210);
+        list->setColumnWidth(1, 240);
+        list->setEditTriggers(QAbstractItemView::NoEditTriggers);
+        const auto addEntry = [list, search, custom, base, gradeChoices, priceTexts](const QString &name, const QString &detail) {
+            const int row = list->rowCount();
+            list->insertRow(row);
+            auto *entry = new QTableWidgetItem(name);
+            entry->setData(Qt::UserRole, name);
+            entry->setFlags(Qt::ItemIsEnabled | Qt::ItemIsSelectable | (search ? Qt::ItemIsUserCheckable : Qt::NoItemFlags));
+            const bool checked = search
+                ? std::any_of(gradeChoices->cbegin(), gradeChoices->cend(), [&name](const QString &choice) {
+                    return choice.trimmed().compare(name.trimmed(), Qt::CaseInsensitive) == 0;
+                }) : name.trimmed().compare(base.steelGrade.trimmed(), Qt::CaseInsensitive) == 0;
+            entry->setCheckState(checked ? Qt::Checked : Qt::Unchecked);
+            list->setItem(row, 0, entry);
+            list->setItem(row, 1, new QTableWidgetItem(detail));
+            auto *edit = new QLineEdit(list);
+            edit->setPlaceholderText(QStringLiteral("未填，自定义模式必填"));
+            edit->setText(priceTexts->value(name.trimmed().toUpper()));
+            edit->setEnabled(custom && checked);
+            list->setCellWidget(row, 2, edit);
+        };
         QSet<QString> displayed;
         for (const auto &curve : db.steelCurves()) {
             QString canonical;
@@ -1081,34 +1133,35 @@ std::optional<OptimizationSettings> EnterCalcPage::showLoopParamsDialog()
             displayed.insert(canonical.toUpper());
             double minT = 0.0, maxT = 0.0;
             db.steelCurveRange(canonical, minT, maxT);
-            auto *entry = new QListWidgetItem(QStringLiteral("%1  |  %2 mm  |  曲线%3～%4 T")
-                .arg(canonical).arg(CalcInput::thicknessFromSteelGrade(canonical)).arg(minT).arg(maxT), list);
-            entry->setData(Qt::UserRole, canonical);
-            entry->setFlags(entry->flags() | Qt::ItemIsUserCheckable);
-            const bool checked = std::any_of(gradeChoices->cbegin(), gradeChoices->cend(), [&canonical](const QString &name) {
-                return name.trimmed().compare(canonical, Qt::CaseInsensitive) == 0;
-            });
-            entry->setCheckState(checked ? Qt::Checked : Qt::Unchecked);
+            addEntry(canonical, QStringLiteral("%1 mm | %2～%3 T")
+                .arg(CalcInput::thicknessFromSteelGrade(canonical)).arg(minT).arg(maxT));
         }
         for (const auto &old : *gradeChoices) {
             if (displayed.contains(old.trimmed().toUpper())) continue;
             displayed.insert(old.trimmed().toUpper());
-            auto *entry = new QListWidgetItem(QStringLiteral("%1（失效选择，请取消勾选）").arg(old), list);
-            entry->setData(Qt::UserRole, old);
-            entry->setFlags(entry->flags() | Qt::ItemIsUserCheckable);
-            entry->setCheckState(Qt::Checked);
-            entry->setToolTip(steelGradeSearchError(db, old));
+            addEntry(old, QStringLiteral("失效选择，请取消勾选"));
+            list->item(list->rowCount() - 1, 0)->setToolTip(steelGradeSearchError(db, old));
         }
+        if (!search && !displayed.contains(base.steelGrade.trimmed().toUpper()))
+            addEntry(base.steelGrade, QStringLiteral("当前固定牌号，仍须通过计算入口校验"));
+        connect(list, &QTableWidget::itemChanged, list, [list, custom](QTableWidgetItem *entry) {
+            if (entry->column() != 0) return;
+            if (auto *edit = qobject_cast<QLineEdit *>(list->cellWidget(entry->row(), 2)))
+                edit->setEnabled(custom && entry->checkState() == Qt::Checked);
+        });
         selectorLayout.addWidget(list, 1);
         auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &selector);
         connect(buttons, &QDialogButtonBox::accepted, &selector, &QDialog::accept);
         connect(buttons, &QDialogButtonBox::rejected, &selector, &QDialog::reject);
         selectorLayout.addWidget(buttons);
         if (selector.exec() == QDialog::Accepted) {
-            gradeChoices->clear();
-            for (int i = 0; i < list->count(); ++i)
-                if (list->item(i)->checkState() == Qt::Checked)
-                    gradeChoices->append(list->item(i)->data(Qt::UserRole).toString());
+            if (search) gradeChoices->clear();
+            for (int i = 0; i < list->rowCount(); ++i) {
+                const QString name = list->item(i, 0)->data(Qt::UserRole).toString();
+                if (search && list->item(i, 0)->checkState() == Qt::Checked) gradeChoices->append(name);
+                const auto *edit = qobject_cast<QLineEdit *>(list->cellWidget(i, 2));
+                if (edit) (*priceTexts)[name.trimmed().toUpper()] = edit->text();
+            }
             updateCombo();
         }
     });
@@ -1186,6 +1239,15 @@ OptimizationSettings EnterCalcPage::loadOptimizeSettings() const
     s.hvRoundWireRange = settings.value("optimize/hvRoundWireRange", s.hvRoundWireRange).toInt();
     s.searchSteelGrade = settings.value("optimize/searchSteelGrade", false).toBool();
     s.selectedSteelGrades = settings.value("optimize/selectedSteelGrades", QStringList{}).toStringList();
+    s.steelPricing = static_cast<OptimizationSettings::SteelPricing>(settings.value("optimize/steelPricing", int(s.steelPricing)).toInt());
+    const auto prices = settings.value("optimize/steelGradePriceTexts").toMap();
+    for (auto it = prices.cbegin(); it != prices.cend(); ++it) {
+        const QString key = it.key().trimmed().toUpper();
+        s.steelGradePriceTexts[key] = it.value().toString();
+        bool ok = false;
+        const double value = it.value().toString().trimmed().toDouble(&ok);
+        s.steelGradePrices[key] = ok ? value : std::numeric_limits<double>::quiet_NaN();
+    }
     return s;
 }
 
@@ -1220,6 +1282,11 @@ void EnterCalcPage::saveOptimizeSettings(const OptimizationSettings &s) const
     settings.setValue("optimize/hvRoundWireRange", s.hvRoundWireRange);
     settings.setValue("optimize/searchSteelGrade", s.searchSteelGrade);
     settings.setValue("optimize/selectedSteelGrades", s.selectedSteelGrades);
+    settings.setValue("optimize/steelPricing", int(s.steelPricing));
+    QVariantMap prices;
+    for (auto it = s.steelGradePriceTexts.cbegin(); it != s.steelGradePriceTexts.cend(); ++it)
+        prices.insert(it.key(), it.value());
+    settings.setValue("optimize/steelGradePriceTexts", prices);
 }
 
 // 竖排"程序选择"导航按钮（点击返回主界面），三个 Tab 各自调用创建
@@ -1456,7 +1523,7 @@ void EnterCalcPage::runEmCalcInput(const CalcInput &candidate)
 
     QString status = QStringLiteral(
         "电磁计算完成：空载损耗 %1 W | 负载损耗 %2 W | 阻抗电压 %3% | "
-        "油面温升 %4 K | 总重 %5 kg | 内置基价材料合计 %6 元")
+        "油面温升 %4 K | 总重 %5 kg | 本方案材料合计 %6 元")
         .arg(QString::number(m_emResult.core.noLoadLoss_W, 'f', 0),
              QString::number(m_emResult.winding.loadLoss_W, 'f', 0),
              QString::number(m_emResult.impedance.impedance_pct, 'f', 2),
@@ -1609,7 +1676,7 @@ void EnterCalcPage::onOptimizeStart()
     m_optimizer->start(m_runningOptParams, m_config, m_runningOptInput, m_runningOptSettings);
     m_statusBar->setText(
         QStringLiteral("寻优已启动：订单与搜索设置已冻结，首轮共%1组合；"
-                       "按已启用约束过滤，以内置基价材料合计最低选优（含油箱）。")
+                       "按已启用约束过滤，以本轮价格口径下材料合计最低选优（含油箱）。")
             .arg(m_runningOptSettings.plannedCount()));
 }
 
@@ -1724,7 +1791,7 @@ void EnterCalcPage::showOptimizationSummary()
     const auto &s = m_optSummary;
     const bool twoStages = m_runningOptSettings.hasRefinement();
     const bool multiRound = m_runningOptSettings.method == OptimizationSettings::MultiRound;
-    QString text = QStringLiteral("本轮：%1；%10，单后台计算线程。\n目标：已启用约束通过的候选中，内置基价材料合计最低。\n%2\n\n"
+    QString text = QStringLiteral("本轮：%1；%10，单后台计算线程。\n目标：已启用约束通过的候选中，本轮价格口径下材料合计最低。\n%2\n\n"
         "计划组合：%3\n实际引擎计算：%4\n入库候选：%5\n计算失败或成本无效：%6\n约束剔除：%7\n未评估：%8\n耗时：%9秒（含暂停）\n")
         .arg(m_optStopped ? QStringLiteral("已停止") : QStringLiteral("已结束"), CostBasisNotes::engine())
         .arg(s.planned).arg(s.evaluated).arg(s.accepted).arg(s.invalid)
@@ -1779,10 +1846,21 @@ void EnterCalcPage::showOptimizationSummary()
             .arg(m_optBestCost, 0, 'f', 2)
             .arg(m_optStopped ? QStringLiteral("（仅本次已算范围，不代表全部网格最优）") : QString());
     else text += QStringLiteral("无入库候选，本轮没有最优方案。\n");
-    text += QStringLiteral("\n硅钢牌号：%1\n各牌号统一采用17元/kg内置基价，不等于实际采购成本最优。\n")
+    text += QStringLiteral("\n硅钢牌号：%1\n")
         .arg(m_runningOptSettings.searchSteelGrade
             ? QStringLiteral("联合寻优，冻结参与清单：") + m_runningOptSettings.steelGrades.join(QStringLiteral("、"))
             : QStringLiteral("固定基准：") + m_runningOptInput.steelGrade);
+    if (m_runningOptSettings.steelPricing == OptimizationSettings::CustomSteelPrices) {
+        text += QStringLiteral("冻结价格：按牌号自定义硅钢价，其余材料仍用内置基价，报价页独立。\n");
+        const QStringList grades = m_runningOptSettings.searchSteelGrade
+            ? m_runningOptSettings.steelGrades : QStringList{m_runningOptInput.steelGrade};
+        for (const auto &grade : grades)
+            text += QStringLiteral("  %1：%2元/kg\n").arg(grade)
+                .arg(m_runningOptSettings.steelGradePrices.value(grade.trimmed().toUpper()), 0, 'g', 15);
+    } else {
+        text += QStringLiteral("冻结价格：各牌号统一采用17元/kg计算单内置基价。\n");
+    }
+    text += QStringLiteral("仅本轮价格口径下比较，不等于实际采购全成本最优。\n");
     if (m_runningOptSettings.searchSteelGrade && twoStages)
         text += QStringLiteral("粗搜计划覆盖全部勾选牌号，实际处理量见下表；细搜按全体可行方案最低成本3中心，仅保持中心牌号，不保证各牌号都有细搜中心。\n");
     text += QStringLiteral("按牌号统计（粗搜及全部细搜的唯一新增计划/实际处理量，暂停或提前停止不补算）：\n");
@@ -2047,7 +2125,7 @@ void EnterCalcPage::onFilterSchemes()
     bool ok = false;
     const double limit = QInputDialog::getDouble(
         this, QStringLiteral("筛选方案"),
-        QStringLiteral("内置基价材料合计上限（元，取消则清除筛选）："),
+        QStringLiteral("本方案材料合计上限（元，取消则清除筛选）："),
         0.0, 0.0, 1e9, 1, &ok);
     int shown = 0;
     for (int r = 0; r < m_schemeTable->rowCount(); ++r) {
@@ -2060,7 +2138,7 @@ void EnterCalcPage::onFilterSchemes()
         }
     }
     m_statusBar->setText(ok
-        ? QStringLiteral("筛选：内置基价材料合计 ≤ %1，共 %2/%3 个方案")
+        ? QStringLiteral("筛选：本方案材料合计 ≤ %1，共 %2/%3 个方案")
               .arg(QString::number(limit, 'f', 1)).arg(shown)
               .arg(m_schemeTable->rowCount())
         : QStringLiteral("已清除方案筛选"));
@@ -2149,7 +2227,7 @@ void EnterCalcPage::onSchemeSelected(int row)
             return QStringLiteral("尚未计算，修改参数后自动更新");
         }
         return QStringLiteral(
-                   "内置基价材料合计 %1 元 | 空载损耗 %2 W | 负载损耗 %3 W | 阻抗电压 %4 % "
+                   "本方案材料合计 %1 元 | 空载损耗 %2 W | 负载损耗 %3 W | 阻抗电压 %4 % "
                    "| 油顶层温升 %5 K")
             .arg(QString::number(r.cost.materialCost, 'f', 0),
                  QString::number(r.core.noLoadLoss_W, 'f', 1),
@@ -2239,7 +2317,7 @@ void EnterCalcPage::onSchemeSelected(int row)
         m_schemeTable->markRow(row);
         m_schemeTable->selectRow(row);
         m_statusBar->setText(
-            QStringLiteral("已选择方案 %1（内置基价材料合计 %2 元），点击\"方案确认\"进入输出打印")
+            QStringLiteral("已选择方案 %1（本方案材料合计 %2 元），点击\"方案确认\"进入输出打印")
                 .arg(schemeIdx)
                 .arg(QString::number(pendingResult.cost.materialCost, 'f', 0)));
         dlg.accept();
@@ -2393,7 +2471,7 @@ void EnterCalcPage::confirmSchemeAt(int row)
         m_schemeIndexSpin->blockSignals(false);
     }
     m_statusBar->setText(
-        QStringLiteral("已确认方案 %1（内置基价材料合计 %2 元），输出打印已更新")
+        QStringLiteral("已确认方案 %1（本方案材料合计 %2 元），输出打印已更新")
             .arg(schemeIdx)
             .arg(QString::number(m_emResult.cost.materialCost, 'f', 0)));
     m_tabBar->setCurrentIndex(2);
@@ -2413,7 +2491,7 @@ void EnterCalcPage::onFilterAdvanced()
     costSpin->setDecimals(1);
     costSpin->setSuffix(QStringLiteral(" 元"));
     costSpin->setValue(0.0);
-    form->addWidget(new QLabel(QStringLiteral("内置基价材料合计上限（0=不限）："), &dlg));
+    form->addWidget(new QLabel(QStringLiteral("本方案材料合计上限（0=不限）："), &dlg));
     form->addWidget(costSpin);
     auto *dMinSpin = new QDoubleSpinBox(&dlg);
     dMinSpin->setRange(0.0, 2000.0);
@@ -2599,10 +2677,12 @@ void EnterCalcPage::onCompareLibrary()
     };
     QString text = QStringLiteral("【待比较】方案 %1  vs  【已确认】方案 %2\n\n")
                        .arg(curIdx).arg(m_confirmedSchemeIdx);
-    text += CostBasisNotes::engine() + QLatin1Char('\n');
-    text += line(QStringLiteral("材料合计（含油箱，内置基价）"), a.costCuFeOil, b.costCuFeOil,
+    text += QStringLiteral("待比较价格口径：") + a.costBasis + QLatin1Char('\n');
+    text += QStringLiteral("已确认价格口径：") + b.costBasis + QLatin1Char('\n');
+    text += QStringLiteral("若两方案采用不同单价，以下成本差额同时包含价格影响，不能只归因于设计改善。\n");
+    text += line(QStringLiteral("材料合计（含油箱，本方案口径）"), a.costCuFeOil, b.costCuFeOil,
                  QStringLiteral("元"), 0);
-    text += line(QStringLiteral("铁芯导线成本（内置基价）"), a.costCuFe, b.costCuFe, QStringLiteral("元"), 0);
+    text += line(QStringLiteral("铁芯导线成本（本方案口径）"), a.costCuFe, b.costCuFe, QStringLiteral("元"), 0);
     text += line(QStringLiteral("铁芯直径"), a.coreD, b.coreD, QStringLiteral("mm"));
     text += line(QStringLiteral("铁芯长轴"), a.coreL, b.coreL, QStringLiteral("mm"));
     text += line(QStringLiteral("低压匝数"), double(a.lvTurns), double(b.lvTurns), QString(), 0);
@@ -2610,7 +2690,7 @@ void EnterCalcPage::onCompareLibrary()
                  QString(), 0);
     text += line(QStringLiteral("主空道尺寸"), a.mainDuct, b.mainDuct, QStringLiteral("mm"));
     const double diff = a.costCuFeOil - b.costCuFeOil;
-    text += QStringLiteral("\n结论：待比较方案内置基价材料合计比已确认方案%1 %2 元")
+    text += QStringLiteral("\n结论：待比较方案材料合计比已确认方案%1 %2 元（各自保存的价格口径）")
                 .arg(diff <= 0 ? QStringLiteral("低") : QStringLiteral("高"))
                 .arg(QString::number(qAbs(diff), 'f', 0));
     QMessageBox::information(this, QStringLiteral("方案库比较"), text);
@@ -2807,8 +2887,8 @@ void EnterCalcPage::onOpenQuote()
         }
     }
     const auto &c = m_emResult.cost;
-    QString text = QStringLiteral("======== 材料成本明细（内置基价，非报价） ========\n");
-    text += CostBasisNotes::engine() + QLatin1Char('\n');
+    QString text = QStringLiteral("======== 材料成本明细（本方案口径，非报价） ========\n");
+    text += CostBasisNotes::engine(c.useCustomSteelPrice, c.steelPricePerKg, c.steelPriceGrade) + QLatin1Char('\n');
     text += QStringLiteral("硅钢片成本: %1 元\n").arg(QString::number(c.steelCost, 'f', 1));
     text += QStringLiteral("高压导线成本: %1 元\n").arg(QString::number(c.hvWireCost, 'f', 1));
     text += QStringLiteral("低压箔成本: %1 元\n").arg(QString::number(c.lvWireCost, 'f', 1));
@@ -2817,12 +2897,12 @@ void EnterCalcPage::onOpenQuote()
     text += QStringLiteral("----------------------------------------\n");
     text += QStringLiteral("材料成本合计: %1 元\n").arg(QString::number(c.materialCost, 'f', 1));
     QMessageBox box(this);
-    box.setWindowTitle(QStringLiteral("材料成本明细（内置基价）"));
+    box.setWindowTitle(QStringLiteral("材料成本明细（本方案口径）"));
     box.setText(text);
     box.setTextFormat(Qt::PlainText);
     box.setFont(QFont(QStringLiteral("Consolas")));
     box.exec();
-    m_statusBar->setText(QStringLiteral("内置基价材料成本明细已打开"));
+    m_statusBar->setText(QStringLiteral("本方案材料成本明细已打开"));
 }
 
 void EnterCalcPage::onOpenCalcSheet()

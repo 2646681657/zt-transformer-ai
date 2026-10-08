@@ -50,6 +50,11 @@ public:
             in.steelGrade = m_settings.steelGrades[point[9]];
             in.steelThickness_mm = CalcInput::thicknessFromSteelGrade(in.steelGrade);
         }
+        // 本轮模式明确覆盖基准候选可能携带的旧价格快照。
+        in.useCustomSteelPrice = m_settings.steelPricing == OptimizationSettings::CustomSteelPrices;
+        in.steelPriceGrade = in.steelGrade.trimmed();
+        in.steelPricePerKg = in.useCustomSteelPrice
+            ? m_settings.steelGradePrices.value(in.steelGrade.trimmed().toUpper(), 0.0) : 17.0;
         return in;
     }
 

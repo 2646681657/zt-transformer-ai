@@ -171,6 +171,9 @@ struct MassResult {
 };
 
 struct CostResult {
+    bool useCustomSteelPrice = false;
+    double steelPricePerKg = 17.0;
+    QString steelPriceGrade;
     double steelCost = 0.0;            // 硅钢片成本
     double hvWireCost = 0.0;           // 高压导线成本
     double lvWireCost = 0.0;           // 低压箔成本

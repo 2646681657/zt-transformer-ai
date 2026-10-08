@@ -33,7 +33,7 @@ protected:
             // 铁芯导线列隐藏：保留单列两级表头。
             const int band = rect.height() / 2;
             paintThemeSection(p, QRect(rect.x(), rect.y(), rect.width(), band),
-                              QStringLiteral("内置基价成本"));
+                              QStringLiteral("本方案材料成本"));
             paintThemeSection(p, QRect(rect.x(), rect.y() + band, rect.width(), rect.height() - band),
                               QStringLiteral("材料合计"));
             return;
@@ -52,7 +52,7 @@ protected:
         if (x2 <= x1 || x1 < 0)
             return;
         QPainter p(viewport());
-        paintThemeSection(&p, QRect(x1, 0, x2 - x1, band), QStringLiteral("内置基价成本"));
+        paintThemeSection(&p, QRect(x1, 0, x2 - x1, band), QStringLiteral("本方案材料成本"));
     }
 
 private:
@@ -106,7 +106,7 @@ void SchemeTableWidget::setupColumns()
     // 列 2 表头默认显示两行文本；铜铁列隐藏时由
     // GroupHeaderView 绘制为上下两格
     QStringList headers = {
-        "选择", "方案序号", "内置基价成本\n材料合计", "铁芯导线", "铁芯直径\n铁芯矩轴",
+        "选择", "方案序号", "本方案材料成本\n材料合计", "铁芯导线", "铁芯直径\n铁芯矩轴",
         "铁芯长轴\n与短轴比", "低压匝数", "低压线规厚", "低压线规宽",
         "高压线规厚", "高压线规宽", "高压每层匝数 Y9", "低压油道个数",
         "高压油道个数", "低压到铁扼最", "主空道尺寸", "低压半油道个",
@@ -114,7 +114,7 @@ void SchemeTableWidget::setupColumns()
     };
     setHorizontalHeaderLabels(headers);
     horizontalHeaderItem(kCostCol)->setToolTip(CostBasisNotes::engine());
-    horizontalHeaderItem(kCuFeCol)->setToolTip(QStringLiteral("内置基价：铁芯+高压导线+低压导线；不含油和油箱。导线按实际铜/铝材料计算。"));
+    horizontalHeaderItem(kCuFeCol)->setToolTip(QStringLiteral("按本方案采用的价格：铁芯+高压导线+低压导线；不含油和油箱。导线按实际铜/铝材料计算。"));
     verticalHeader()->setVisible(false);
     setAlternatingRowColors(true);
     setSelectionBehavior(QAbstractItemView::SelectRows);
@@ -167,6 +167,8 @@ void SchemeTableWidget::fillRowItems(int row, const OptimizationResult &r)
     setItem(row, col++, intItem(r.schemeIdx));
     setItem(row, col++, numItem(r.costCuFeOil));
     setItem(row, col++, numItem(r.costCuFe));
+    item(row, kCostCol)->setToolTip(r.costBasis);
+    item(row, kCuFeCol)->setToolTip(r.costBasis);
     setItem(row, col++, numItem(r.coreD));
     setItem(row, col++, numItem(r.coreL));
     setItem(row, col++, intItem(r.lvTurns));
