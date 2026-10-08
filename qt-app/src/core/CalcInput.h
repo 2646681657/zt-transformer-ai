@@ -43,6 +43,19 @@ struct CalcInput {
     double stackFactor = 0.95;        // L16 叠片系数
     double steelThickness_mm = 0.18;  // 硅钢片厚（由牌号前缀决定）
     QString steelGrade = QStringLiteral("18SQGD065");  // 硅钢牌号
+    bool useCustomSteelPrice = false; // 默认保留计算单17元/kg，仅影响成本
+    double steelPricePerKg = 17.0;
+    QString steelPriceGrade; // 候选的价格绑定牌号，不能用于后来换成的其他牌号
+    QString steelPriceError() const {
+        if (!useCustomSteelPrice) return {};
+        if (!std::isfinite(steelPricePerKg) || steelPricePerKg <= 0.0 || steelPricePerKg > 99999.0)
+            return QStringLiteral("自定义硅钢价须为大于0、不超过99999元/kg的有效数值，不允许缺价回退为17元/kg。");
+        if (steelPriceGrade.trimmed().isEmpty()
+                || steelPriceGrade.trimmed().compare(steelGrade.trimmed(), Qt::CaseInsensitive) != 0)
+            return QStringLiteral("自定义硅钢价绑定牌号%1，与当前牌号%2不一致。请回循环参数设置该牌号价格并重新寻优，不沿用其他牌号价格。")
+                .arg(steelPriceGrade, steelGrade);
+        return {};
+    }
     int seamCount = 5;                // 接缝数
     double coreLossCraftCoef = 1.23;  // 心柱工艺系数（Sheet1 T25），保留旧字段名
     double yokeLossCraftCoef = 1.23;  // 铁轭工艺系数（Sheet1 W25）

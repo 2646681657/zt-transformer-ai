@@ -51,6 +51,10 @@ struct OptimizationSettings {
     QStringList selectedSteelGrades; // 用户显式选择，持久化；不自动补入基准
     QStringList steelGrades; // 每次启动重新核对后生成的规范牌号快照
     QString steelGradeSelectionError;
+    enum SteelPricing { BuiltInSteelPrice, CustomSteelPrices };
+    SteelPricing steelPricing = BuiltInSteelPrice;
+    QMap<QString, double> steelGradePrices; // 键为trim+大写；用户填写，候选生成时冻结
+    QMap<QString, QString> steelGradePriceTexts; // 保留用户输入及空/非法值，设置持久化用
     static constexpr int maximumCombinations = 100000;
     static constexpr int fineSeedLimit = 3;
     static constexpr int maximumFineRounds = 5;
@@ -111,6 +115,8 @@ struct OptimizationSettings {
                 * fineNeighborhoodUpperBound() : 0);
     }
     QString validationError(const CalcInput &base) const {
+        if (steelPricing != BuiltInSteelPrice && steelPricing != CustomSteelPrices)
+            return QStringLiteral("硅钢价模式无效，请重新选择内置基价或按牌号自定义价。");
         if (method != Exhaustive && method != CoarseFine && method != MultiRound)
             return QStringLiteral("不支持的寻优模式，请重新选择单轮网格、一轮细搜或多轮细化。");
         if (method == MultiRound && (maxFineRounds < 1 || maxFineRounds > maximumFineRounds))
@@ -127,6 +133,15 @@ struct OptimizationSettings {
                         || identity != selectedSteelGrades[i].trimmed().toUpper())
                     return QStringLiteral("牌号快照须与显式选择一致、唯一且片厚格式有效，不允许静默替换。");
                 identities.append(identity);
+            }
+        }
+        if (steelPricing == CustomSteelPrices) {
+            const auto grades = searchSteelGrade ? steelGrades : QStringList{base.steelGrade};
+            for (const auto &grade : grades) {
+                const double price = steelGradePrices.value(grade.trimmed().toUpper(), 0.0);
+                if (!std::isfinite(price) || price <= 0.0 || price > 99999.0)
+                    return QStringLiteral("牌号%1缺少有效自定义单价，请填写大于0、不超过99999元/kg的价格；不自动套用17元/kg或报价页价格。")
+                        .arg(grade);
             }
         }
         if (searchHvRoundWire) {

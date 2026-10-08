@@ -1246,7 +1246,10 @@ void calcMassCost(EmCtx &c)
     // 材料成本（成本测算表，单价按计算单默认）
     const double cuPrice = 60.0;
     const double alPrice = 60.0;  // 计算单成本测算表 E6/E7 的默认基价
-    c.out->cost.steelCost = excelRound(steelW * 1.05, 0) * 17.0;
+    c.out->cost.useCustomSteelPrice = in.useCustomSteelPrice;
+    c.out->cost.steelPricePerKg = in.useCustomSteelPrice ? in.steelPricePerKg : 17.0;
+    c.out->cost.steelPriceGrade = in.steelGrade;
+    c.out->cost.steelCost = excelRound(steelW * 1.05, 0) * c.out->cost.steelPricePerKg;
     const double hvPrice = in.hvCopperWire ? cuPrice + 3.3
         : alPrice + (in.hvBareWidth_mm == in.hvBareThick_mm ? 6.0 : 8.5);
     const double lvPrice = in.lvCopperFoil ? cuPrice * 1.05 + 6.5 : alPrice + 6.0;
@@ -1411,6 +1414,11 @@ bool ElectromagneticEngine::calcElectromagnetic(const CalcInput &input, CalcResu
     const QString wireError = input.highVoltageWireError();
     if (!wireError.isEmpty()) {
         result.error = wireError;
+        return false;
+    }
+    const QString priceError = input.steelPriceError();
+    if (!priceError.isEmpty()) {
+        result.error = priceError;
         return false;
     }
 
@@ -1664,12 +1672,15 @@ PrintOutputData ElectromagneticEngine::buildPrintOutput(const CalcInput &input,
            QStringLiteral("kg"),
            QStringLiteral("总重"), QString::number(result.mass.totalWeight_kg, 'f', 0),
            QStringLiteral("kg"));
-    addRow(QStringLiteral("材料合计（内置基价）"), QString::number(result.cost.materialCost, 'f', 0),
+    addRow(QStringLiteral("材料合计（本方案口径）"), QString::number(result.cost.materialCost, 'f', 0),
            QStringLiteral("元"), QStringLiteral("寻优依据"), QStringLiteral("材料合计"), QString());
-    addRow(QStringLiteral("价格口径"), QStringLiteral("内置基价"), QString(),
+    addRow(QStringLiteral("价格口径"), result.cost.useCustomSteelPrice
+            ? QStringLiteral("自定义硅钢价，其余内置基价") : QStringLiteral("内置基价"), QString(),
            QStringLiteral("报价页调价"), QStringLiteral("不影响寻优"), QString());
     addRow(QStringLiteral("含油与油箱"), QStringLiteral("是"), QString(),
            QStringLiteral("费用/利润/税额"), QStringLiteral("不含"), QString());
+    addRow(QStringLiteral("采用硅钢单价"), QString::number(result.cost.steelPricePerKg, 'g', 15),
+           QStringLiteral("元/kg"), QStringLiteral("价格绑定牌号"), result.cost.steelPriceGrade, QString());
     return data;
 }
 
