@@ -75,7 +75,9 @@ public slots:
 
         // 混合进制枚举完整笛卡尔积；固定变量只有一档，旧四变量顺序保持不变。
         for (int index = 0; index < summary.planned; ++index) {
-            int remaining = index;
+            const int roundCount = m_settings.searchHvRoundWire ? int(m_settings.hvRoundWireDiameters.size()) : 1;
+            const int roundIndex = index % roundCount;
+            int remaining = index / roundCount;
             int offsets[8];
             for (int dimension = 7; dimension >= 0; --dimension) {
                 const int count = 2 * ranges[dimension] + 1;
@@ -95,6 +97,11 @@ public slots:
             in.lvFoilWidth_mm += offsets[5] * widthStep;
             in.hvBareWidth_mm += offsets[6] * hvWidthStep;
             in.hvBareThick_mm += offsets[7] * hvThickStep;
+            if (m_settings.searchHvRoundWire) {
+                const double diameter = m_settings.hvRoundWireDiameters[roundIndex];
+                in.hvBareWidth_mm = diameter;
+                in.hvBareThick_mm = diameter;
+            }
             if (!m_base.isRoundHighVoltageWire() && in.isRoundHighVoltageWire()) {
                 ++summary.wireFormRejected;
                 ++summary.rejectionReasons[QStringLiteral("扁线宽=厚（禁止自动切换圆线）")];

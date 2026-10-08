@@ -8,6 +8,7 @@
 #include "PrintTableWidget.h"
 #include "EmResultPanel.h"
 #include "GridOptimizer.h"
+#include "RoundWireSearch.h"
 #include "SchemeConstraints.h"
 #include "SchemeStore.h"
 #include "RecommendSchemes.h"
@@ -847,7 +848,7 @@ std::optional<OptimizationSettings> EnterCalcPage::showLoopParamsDialog()
     auto *dlg = new QDialog(this);
     dlg->setWindowTitle(QStringLiteral("循环参数 - 寻优计算设置"));
     dlg->setModal(true);
-    dlg->resize(920, 640);
+    dlg->resize(950, 680);
     auto *layout = new QVBoxLayout(dlg);
     layout->setContentsMargins(12, 12, 12, 12);
 
@@ -855,11 +856,11 @@ std::optional<OptimizationSettings> EnterCalcPage::showLoopParamsDialog()
         + CostBasisNotes::engine()
         + QStringLiteral("\n订单容量、电压、联结组别、性能标准与偏差保持不变；本批为单轮网格搜索。"
                          "\n低压箔尺寸及高压扁线宽/厚为设计尺寸搜索，非库存选型，制造规格仍需核对。"
-                         "\n扁线宽=厚的组合在计算前剔除，不切换圆线。圆线请关闭高压宽/厚参与勾选。"), dlg);
+                         "\n扁线宽=厚组合预检剔除。圆线请关闭高压宽/厚参与，使用圆线规格按表内相邻档搜索，表端不补档。"), dlg);
     notes->setWordWrap(true);
     layout->addWidget(notes);
     const CalcInput base = m_calcInput;
-    auto *form = new QTableWidget(8, 5, dlg);
+    auto *form = new QTableWidget(9, 5, dlg);
     form->setHorizontalHeaderLabels({QStringLiteral("搜索变量"),
         QStringLiteral("参与寻优"), QStringLiteral("步长"), QStringLiteral("范围(±N步)"),
         QStringLiteral("实际下界 ～ 上界")});
@@ -886,13 +887,15 @@ std::optional<OptimizationSettings> EnterCalcPage::showLoopParamsDialog()
         { "低压箔宽(mm)", cur.lvFoilWidthStep_mm, cur.lvFoilWidthRange },
         { "高压裸线宽(mm)", cur.hvBareWidthStep_mm, cur.hvBareWidthRange },
         { "高压裸线厚(mm)", cur.hvBareThickStep_mm, cur.hvBareThickRange },
+        { "高压圆线规格", 1.0, cur.hvRoundWireRange },
     };
-    QVector<QDoubleSpinBox *> stepSpins(8, nullptr);
+    QVector<QDoubleSpinBox *> stepSpins(9, nullptr);
     QVector<QSpinBox *> rangeSpins;
     QVector<QCheckBox *> searchChecks;
     const bool enabled[] = {cur.searchDiameter, cur.searchStraight, cur.searchLvTurns, cur.searchHvLayers,
-                            cur.searchLvFoilThick, cur.searchLvFoilWidth, cur.searchHvBareWidth, cur.searchHvBareThick};
-    for (int i = 0; i < 8; ++i) {
+                            cur.searchLvFoilThick, cur.searchLvFoilWidth, cur.searchHvBareWidth, cur.searchHvBareThick,
+                            cur.searchHvRoundWire};
+    for (int i = 0; i < 9; ++i) {
         form->setItem(i, 0, new QTableWidgetItem(QString::fromUtf8(rows[i].label)));
         auto *check = new QCheckBox(QStringLiteral("参与"), dlg);
         check->setChecked(enabled[i]);
@@ -900,7 +903,7 @@ std::optional<OptimizationSettings> EnterCalcPage::showLoopParamsDialog()
         searchChecks.append(check);
         form->setItem(i, 4, new QTableWidgetItem());
 
-        if (i < 2 || i >= 4) {   // 尺寸类步长可编辑
+        if (i < 2 || (i >= 4 && i < 8)) {   // 尺寸类步长可编辑；圆线仅按表内档
             auto *stepSpin = new QDoubleSpinBox(dlg);
             const bool fineStep = i == 4 || i >= 6;
             stepSpin->setDecimals(fineStep ? 2 : 1);
@@ -911,11 +914,12 @@ std::optional<OptimizationSettings> EnterCalcPage::showLoopParamsDialog()
             form->setCellWidget(i, 2, stepSpin);
             stepSpins[i] = stepSpin;
         } else {       // 匝数步长固定为 1（文本展示）
-            form->setItem(i, 2, new QTableWidgetItem(QStringLiteral("1")));
+            form->setItem(i, 2, new QTableWidgetItem(i == 8 ? QStringLiteral("表内相邻1档") : QStringLiteral("1")));
         }
 
         auto *rangeSpin = new QSpinBox(dlg);
         rangeSpin->setRange(0, 5);
+        if (i == 8) rangeSpin->setSuffix(QStringLiteral(" 档"));
         rangeSpin->setValue(rows[i].rangeValue);
         form->setCellWidget(i, 3, rangeSpin);
         rangeSpins.append(rangeSpin);
@@ -924,7 +928,7 @@ std::optional<OptimizationSettings> EnterCalcPage::showLoopParamsDialog()
 
     // 组合数实时预览
     auto *comboLabel = new QLabel(dlg);
-    const auto gather = [cur, stepSpins, rangeSpins, searchChecks]() {
+    const auto gather = [cur, base, stepSpins, rangeSpins, searchChecks]() {
         OptimizationSettings s = cur;
         s.diaStep_mm = stepSpins[0]->value();
         s.straightStep_mm = stepSpins[1]->value();
@@ -948,6 +952,9 @@ std::optional<OptimizationSettings> EnterCalcPage::showLoopParamsDialog()
         s.hvBareThickRange = rangeSpins[7]->value();
         s.searchHvBareWidth = searchChecks[6]->isChecked();
         s.searchHvBareThick = searchChecks[7]->isChecked();
+        s.searchHvRoundWire = searchChecks[8]->isChecked();
+        s.hvRoundWireRange = rangeSpins[8]->value();
+        prepareRoundWireSearch(s, base);
         return s;
     };
     const auto updateCombo = [comboLabel, form, base, gather, rangeSpins, stepSpins, searchChecks]() {
@@ -965,10 +972,22 @@ std::optional<OptimizationSettings> EnterCalcPage::showLoopParamsDialog()
             form->item(i, 4)->setText(QStringLiteral("%1 ～ %2%3")
                 .arg(QString::number(values[i] - span, 'g', 12),
                      QString::number(values[i] + span, 'g', 12), search ? QString() : QStringLiteral("（固定）")));
+            if (i >= 6 && s.searchHvRoundWire && !s.hvRoundWireDiameters.isEmpty())
+                form->item(i, 4)->setText(QStringLiteral("由圆线规格同步直径"));
         }
+        rangeSpins[8]->setEnabled(searchChecks[8]->isChecked());
+        QStringList roundNames;
+        for (double diameter : s.hvRoundWireDiameters)
+            roundNames << PerformanceCriteria::valueText(diameter);
+        form->item(8, 4)->setText(s.searchHvRoundWire
+            ? (roundNames.isEmpty() ? QStringLiteral("无有效规格")
+                                   : QStringLiteral("%1 ～ %2（%3档）").arg(roundNames.first(), roundNames.last()).arg(roundNames.size()))
+            : (base.isRoundHighVoltageWire() ? QStringLiteral("%1（固定）").arg(base.hvBareWidth_mm) : QStringLiteral("仅圆线基准可参与")));
+        form->item(8, 4)->setToolTip(roundNames.join(QStringLiteral("、")));
         const QString error = s.validationError(base);
-        comboLabel->setText(QStringLiteral("计划组合数：%1；不勾选即固定，原步长和范围保留。%2")
-            .arg(s.plannedCount()).arg(error.isEmpty() ? QString() : QStringLiteral("\n") + error));
+        comboLabel->setText(QStringLiteral("计划组合数：%1；不勾选即固定，原步长和范围保留。%2%3")
+            .arg(s.plannedCount()).arg(roundNames.isEmpty() ? QString() : QStringLiteral("\n圆线实际直径(mm)：") + roundNames.join(QStringLiteral("、")))
+            .arg(error.isEmpty() ? QString() : QStringLiteral("\n") + error));
     };
     for (auto *spin : rangeSpins) {
         connect(spin, &QSpinBox::valueChanged, updateCombo);
@@ -985,7 +1004,7 @@ std::optional<OptimizationSettings> EnterCalcPage::showLoopParamsDialog()
     btnBox->button(QDialogButtonBox::Ok)->setText(QStringLiteral("保存"));
     btnBox->button(QDialogButtonBox::Cancel)->setText(QStringLiteral("取消"));
     connect(btnBox, &QDialogButtonBox::accepted, dlg, [this, dlg, base, gather, stepSpins, rangeSpins, searchChecks]() {
-        for (int i = 0; i < 8; ++i) {
+        for (int i = 0; i < 9; ++i) {
             if (searchChecks[i]->isChecked() && (!rangeSpins[i]->hasAcceptableInput()
                     || (stepSpins[i] && !stepSpins[i]->hasAcceptableInput()))) {
                 QMessageBox::warning(dlg, QStringLiteral("搜索设置无效"), QStringLiteral("请完整输入有效步长和范围。"));
@@ -1039,6 +1058,8 @@ OptimizationSettings EnterCalcPage::loadOptimizeSettings() const
     s.hvBareThickRange = settings.value("optimize/hvBareThickRange", s.hvBareThickRange).toInt();
     s.searchHvBareWidth = settings.value("optimize/searchHvBareWidth", false).toBool();
     s.searchHvBareThick = settings.value("optimize/searchHvBareThick", false).toBool();
+    s.searchHvRoundWire = settings.value("optimize/searchHvRoundWire", false).toBool();
+    s.hvRoundWireRange = settings.value("optimize/hvRoundWireRange", s.hvRoundWireRange).toInt();
     return s;
 }
 
@@ -1067,6 +1088,8 @@ void EnterCalcPage::saveOptimizeSettings(const OptimizationSettings &s) const
     settings.setValue("optimize/hvBareThickRange", s.hvBareThickRange);
     settings.setValue("optimize/searchHvBareWidth", s.searchHvBareWidth);
     settings.setValue("optimize/searchHvBareThick", s.searchHvBareThick);
+    settings.setValue("optimize/searchHvRoundWire", s.searchHvRoundWire);
+    settings.setValue("optimize/hvRoundWireRange", s.hvRoundWireRange);
 }
 
 // 竖排"程序选择"导航按钮（点击返回主界面），三个 Tab 各自调用创建
@@ -1429,7 +1452,9 @@ void EnterCalcPage::onOptimizeStart()
         QMessageBox::warning(this, QStringLiteral("当前配置暂不支持"), scopeError);
         return;
     }
-    const QString searchError = m_optSettings.validationError(m_calcInput);
+    OptimizationSettings preparedSettings = m_optSettings;
+    prepareRoundWireSearch(preparedSettings, m_calcInput);
+    const QString searchError = preparedSettings.validationError(m_calcInput);
     if (!searchError.isEmpty()) {
         QMessageBox::warning(this, QStringLiteral("搜索设置无效"), searchError);
         return;
@@ -1443,7 +1468,7 @@ void EnterCalcPage::onOptimizeStart()
     if (m_pauseBtn) {
         m_pauseBtn->setText(QStringLiteral("暂停计算"));
     }
-    m_runningOptSettings = m_optSettings;
+    m_runningOptSettings = preparedSettings;
     m_runningOptInput = m_calcInput;
     m_runningOptParams = m_params;
     m_optSummaryAvailable = false;
@@ -1603,13 +1628,27 @@ void EnterCalcPage::showOptimizationSummary()
                               QStringLiteral("低压匝数"), QStringLiteral("高压总层数W12"),
                               QStringLiteral("低压箔厚mm"), QStringLiteral("低压箔宽mm"),
                               QStringLiteral("高压裸线宽mm"), QStringLiteral("高压裸线厚mm")};
-    for (int i = 0; i < 8; ++i)
+    for (int i = 0; i < 8; ++i) {
+        if (i >= 6 && settings.searchHvRoundWire) {
+            text += names[i] + QStringLiteral("：不独立搜索，由圆线表内直径同步。\n");
+            continue;
+        }
         text += QStringLiteral("%1：%2 ～ %3；%4；步长%5，±%6步\n").arg(names[i])
             .arg(bases[i] - ranges[i] * steps[i]).arg(bases[i] + ranges[i] * steps[i])
             .arg(enabled[i] ? QStringLiteral("参与") : QStringLiteral("固定")).arg(steps[i]).arg(ranges[i]);
+    }
+    if (settings.searchHvRoundWire) {
+        QStringList diameters;
+        for (double diameter : settings.hvRoundWireDiameters)
+            diameters << PerformanceCriteria::valueText(diameter);
+        text += QStringLiteral("圆线表内相邻±%1档；实际%2档，冻结参与直径(mm)：%3\n表端只取已有档，不插值、不越界；宽厚同步。\n")
+            .arg(settings.hvRoundWireRange).arg(diameters.size()).arg(diameters.join(QStringLiteral("、")));
+    } else {
+        text += QStringLiteral("圆线规格：固定／不参与。\n");
+    }
     text += QStringLiteral("低压箔尺寸及高压扁线宽/厚为设计尺寸搜索，非库存选型；制造规格仍需核对。\n");
     text += QStringLiteral("冻结高压线型：%1；绝缘：%2。扁线宽=厚的组合预检剔除，不切换圆线。\n")
-        .arg(m_runningOptInput.isRoundHighVoltageWire() ? QStringLiteral("圆线（不参与本批高压尺寸搜索）") : QStringLiteral("扁线"),
+        .arg(m_runningOptInput.isRoundHighVoltageWire() ? QStringLiteral("圆线（表内规格）") : QStringLiteral("扁线"),
              m_runningOptInput.resolvedInsulationType());
     text += QStringLiteral("\n未校核指标（标准值≤0）：")
         + (s.skippedChecks.isEmpty() ? QStringLiteral("无") : s.skippedChecks.join(QStringLiteral("、")))
