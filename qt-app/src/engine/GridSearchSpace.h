@@ -63,6 +63,41 @@ public:
         return m_settings.searchSteelGrade ? m_settings.steelGrades[point[9]] : m_base.steelGrade.trimmed();
     }
 
+    // 使用与搜索相同的整数坐标，不比较显示舍入值或浮点近似值。
+    // 只报告非零范围，分类牌号无数值边界；圆线端点只针对冻结参与规格。
+    int boundarySearchDimensions() const {
+        int count = 0;
+        for (int d = 0; d < 8; ++d)
+            if (m_ranges[d] > 0 && !(d >= 6 && m_settings.searchHvRoundWire)) ++count;
+        if (m_settings.searchHvRoundWire && m_settings.hvRoundWireDiameters.size() > 1) ++count;
+        return count;
+    }
+
+    QStringList boundaryHits(const Point &point) const {
+        QStringList hits;
+        const auto in = inputFor(point);
+        const QStringList names{QStringLiteral("铁芯直径"), QStringLiteral("直线段长"),
+            QStringLiteral("低压匝数"), QStringLiteral("高压总层数W12"),
+            QStringLiteral("低压箔厚"), QStringLiteral("低压箔宽"),
+            QStringLiteral("高压裸线宽"), QStringLiteral("高压裸线厚")};
+        const double values[]{in.coreDiameter_mm, in.coreStraight_mm, double(in.lvTurns), double(in.hvTurnsPerLayer),
+            in.lvFoilThick_mm, in.lvFoilWidth_mm, in.hvBareWidth_mm, in.hvBareThick_mm};
+        for (int d = 0; d < 8; ++d) {
+            if (m_ranges[d] <= 0 || (d >= 6 && m_settings.searchHvRoundWire)) continue;
+            const int radius = m_ranges[d] * (continuous(d) ? m_scale : 1);
+            if (point[d] != -radius && point[d] != radius) continue;
+            hits.append(QStringLiteral("%1：达到本轮%2，值%3%4。")
+                .arg(names[d], point[d] == -radius ? QStringLiteral("下限") : QStringLiteral("上限"))
+                .arg(values[d], 0, 'g', 15).arg(d == 2 || d == 3 ? QString() : QStringLiteral(" mm")));
+        }
+        const int count = int(m_settings.hvRoundWireDiameters.size());
+        if (m_settings.searchHvRoundWire && count > 1 && (point[8] == 0 || point[8] == count - 1))
+            hits.append(QStringLiteral("高压圆线规格：达到本轮参与清单%1端点，直径%2 mm；仅指所选档范围，不代表完整线规表端点。")
+                .arg(point[8] == 0 ? QStringLiteral("下") : QStringLiteral("上"))
+                .arg(in.hvBareWidth_mm, 0, 'g', 15));
+        return hits;
+    }
+
     QVector<Point> neighbors(const Point &center, int round) const {
         QVector<Point> points(1, center);
         // 牌号是分类变量：细搜保持中心牌号，不按名单顺序取“相邻牌号”。

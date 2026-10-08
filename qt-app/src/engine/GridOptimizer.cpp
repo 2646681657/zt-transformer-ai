@@ -58,6 +58,7 @@ public slots:
         QElapsedTimer timer;
         timer.start();
         const GridSearchSpace space(m_base, m_settings);
+        summary.boundarySearchDimensions = space.boundarySearchDimensions();
         const QStringList grades = m_settings.searchSteelGrade ? m_settings.steelGrades
             : QStringList{m_base.steelGrade.trimmed()};
         for (const auto &grade : grades)
@@ -68,6 +69,7 @@ public slots:
         QSet<QString> visited;
         ElectromagneticEngine engine;
         OptimizeCandidate best;
+        Point bestPoint{};
         bool haveBest = false;
         bool stopped = false;
 
@@ -132,6 +134,7 @@ public slots:
                 }
                 if (!haveBest || optimizationMaterialCost(r) < optimizationMaterialCost(best.result)) {
                     best = c;
+                    bestPoint = point;
                     haveBest = true;
                 }
             }
@@ -233,6 +236,8 @@ public slots:
         summary.constraintRejected = summary.coarse.constraintRejected + summary.fine.constraintRejected;
         summary.wireFormRejected = summary.coarse.wireFormRejected + summary.fine.wireFormRejected;
         summary.elapsed_ms = timer.elapsed();
+        summary.hasBest = haveBest;
+        if (haveBest) summary.bestBoundaryHits = space.boundaryHits(bestPoint);
         emit workFinished(stopped, best, summary);
     }
 

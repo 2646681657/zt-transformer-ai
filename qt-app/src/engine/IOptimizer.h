@@ -277,6 +277,9 @@ struct OptimizationSteelSummary : OptimizationStageSummary {
 };
 
 struct OptimizationRunSummary : OptimizationStageSummary {
+    bool hasBest = false;
+    int boundarySearchDimensions = 0; // 仅非零范围尺寸及至少两档的圆线
+    QStringList bestBoundaryHits; // 已评估最低成本可行方案，相对本轮冻结范围
     OptimizationStageSummary coarse;
     OptimizationStageSummary fine;
     bool coarseCompleted = false;
