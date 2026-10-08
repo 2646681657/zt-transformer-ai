@@ -8,6 +8,7 @@
 #include <QVector>
 #include <cmath>
 #include "PerformanceCriteria.h"
+#include "MaterialPrices.h"
 
 struct CalcInput {
     // 持久化/校核元数据，不参与电磁实际值公式。
@@ -46,6 +47,7 @@ struct CalcInput {
     bool useCustomSteelPrice = false; // 默认保留计算单17元/kg，仅影响成本
     double steelPricePerKg = 17.0;
     QString steelPriceGrade; // 候选的价格绑定牌号，不能用于后来换成的其他牌号
+    MaterialPrices materialPrices; // 铜、铝、油、油箱基价；与硅钢定价独立
     QString steelPriceError() const {
         if (!useCustomSteelPrice) return {};
         if (!std::isfinite(steelPricePerKg) || steelPricePerKg <= 0.0 || steelPricePerKg > 99999.0)

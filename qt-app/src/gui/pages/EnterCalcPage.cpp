@@ -905,7 +905,7 @@ std::optional<OptimizationSettings> EnterCalcPage::showLoopParamsDialog()
     layout->addLayout(steelLayout);
     auto *priceMode = new QComboBox(dlg);
     priceMode->addItem(QStringLiteral("计算单内置基价（硅钢17元/kg）"), int(OptimizationSettings::BuiltInSteelPrice));
-    priceMode->addItem(QStringLiteral("按牌号自定义硅钢价（其余材料仍用内置基价）"), int(OptimizationSettings::CustomSteelPrices));
+    priceMode->addItem(QStringLiteral("按牌号自定义硅钢价（其他材料定价独立设置）"), int(OptimizationSettings::CustomSteelPrices));
     int priceIndex = priceMode->findData(int(cur.steelPricing));
     if (priceIndex < 0) {
         priceMode->addItem(QStringLiteral("无效价格模式，请重新选择"), int(cur.steelPricing));
@@ -918,6 +918,16 @@ std::optional<OptimizationSettings> EnterCalcPage::showLoopParamsDialog()
     layout->addWidget(steelNote);
     auto gradeChoices = std::make_shared<QStringList>(cur.selectedSteelGrades);
     auto priceTexts = std::make_shared<QMap<QString, QString>>(cur.steelGradePriceTexts);
+    auto materialTexts = std::make_shared<QStringList>(cur.materialPriceTexts);
+    auto *materialLayout = new QHBoxLayout;
+    auto *materialCheck = new QCheckBox(QStringLiteral("自定义铜/铝/油/油箱基价"), dlg);
+    materialCheck->setChecked(cur.materialPrices.custom);
+    auto *materialButton = new QPushButton(QStringLiteral("其他材料基价…"), dlg);
+    auto *materialLabel = new QLabel(dlg);
+    materialLayout->addWidget(materialCheck);
+    materialLayout->addWidget(materialButton);
+    materialLayout->addWidget(materialLabel, 1);
+    layout->addLayout(materialLayout);
     auto *form = new QTableWidget(9, 5, dlg);
     form->setHorizontalHeaderLabels({QStringLiteral("搜索变量"),
         QStringLiteral("参与寻优"), QStringLiteral("步长"), QStringLiteral("范围(±N步)"),
@@ -986,7 +996,8 @@ std::optional<OptimizationSettings> EnterCalcPage::showLoopParamsDialog()
 
     // 组合数实时预览
     auto *comboLabel = new QLabel(dlg);
-    const auto gather = [cur, base, mode, roundSpin, steelCheck, gradeChoices, priceMode, priceTexts, stepSpins, rangeSpins, searchChecks]() {
+    const auto gather = [cur, base, mode, roundSpin, steelCheck, gradeChoices, priceMode, priceTexts,
+                         materialCheck, materialTexts, stepSpins, rangeSpins, searchChecks]() {
         OptimizationSettings s = cur;
         s.method = static_cast<OptimizationSettings::Method>(mode->currentData().toInt());
         s.maxFineRounds = roundSpin->value();
@@ -994,6 +1005,8 @@ std::optional<OptimizationSettings> EnterCalcPage::showLoopParamsDialog()
         s.selectedSteelGrades = *gradeChoices;
         s.steelPricing = static_cast<OptimizationSettings::SteelPricing>(priceMode->currentData().toInt());
         s.steelGradePriceTexts = *priceTexts;
+        s.materialPriceTexts = *materialTexts;
+        s.materialPrices = MaterialPrices::fromTexts(materialCheck->isChecked(), *materialTexts);
         s.steelGradePrices.clear();
         for (auto it = priceTexts->cbegin(); it != priceTexts->cend(); ++it) {
             bool ok = false;
@@ -1029,8 +1042,15 @@ std::optional<OptimizationSettings> EnterCalcPage::showLoopParamsDialog()
         return s;
     };
     const auto updateCombo = [comboLabel, form, base, gather, roundSpin, steelButton, steelLabel,
-                              rangeSpins, stepSpins, searchChecks]() {
+                              materialButton, materialLabel, rangeSpins, stepSpins, searchChecks]() {
         const auto s = gather();
+        materialButton->setEnabled(s.materialPrices.custom);
+        materialLabel->setText(s.materialPrices.custom
+            ? QStringLiteral("自定义（元/kg）：铜%1 / 铝%2 / 油%3 / 油箱%4")
+                .arg(s.materialPriceTexts.value(0), s.materialPriceTexts.value(1),
+                     s.materialPriceTexts.value(2), s.materialPriceTexts.value(3))
+            : QStringLiteral("内置基价：60 / 60 / 10 / 9元/kg"));
+        materialLabel->setToolTip(s.materialPrices.description());
         steelButton->setEnabled(s.searchSteelGrade || s.steelPricing == OptimizationSettings::CustomSteelPrices);
         steelLabel->setText(s.searchSteelGrade
             ? QStringLiteral("已选%1个；有效参与%2个").arg(s.selectedSteelGrades.size()).arg(s.steelGrades.size())
@@ -1070,8 +1090,9 @@ std::optional<OptimizationSettings> EnterCalcPage::showLoopParamsDialog()
         if (s.searchSteelGrade && !s.steelGrades.isEmpty())
             comboLabel->setText(comboLabel->text() + QStringLiteral("\n冻结候选牌号：") + s.steelGrades.join(QStringLiteral("、")));
         comboLabel->setText(comboLabel->text() + (s.steelPricing == OptimizationSettings::CustomSteelPrices
-            ? QStringLiteral("\n本轮将冻结各牌号自定义硅钢价，其余材料沿用内置基价。")
+            ? QStringLiteral("\n本轮将冻结各牌号自定义硅钢价。")
             : QStringLiteral("\n本轮硅钢仍统一17元/kg；已填自定义价仅保留，不参与本轮。")));
+        comboLabel->setToolTip(s.materialPrices.description());
     };
     for (auto *spin : rangeSpins) {
         connect(spin, &QSpinBox::valueChanged, updateCombo);
@@ -1082,6 +1103,43 @@ std::optional<OptimizationSettings> EnterCalcPage::showLoopParamsDialog()
     connect(roundSpin, &QSpinBox::valueChanged, updateCombo);
     connect(steelCheck, &QCheckBox::toggled, updateCombo);
     connect(priceMode, &QComboBox::currentIndexChanged, updateCombo);
+    connect(materialCheck, &QCheckBox::toggled, updateCombo);
+    connect(materialButton, &QPushButton::clicked, dlg, [dlg, materialTexts, updateCombo]() {
+        QDialog selector(dlg);
+        selector.setWindowTitle(QStringLiteral("寻优其他材料基价（非报价）"));
+        auto *priceLayout = new QVBoxLayout(&selector);
+        auto *hint = new QLabel(QStringLiteral("四项均须为大于0、不超过99999元/kg的有效数值。首次60/60/10/9是原计算单基价，不是市场价格。\n"
+            "铜、铝输入基价，不是成品导线价：原加工加价、损耗系数和舍入继续保留。报价页独立，不自动同步。"), &selector);
+        hint->setWordWrap(true);
+        priceLayout->addWidget(hint);
+        auto *priceForm = new QFormLayout;
+        const QStringList names{QStringLiteral("铜基价（元/kg）："), QStringLiteral("铝基价（元/kg）："),
+                                QStringLiteral("绝缘油单价（元/kg）："), QStringLiteral("油箱钢材单价（元/kg）：")};
+        QVector<QLineEdit *> edits;
+        for (int i = 0; i < 4; ++i) {
+            auto *edit = new QLineEdit(materialTexts->value(i), &selector);
+            edit->setPlaceholderText(QStringLiteral("必填，不自动回退"));
+            priceForm->addRow(names[i], edit);
+            edits.append(edit);
+        }
+        priceLayout->addLayout(priceForm);
+        auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &selector);
+        priceLayout->addWidget(buttons);
+        connect(buttons, &QDialogButtonBox::accepted, &selector, [&selector, materialTexts, edits]() {
+            QStringList texts;
+            for (auto *edit : edits) texts.append(edit->text());
+            const auto error = MaterialPrices::fromTexts(true, texts).validationError();
+            if (!error.isEmpty()) {
+                QMessageBox::warning(&selector, QStringLiteral("材料基价无效"), error);
+                return;
+            }
+            *materialTexts = texts;
+            selector.accept();
+        });
+        connect(buttons, &QDialogButtonBox::rejected, &selector, &QDialog::reject);
+        selector.resize(560, 280);
+        if (selector.exec() == QDialog::Accepted) updateCombo();
+    });
     connect(steelButton, &QPushButton::clicked, dlg, [dlg, base, steelCheck, priceMode, gradeChoices, priceTexts, updateCombo]() {
         auto &db = DesignDatabase::instance();
         if (!db.isLoaded() && !db.load()) {
@@ -1241,6 +1299,9 @@ OptimizationSettings EnterCalcPage::loadOptimizeSettings() const
     s.selectedSteelGrades = settings.value("optimize/selectedSteelGrades", QStringList{}).toStringList();
     s.steelPricing = static_cast<OptimizationSettings::SteelPricing>(settings.value("optimize/steelPricing", int(s.steelPricing)).toInt());
     const auto prices = settings.value("optimize/steelGradePriceTexts").toMap();
+    s.materialPriceTexts = settings.value("optimize/materialPriceTexts", s.materialPriceTexts).toStringList();
+    s.materialPrices = MaterialPrices::fromTexts(settings.value("optimize/customMaterialPrices", false).toBool(),
+                                                s.materialPriceTexts);
     for (auto it = prices.cbegin(); it != prices.cend(); ++it) {
         const QString key = it.key().trimmed().toUpper();
         s.steelGradePriceTexts[key] = it.value().toString();
@@ -1287,6 +1348,8 @@ void EnterCalcPage::saveOptimizeSettings(const OptimizationSettings &s) const
     for (auto it = s.steelGradePriceTexts.cbegin(); it != s.steelGradePriceTexts.cend(); ++it)
         prices.insert(it.key(), it.value());
     settings.setValue("optimize/steelGradePriceTexts", prices);
+    settings.setValue("optimize/customMaterialPrices", s.materialPrices.custom);
+    settings.setValue("optimize/materialPriceTexts", s.materialPriceTexts);
 }
 
 // 竖排"程序选择"导航按钮（点击返回主界面），三个 Tab 各自调用创建
@@ -1851,7 +1914,7 @@ void EnterCalcPage::showOptimizationSummary()
             ? QStringLiteral("联合寻优，冻结参与清单：") + m_runningOptSettings.steelGrades.join(QStringLiteral("、"))
             : QStringLiteral("固定基准：") + m_runningOptInput.steelGrade);
     if (m_runningOptSettings.steelPricing == OptimizationSettings::CustomSteelPrices) {
-        text += QStringLiteral("冻结价格：按牌号自定义硅钢价，其余材料仍用内置基价，报价页独立。\n");
+        text += QStringLiteral("冻结硅钢价格：按牌号自定义，报价页独立。\n");
         const QStringList grades = m_runningOptSettings.searchSteelGrade
             ? m_runningOptSettings.steelGrades : QStringList{m_runningOptInput.steelGrade};
         for (const auto &grade : grades)
@@ -1860,6 +1923,7 @@ void EnterCalcPage::showOptimizationSummary()
     } else {
         text += QStringLiteral("冻结价格：各牌号统一采用17元/kg计算单内置基价。\n");
     }
+    text += m_runningOptSettings.materialPrices.description() + QLatin1Char('\n');
     text += QStringLiteral("仅本轮价格口径下比较，不等于实际采购全成本最优。\n");
     if (m_runningOptSettings.searchSteelGrade && twoStages)
         text += QStringLiteral("粗搜计划覆盖全部勾选牌号，实际处理量见下表；细搜按全体可行方案最低成本3中心，仅保持中心牌号，不保证各牌号都有细搜中心。\n");
@@ -2888,7 +2952,7 @@ void EnterCalcPage::onOpenQuote()
     }
     const auto &c = m_emResult.cost;
     QString text = QStringLiteral("======== 材料成本明细（本方案口径，非报价） ========\n");
-    text += CostBasisNotes::engine(c.useCustomSteelPrice, c.steelPricePerKg, c.steelPriceGrade) + QLatin1Char('\n');
+    text += CostBasisNotes::engine(c.useCustomSteelPrice, c.steelPricePerKg, c.steelPriceGrade, c.materialPrices) + QLatin1Char('\n');
     text += QStringLiteral("硅钢片成本: %1 元\n").arg(QString::number(c.steelCost, 'f', 1));
     text += QStringLiteral("高压导线成本: %1 元\n").arg(QString::number(c.hvWireCost, 'f', 1));
     text += QStringLiteral("低压箔成本: %1 元\n").arg(QString::number(c.lvWireCost, 'f', 1));

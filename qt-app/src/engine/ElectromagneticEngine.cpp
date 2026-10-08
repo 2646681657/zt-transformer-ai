@@ -1243,9 +1243,11 @@ void calcMassCost(EmCtx &c)
     c.out->mass.activePartWeight_kg = activePart;
     c.out->mass.totalWeight_kg = totalWeight;
 
-    // 材料成本（成本测算表，单价按计算单默认）
-    const double cuPrice = 60.0;
-    const double alPrice = 60.0;  // 计算单成本测算表 E6/E7 的默认基价
+    // 仅替换材料基价，加工加价、计价重量和舍入保留计算单公式。
+    c.out->cost.materialPrices = in.materialPrices.effective();
+    const auto &prices = c.out->cost.materialPrices;
+    const double cuPrice = prices.copper;
+    const double alPrice = prices.aluminum;
     c.out->cost.useCustomSteelPrice = in.useCustomSteelPrice;
     c.out->cost.steelPricePerKg = in.useCustomSteelPrice ? in.steelPricePerKg : 17.0;
     c.out->cost.steelPriceGrade = in.steelGrade;
@@ -1255,8 +1257,8 @@ void calcMassCost(EmCtx &c)
     const double lvPrice = in.lvCopperFoil ? cuPrice * 1.05 + 6.5 : alPrice + 6.0;
     c.out->cost.hvWireCost = excelRound(hvW * 1.05, 0) * hvPrice;
     c.out->cost.lvWireCost = excelRound(lvW * 1.08, 0) * lvPrice;
-    c.out->cost.oilCost = excelRound(oilWeight * 1.1, 0) * 10.0;
-    c.out->cost.tankCost = (excelRound(tankWeight * 1.05, 0) + 200.0) * 9.0;
+    c.out->cost.oilCost = excelRound(oilWeight * 1.1, 0) * prices.oil;
+    c.out->cost.tankCost = (excelRound(tankWeight * 1.05, 0) + 200.0) * prices.tank;
     c.out->cost.materialCost = c.out->cost.steelCost + c.out->cost.hvWireCost
                                + c.out->cost.lvWireCost + c.out->cost.oilCost
                                + c.out->cost.tankCost;
@@ -1419,6 +1421,11 @@ bool ElectromagneticEngine::calcElectromagnetic(const CalcInput &input, CalcResu
     const QString priceError = input.steelPriceError();
     if (!priceError.isEmpty()) {
         result.error = priceError;
+        return false;
+    }
+    const auto materialPriceError = input.materialPrices.validationError();
+    if (!materialPriceError.isEmpty()) {
+        result.error = materialPriceError;
         return false;
     }
 
@@ -1674,13 +1681,17 @@ PrintOutputData ElectromagneticEngine::buildPrintOutput(const CalcInput &input,
            QStringLiteral("kg"));
     addRow(QStringLiteral("材料合计（本方案口径）"), QString::number(result.cost.materialCost, 'f', 0),
            QStringLiteral("元"), QStringLiteral("寻优依据"), QStringLiteral("材料合计"), QString());
-    addRow(QStringLiteral("价格口径"), result.cost.useCustomSteelPrice
-            ? QStringLiteral("自定义硅钢价，其余内置基价") : QStringLiteral("内置基价"), QString(),
+    addRow(QStringLiteral("价格口径"), (result.cost.useCustomSteelPrice || result.cost.materialPrices.custom)
+            ? QStringLiteral("含自定义价（采用值见下）") : QStringLiteral("内置基价"), QString(),
            QStringLiteral("报价页调价"), QStringLiteral("不影响寻优"), QString());
     addRow(QStringLiteral("含油与油箱"), QStringLiteral("是"), QString(),
            QStringLiteral("费用/利润/税额"), QStringLiteral("不含"), QString());
     addRow(QStringLiteral("采用硅钢单价"), QString::number(result.cost.steelPricePerKg, 'g', 15),
            QStringLiteral("元/kg"), QStringLiteral("价格绑定牌号"), result.cost.steelPriceGrade, QString());
+    addRow(QStringLiteral("铜基价"), QString::number(result.cost.materialPrices.copper, 'g', 15), QStringLiteral("元/kg"),
+           QStringLiteral("铝基价"), QString::number(result.cost.materialPrices.aluminum, 'g', 15), QStringLiteral("元/kg"));
+    addRow(QStringLiteral("油单价"), QString::number(result.cost.materialPrices.oil, 'g', 15), QStringLiteral("元/kg"),
+           QStringLiteral("油箱钢材单价"), QString::number(result.cost.materialPrices.tank, 'g', 15), QStringLiteral("元/kg"));
     return data;
 }
 
