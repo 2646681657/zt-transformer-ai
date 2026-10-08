@@ -178,6 +178,8 @@ private:
     bool m_optSummaryAvailable = false;
     bool m_optStopped = false;
     double m_optBestCost = 0.0;
+    int m_optStage = 1;
+    int m_optStagePlanned = 0;
     bool m_optRunning = false;            // 寻优运行中标志
     bool m_discardOptimizationResults = false; // 输入已更换，忽略旧寻优线程的后续信号
     SchemeTableWidget *m_schemeTable;

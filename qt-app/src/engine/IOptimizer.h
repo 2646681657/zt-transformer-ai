@@ -15,8 +15,8 @@
 #include "OptimizationResult.h"
 
 struct OptimizationSettings {
-    enum Method { Optimize, Exhaustive };
-    Method method = Exhaustive; // 保留扩展接口；当前仅单轮网格
+    enum Method { Optimize, Exhaustive, CoarseFine };
+    Method method = Exhaustive; // 默认保留单轮网格；Optimize仍为预留值
     int threadCount = 1;        // 当前仅一个后台计算线程
     enum CostModel { CuFe, CuFeOil };
     CostModel costModel = CuFeOil;
@@ -48,6 +48,7 @@ struct OptimizationSettings {
     QVector<double> hvRoundWireDiameters; // 启动前按当前基准与表生成，不持久化
     QString hvRoundWireSelectionError;
     static constexpr int maximumCombinations = 100000;
+    static constexpr int fineSeedLimit = 3;
 
     int diameterRadius() const { return searchDiameter ? diaRange : 0; }
     int straightRadius() const { return searchStraight ? straightRange : 0; }
@@ -75,7 +76,22 @@ struct OptimizationSettings {
         }
         return count;
     }
+    int fineNeighborhoodUpperBound() const {
+        const int ranges[] = {diameterRadius(), straightRadius(), lvTurnsRadius(), hvLayersRadius(),
+                              lvFoilThickRadius(), lvFoilWidthRadius(), hvBareWidthRadius(), hvBareThickRadius()};
+        int count = 1;
+        for (int range : ranges) count *= range > 0 ? 3 : 1;
+        if (searchHvRoundWire) count *= qMin(3, int(hvRoundWireDiameters.size()));
+        return count;
+    }
+    qint64 runUpperBound() const {
+        const int coarse = plannedCount();
+        return qint64(coarse) + (method == CoarseFine
+            ? qint64(qMin(fineSeedLimit, coarse)) * fineNeighborhoodUpperBound() : 0);
+    }
     QString validationError(const CalcInput &base) const {
+        if (method != Exhaustive && method != CoarseFine)
+            return QStringLiteral("不支持的寻优模式，请重新选择单轮网格或粗搜＋一轮细搜。");
         if (searchHvRoundWire) {
             if (!base.isRoundHighVoltageWire())
                 return QStringLiteral("当前为扁线，不能启用圆线规格寻优；请先在设计输入中选择有效圆线规格，或取消圆线参与。");
@@ -98,6 +114,9 @@ struct OptimizationSettings {
             return QStringLiteral("参与寻优的范围必须为0至5步。");
         if (plannedCount() > maximumCombinations)
             return QStringLiteral("单轮最多%1组合，请缩小搜索范围或固定部分变量。").arg(maximumCombinations);
+        if (runUpperBound() > maximumCombinations)
+            return QStringLiteral("两轮保守预算%1组合超过上限%2，请缩小范围或固定部分变量（预算尚未扣除重复与边界裁剪）。")
+                .arg(runUpperBound()).arg(maximumCombinations);
         const double wireBases[] = {base.hvBareWidth_mm, base.hvBareThick_mm};
         const double wireSteps[] = {searchHvBareWidth ? hvBareWidthStep_mm : 0.0,
                                     searchHvBareThick ? hvBareThickStep_mm : 0.0};
@@ -147,11 +166,22 @@ struct OptimizationSettings {
                 || !std::isfinite(base.coreDiameter_mm + diameterRadius() * (searchDiameter ? diaStep_mm : 0.0))
                 || !std::isfinite(base.coreStraight_mm + straightRadius() * (searchStraight ? straightStep_mm : 0.0)))
             return QStringLiteral("搜索上界超出可计算数值范围。");
+        const double bases[] = {base.coreDiameter_mm, base.coreStraight_mm, base.lvFoilThick_mm,
+                                base.lvFoilWidth_mm, base.hvBareWidth_mm, base.hvBareThick_mm};
+        const double steps[] = {diaStep_mm, straightStep_mm, lvFoilThickStep_mm,
+                                lvFoilWidthStep_mm, hvBareWidthStep_mm, hvBareThickStep_mm};
+        const int radii[] = {diameterRadius(), straightRadius(), lvFoilThickRadius(),
+                            lvFoilWidthRadius(), hvBareWidthRadius(), hvBareThickRadius()};
+        for (int i = 0; i < 6; ++i) {
+            const double delta = steps[i] * (method == CoarseFine ? 0.5 : 1.0);
+            if (radii[i] > 0 && (bases[i] + delta == bases[i] || bases[i] - delta == bases[i]))
+                return QStringLiteral("搜索步长小于当前尺寸的可表示精度，请核对基准与步长。");
+        }
         return {};
     }
 };
 
-struct OptimizationRunSummary {
+struct OptimizationStageSummary {
     int planned = 0;
     int evaluated = 0;
     int wireFormRejected = 0; // 扁线宽=厚预检剔除，未调用引擎，不算计算失败
@@ -159,6 +189,20 @@ struct OptimizationRunSummary {
     int invalid = 0;
     int constraintRejected = 0;
     qint64 elapsed_ms = 0; // 墙钟时间，包含暂停
+    int processedCount() const { return evaluated + wireFormRejected; }
+};
+
+struct OptimizationRunSummary : OptimizationStageSummary {
+    OptimizationStageSummary coarse;
+    OptimizationStageSummary fine;
+    bool coarseCompleted = false;
+    bool fineStarted = false;
+    int fineSeedCount = 0;
+    int fineGenerated = 0;
+    int duplicateSkipped = 0;
+    bool coarseHasBest = false;
+    double coarseBestCost = 0.0;
+    QString fineSkipReason;
     QString error;
     QStringList skippedChecks;
     QMap<QString, int> rejectionReasons;
@@ -192,6 +236,7 @@ public:
     virtual void stop() = 0;
 
 signals:
+    void stageChanged(int stage, int planned); // 1粗搜（或单轮），2细搜；进度为阶段内百分比
     void progressUpdated(int percent);
     void candidateReady(const OptimizeCandidate &candidate);
     // 寻优结束（stopped=true 表示被手动停止）；
