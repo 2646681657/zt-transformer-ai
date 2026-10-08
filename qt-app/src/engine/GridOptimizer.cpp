@@ -47,6 +47,7 @@ public slots:
     {
         OptimizationRunSummary summary;
         summary.planned = m_settings.plannedCount();
+        summary.coarse.planned = summary.planned;
         summary.error = m_settings.validationError(m_base);
         // 未校核项仅依赖冻结的订单标准，与候选结果无关。
         summary.skippedChecks = checkSchemeConstraints(m_params, CalcResult{}).skippedChecks;
@@ -67,7 +68,7 @@ public slots:
         bool stopped = false;
 
         // 两个阶段使用同一完整引擎、成本目标和冻结的约束。
-        const auto evaluate = [&](const Point &point, OptimizationStageSummary &stage, bool coarse) {
+        const auto evaluate = [&](const Point &point, OptimizationStageSummary &stage) {
             if (!waitIfPaused()) {
                 stopped = true;
                 return false;
@@ -107,7 +108,7 @@ public slots:
                 c.scheme = makeScheme(0, in, r);  // 序号由接收端按入库顺序编排
                 emit candidateReady(c);
                 ++stage.accepted;
-                if (coarse && m_settings.method == OptimizationSettings::CoarseFine) {
+                if (m_settings.hasRefinement()) {
                     seeds.append({point, optimizationMaterialCost(r)});
                     std::stable_sort(seeds.begin(), seeds.end(), [](const Seed &a, const Seed &b) {
                         return a.cost < b.cost;
@@ -123,55 +124,91 @@ public slots:
             return true;
         };
 
-        summary.coarse.planned = summary.planned;
         emit stageChanged(1, summary.coarse.planned);
         for (int index = 0; index < summary.coarse.planned; ++index) {
-            if (!evaluate(space.coarsePoint(index), summary.coarse, true)) break;
+            if (!evaluate(space.coarsePoint(index), summary.coarse)) break;
         }
         // 阶段交界处暂停仍归入粗搜耗时，不只计入总耗时。
-        if (m_settings.method == OptimizationSettings::CoarseFine && !stopped && !waitIfPaused())
+        if (m_settings.hasRefinement() && !stopped && !waitIfPaused())
             stopped = true;
         summary.coarse.elapsed_ms = timer.elapsed();
         summary.coarseCompleted = summary.coarse.processedCount() == summary.coarse.planned;
         summary.coarseHasBest = haveBest;
         if (haveBest) summary.coarseBestCost = optimizationMaterialCost(best.result);
 
-        if (m_settings.method == OptimizationSettings::CoarseFine) {
+        if (m_settings.hasRefinement()) {
             if (stopped) {
-                summary.fineSkipReason = QStringLiteral("粗搜阶段已停止，未进入细搜。");
+                summary.stopReason = QStringLiteral("粗搜阶段人工停止，未进入细搜。");
             } else if (seeds.isEmpty()) {
-                summary.fineSkipReason = QStringLiteral("粗搜没有可行方案，未进入细搜；订单约束不放宽。");
+                summary.stopReason = QStringLiteral("粗搜没有可行方案，未进入细搜；订单约束不放宽。");
             } else {
-                QElapsedTimer fineTimer;
-                fineTimer.start();
-                QVector<Point> finePoints;
-                summary.fineSeedCount = int(seeds.size());
-                // 先生成去重后的确切计划，缓存包含失败和线型预检剔除点。
-                for (const auto &seed : seeds) {
-                    for (const auto &point : space.neighbors(seed.point)) {
-                        ++summary.fineGenerated;
-                        const QString key = GridSearchSpace::key(point);
-                        if (visited.contains(key)) {
-                            ++summary.duplicateSkipped;
-                        } else {
-                            visited.insert(key);
-                            finePoints.append(point);
+                int stagnantRounds = 0;
+                for (int round = 1; round <= m_settings.fineRoundCount(); ++round) {
+                    QElapsedTimer fineTimer;
+                    fineTimer.start();
+                    OptimizationRefinementSummary stage;
+                    stage.round = round;
+                    stage.seedCount = int(seeds.size());
+                    stage.bestCostBefore = optimizationMaterialCost(best.result);
+                    QVector<Point> finePoints;
+                    // 生成期间中心快照不变；评估新候选后才更新下一轮中心。
+                    for (const auto &seed : seeds) {
+                        for (const auto &point : space.neighbors(seed.point, round)) {
+                            ++stage.generated;
+                            const QString key = GridSearchSpace::key(point);
+                            if (visited.contains(key)) {
+                                ++stage.duplicateSkipped;
+                            } else {
+                                visited.insert(key);
+                                finePoints.append(point);
+                            }
                         }
                     }
-                }
-                summary.fine.planned = int(finePoints.size());
-                if (finePoints.isEmpty()) {
-                    summary.fineSkipReason = QStringLiteral("细搜邻域均已在粗搜处理，无新增组合；整数和圆线不插值。");
-                } else {
-                    summary.fineStarted = true;
-                    emit stageChanged(2, summary.fine.planned);
-                    emit progressUpdated(0);
-                    for (const auto &point : finePoints) {
-                        if (!evaluate(point, summary.fine, false)) break;
+                    stage.planned = int(finePoints.size());
+                    if (!finePoints.isEmpty()) {
+                        summary.fineStarted = true;
+                        emit stageChanged(round + 1, stage.planned);
+                        emit progressUpdated(0);
+                        for (const auto &point : finePoints) {
+                            if (!evaluate(point, stage)) break;
+                        }
                     }
+                    // 暂停/停止的交界等待归入当前轮；不把未完成轮计入低改善。
+                    if (!stopped && !waitIfPaused()) stopped = true;
+                    stage.elapsed_ms = fineTimer.elapsed();
+                    stage.completed = stage.planned > 0 && stage.processedCount() == stage.planned;
+                    stage.bestCostAfter = optimizationMaterialCost(best.result);
+                    stage.improvement_pct = stage.bestCostBefore > 0.0
+                        ? (stage.bestCostBefore - stage.bestCostAfter) / stage.bestCostBefore * 100.0 : 0.0;
+                    summary.refinements.append(stage);
+                    summary.fine.accumulate(stage);
+                    summary.fineSeedCount += stage.seedCount;
+                    summary.fineGenerated += stage.generated;
+                    summary.duplicateSkipped += stage.duplicateSkipped;
+
+                    if (stopped) {
+                        summary.stopReason = QStringLiteral("细搜第%1轮人工停止；仅保留已处理范围。").arg(round);
+                        break;
+                    }
+                    if (finePoints.isEmpty()) {
+                        summary.stopReason = QStringLiteral("细搜第%1轮没有新增组合；整数和圆线不插值，跨轮重复不重算。").arg(round);
+                        break;
+                    }
+                    stagnantRounds = stage.improvement_pct < OptimizationSettings::improvementThreshold_pct
+                        ? stagnantRounds + 1 : 0;
+                    if (m_settings.method == OptimizationSettings::MultiRound
+                            && stagnantRounds >= OptimizationSettings::stagnationRoundLimit) {
+                        summary.stopReason = QStringLiteral("连续%1轮成本改善不足%2%，提前停止（局部停止条件，不代表全局最优）。")
+                            .arg(OptimizationSettings::stagnationRoundLimit).arg(OptimizationSettings::improvementThreshold_pct);
+                        break;
+                    }
+                    if (round == m_settings.fineRoundCount())
+                        summary.stopReason = QStringLiteral("已达到最大细搜轮数%1轮。").arg(round);
                 }
-                summary.fine.elapsed_ms = fineTimer.elapsed();
             }
+            if (!summary.fineStarted) summary.fineSkipReason = summary.stopReason;
+        } else {
+            summary.stopReason = stopped ? QStringLiteral("单轮网格人工停止。") : QStringLiteral("单轮网格遍历完成。");
         }
         summary.planned = summary.coarse.planned + summary.fine.planned;
         summary.evaluated = summary.coarse.evaluated + summary.fine.evaluated;

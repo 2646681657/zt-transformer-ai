@@ -4,13 +4,13 @@
 #include "IOptimizer.h"
 #include <array>
 
-// 连续量坐标以原步长的一半为单位；整数/表内规格以一档为单位。
+// 连续量使用本次最细网格的整数坐标；整数/表内规格以一档为单位。
 // 同一个坐标只对应一个输入，两阶段沿用同一坐标系和原始边界。
 class GridSearchSpace {
 public:
     using Point = std::array<int, 9>;
     GridSearchSpace(const CalcInput &base, const OptimizationSettings &settings)
-        : m_base(base), m_settings(settings),
+        : m_base(base), m_settings(settings), m_scale(1 << settings.fineRoundCount()),
           m_ranges{settings.diameterRadius(), settings.straightRadius(), settings.lvTurnsRadius(),
                    settings.hvLayersRadius(), settings.lvFoilThickRadius(), settings.lvFoilWidthRadius(),
                    settings.hvBareWidthRadius(), settings.hvBareThickRadius()} {}
@@ -22,7 +22,7 @@ public:
         index /= count;
         for (int d = 7; d >= 0; --d) {
             const int size = 2 * m_ranges[d] + 1;
-            point[d] = (index % size - m_ranges[d]) * (continuous(d) ? 2 : 1);
+            point[d] = (index % size - m_ranges[d]) * (continuous(d) ? m_scale : 1);
             index /= size;
         }
         return point;
@@ -31,14 +31,14 @@ public:
     CalcInput inputFor(const Point &point) const {
         CalcInput in = m_base;
         // 不参与的变量不做浮点运算（也不读取其可能失效的历史步长）。
-        if (m_ranges[0]) in.coreDiameter_mm += point[0] * 0.5 * m_settings.diaStep_mm;
-        if (m_ranges[1]) in.coreStraight_mm += point[1] * 0.5 * m_settings.straightStep_mm;
+        if (m_ranges[0]) in.coreDiameter_mm += double(point[0]) / m_scale * m_settings.diaStep_mm;
+        if (m_ranges[1]) in.coreStraight_mm += double(point[1]) / m_scale * m_settings.straightStep_mm;
         in.lvTurns += point[2];
         in.hvTurnsPerLayer += point[3];
-        if (m_ranges[4]) in.lvFoilThick_mm += point[4] * 0.5 * m_settings.lvFoilThickStep_mm;
-        if (m_ranges[5]) in.lvFoilWidth_mm += point[5] * 0.5 * m_settings.lvFoilWidthStep_mm;
-        if (m_ranges[6]) in.hvBareWidth_mm += point[6] * 0.5 * m_settings.hvBareWidthStep_mm;
-        if (m_ranges[7]) in.hvBareThick_mm += point[7] * 0.5 * m_settings.hvBareThickStep_mm;
+        if (m_ranges[4]) in.lvFoilThick_mm += double(point[4]) / m_scale * m_settings.lvFoilThickStep_mm;
+        if (m_ranges[5]) in.lvFoilWidth_mm += double(point[5]) / m_scale * m_settings.lvFoilWidthStep_mm;
+        if (m_ranges[6]) in.hvBareWidth_mm += double(point[6]) / m_scale * m_settings.hvBareWidthStep_mm;
+        if (m_ranges[7]) in.hvBareThick_mm += double(point[7]) / m_scale * m_settings.hvBareThickStep_mm;
         if (m_settings.searchHvRoundWire) {
             in.hvBareWidth_mm = m_settings.hvRoundWireDiameters[point[8]];
             in.hvBareThick_mm = in.hvBareWidth_mm;
@@ -46,16 +46,20 @@ public:
         return in;
     }
 
-    QVector<Point> neighbors(const Point &center) const {
+    QVector<Point> neighbors(const Point &center, int round) const {
         QVector<Point> points(1, center);
         for (int d = 0; d < 9; ++d) {
-            const int radius = d == 8 ? 0 : m_ranges[d] * (continuous(d) ? 2 : 1);
+            const int stride = continuous(d) ? m_scale >> round : 1;
+            const int radius = d == 8 ? 0 : m_ranges[d] * (continuous(d) ? m_scale : 1);
             const int lower = d == 8 ? 0 : -radius;
             const int upper = d == 8 ? (m_settings.searchHvRoundWire
                 ? int(m_settings.hvRoundWireDiameters.size()) - 1 : 0) : radius;
             QVector<Point> expanded;
             for (const auto &point : points) {
-                for (int value = qMax(lower, center[d] - 1); value <= qMin(upper, center[d] + 1); ++value) {
+                // 不移动到裁剪后的非格点：只有中心及±stride且在边界内的点。
+                for (int offset = -1; offset <= 1; ++offset) {
+                    const int value = center[d] + offset * stride;
+                    if (value < lower || value > upper) continue;
                     Point next = point;
                     next[d] = value;
                     expanded.append(next);
@@ -75,6 +79,7 @@ private:
     static bool continuous(int d) { return d != 2 && d != 3 && d != 8; }
     const CalcInput &m_base;
     const OptimizationSettings &m_settings;
+    int m_scale;
     std::array<int, 8> m_ranges;
 };
 
