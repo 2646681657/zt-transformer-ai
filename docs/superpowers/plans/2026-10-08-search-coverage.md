@@ -59,10 +59,12 @@ settings.setValue("optimize/enhancedCoverage", s.enhancedCoverage);
 - [x] 请求只读代码审查预算、边界、中心、计数、序列化、Qt queued顺序；修复发现后重新审查。
 - [x] `cmake --build D:/zt-transformer/zt-transformer-ai-main/build/codex-shape-guard --config Release -j4`，BUILD_TESTING保持OFF。
 - [x] 核对旧快捷方式，保存新唯一备份，复制新唯一预览，更新桌面TargetPath；校验SHA256相同，不启动程序。
-- [ ] 本地提交；说明改动入口及人工检查项，待验收再上传和PR。
+- [x] 本地提交；说明改动入口及人工检查项，待验收再上传和PR。
 
 ## 执行记录
 
 2026-10-08：设计已批准；用户明确四项一起交付，统一验收。两个实现面共享字段但不共享写文件，策略实现与界面接入可并行；最终整体静态审查。
 
 2026-10-09继续：四项实现均已写入；界面静态复审通过。整版静态审查发现主油道回显精度及空阶段完成标记问题，已修正，修正范围复审的Spec与Quality均通过，未留未处理问题。最终Release链接已成功，继续后的重新构建返回exit 0（ninja: no work to do），BUILD_TESTING=OFF；未创建或运行测试、未启动应用。桌面已部署独立search-coverage-all-preview程序，旧快捷方式备份为build/ZTBLD-before-search-coverage-all.lnk；源产物与预览SHA256均为33428B2795A05B43CC41784E4B7232568371B73840E7E11BB711C8919EA13629。实际效果待用户验收，验收前不上传/PR。
+
+程序改动已在本地codex/search-coverage-design分支提交为7fbb4df；人工验收说明见同目录2026-10-08-search-coverage-acceptance.md。未推送分支，未创建PR，旧程序和快捷方式备份均保留。
