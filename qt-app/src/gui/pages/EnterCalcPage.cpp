@@ -1909,6 +1909,15 @@ void EnterCalcPage::showOptimizationSummary()
             .arg(m_optBestCost, 0, 'f', 2)
             .arg(m_optStopped ? QStringLiteral("（仅本次已算范围，不代表全部网格最优）") : QString());
     else text += QStringLiteral("无入库候选，本轮没有最优方案。\n");
+    text += QStringLiteral("\n最低成本可行方案性能裕量（本轮冻结标准及允许偏差）：\n");
+    if (!s.hasBest) {
+        text += QStringLiteral("没有已评估可行方案，不报告性能裕量；不能用0值或失败候选代替。\n");
+    } else {
+        text += s.bestPerformanceMargins.join(QLatin1Char('\n')) + QLatin1Char('\n');
+    }
+    text += QStringLiteral("上限裕量=允许上限－实际值；区间余量分别为实际值－下限、上限－实际值。\n"
+        "限值沿用本轮实际筛选公式（已含允许偏差）；正值表示有余量、0表示贴限、负值表示越限，不截断或按显示舍入判定。\n"
+        "仅供该候选对照已启用指标，不是制造安全保证或综合安全评分，也不改变成本选优。人工停止/提前结束仅报告已评估候选。\n");
     text += QStringLiteral("\n最低成本可行方案触边提示（本轮冻结范围）：\n");
     if (!s.hasBest) {
         text += QStringLiteral("没有已评估可行方案，不判断触边；不能记为未触边。\n");
