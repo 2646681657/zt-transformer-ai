@@ -1198,10 +1198,10 @@ void ParamTableWidget::loadParamsForConfig(const TransformerParams &params, cons
 
     // 四 铁芯参数（设计变量，初值取自 CalcInput）
     addSectionRow(row++, QStringLiteral("四 铁芯参数"));
-    addInputRow(row++, "铁芯直径(mm)", QString::number(input.coreDiameter_mm),
+    addInputRow(row++, "铁芯直径(mm)", QString::number(input.coreDiameter_mm, 'g', 15),
                 "叠片系数", QString::number(input.stackFactor),
                 "coreDiameter", "stackFactor");
-    addInputRow(row++, "直线段长(mm)", QString::number(input.coreStraight_mm),
+    addInputRow(row++, "直线段长(mm)", QString::number(input.coreStraight_mm, 'g', 15),
                 "椭圆角(°)", QString::number(input.ellipseAngle_deg),
                 "coreStraight", "ellipseAngle");
     addInputRow(row++, "硅钢片牌号", QString(),
@@ -1301,9 +1301,9 @@ void ParamTableWidget::loadParamsForConfig(const TransformerParams &params, cons
     setCellWidget(row, 4, m_lvMaterialCombo);
     ++row;
     addInputRow(row++, "低压匝数", QString::number(input.lvTurns),
-                "低压箔厚(mm)", QString::number(input.lvFoilThick_mm),
+                "低压箔厚(mm)", QString::number(input.lvFoilThick_mm, 'g', 15),
                 "lvTurns", "lvFoilThick");
-    addInputRow(row++, "低压箔宽(mm)", QString::number(input.lvFoilWidth_mm),
+    addInputRow(row++, "低压箔宽(mm)", QString::number(input.lvFoilWidth_mm, 'g', 15),
                 "低压端绝缘(mm)", QString::number(input.lvEndInsul_mm),
                 "lvFoilWidth", "lvEndInsul");
     addParamRow(row, QStringLiteral("高压导线形状"), QString(), QStringLiteral("圆线裸直径(mm)"), QString());

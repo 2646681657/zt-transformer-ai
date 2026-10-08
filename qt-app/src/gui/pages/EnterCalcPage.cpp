@@ -860,7 +860,7 @@ std::optional<OptimizationSettings> EnterCalcPage::showLoopParamsDialog()
 
     auto *notes = new QLabel(QStringLiteral("目标：在已启用约束通过的候选中，使内置基价材料合计最低。\n")
         + CostBasisNotes::engine()
-        + QStringLiteral("\n订单容量、电压、联结组别、性能标准与偏差保持不变；默认单轮网格，可选粗搜＋一轮细搜。"
+        + QStringLiteral("\n订单容量、电压、联结组别、性能标准与偏差保持不变；保留单轮及一轮细搜，新增多轮细化。"
                          "\n低压箔尺寸及高压扁线宽/厚为设计尺寸搜索，非库存选型，制造规格仍需核对。"
                          "\n扁线宽=厚组合预检剔除。圆线请关闭高压宽/厚参与，使用圆线规格按表内相邻档搜索，表端不补档。"), dlg);
     notes->setWordWrap(true);
@@ -868,14 +868,25 @@ std::optional<OptimizationSettings> EnterCalcPage::showLoopParamsDialog()
     auto *mode = new QComboBox(dlg);
     mode->addItem(QStringLiteral("单轮网格（原模式）"), int(OptimizationSettings::Exhaustive));
     mode->addItem(QStringLiteral("粗搜＋一轮细搜（最低成本3个可行中心）"), int(OptimizationSettings::CoarseFine));
+    mode->addItem(QStringLiteral("粗搜＋多轮细化（逐轮选取最低成本3个可行中心）"), int(OptimizationSettings::MultiRound));
     const int modeIndex = mode->findData(int(cur.method));
     if (modeIndex < 0) {
         mode->addItem(QStringLiteral("无效历史模式，请重新选择"), int(cur.method));
         mode->setCurrentIndex(mode->count() - 1);
     } else mode->setCurrentIndex(modeIndex);
     layout->addWidget(mode);
+    auto *roundsLayout = new QHBoxLayout;
+    roundsLayout->addWidget(new QLabel(QStringLiteral("最大细搜轮数（不含粗搜）："), dlg));
+    auto *roundSpin = new QSpinBox(dlg);
+    roundSpin->setRange(1, OptimizationSettings::maximumFineRounds);
+    roundSpin->setValue(cur.maxFineRounds);
+    roundSpin->setSuffix(QStringLiteral(" 轮"));
+    roundsLayout->addWidget(roundSpin);
+    roundsLayout->addStretch();
+    layout->addLayout(roundsLayout);
     auto *fineNotes = new QLabel(QStringLiteral("细搜：连续尺寸步长减半、中心左右各1档；匝数/层数仍为整数1档，圆线仅表内相邻1档。"
-        "不超出原边界，固定量不变，重复组合不重算；无粗搜可行方案不进入细搜。这是一轮局部细化，不保证全局最优。"), dlg);
+        "不超出原边界，固定量不变，跨轮重复不重算。多轮模式每轮再减半；连续2轮改善不足0.01%或无新增组合时停止。"
+        "无粗搜可行方案不进入细搜；局部细化不保证全局最优。"), dlg);
     fineNotes->setWordWrap(true);
     layout->addWidget(fineNotes);
     const CalcInput base = m_calcInput;
@@ -947,9 +958,10 @@ std::optional<OptimizationSettings> EnterCalcPage::showLoopParamsDialog()
 
     // 组合数实时预览
     auto *comboLabel = new QLabel(dlg);
-    const auto gather = [cur, base, mode, stepSpins, rangeSpins, searchChecks]() {
+    const auto gather = [cur, base, mode, roundSpin, stepSpins, rangeSpins, searchChecks]() {
         OptimizationSettings s = cur;
         s.method = static_cast<OptimizationSettings::Method>(mode->currentData().toInt());
+        s.maxFineRounds = roundSpin->value();
         s.diaStep_mm = stepSpins[0]->value();
         s.straightStep_mm = stepSpins[1]->value();
         s.diaRange = rangeSpins[0]->value();
@@ -977,8 +989,9 @@ std::optional<OptimizationSettings> EnterCalcPage::showLoopParamsDialog()
         prepareRoundWireSearch(s, base);
         return s;
     };
-    const auto updateCombo = [comboLabel, form, base, gather, rangeSpins, stepSpins, searchChecks]() {
+    const auto updateCombo = [comboLabel, form, base, gather, roundSpin, rangeSpins, stepSpins, searchChecks]() {
         const auto s = gather();
+        roundSpin->setEnabled(s.method == OptimizationSettings::MultiRound);
         const double values[] = {base.coreDiameter_mm, base.coreStraight_mm,
                                 double(base.lvTurns), double(base.hvTurnsPerLayer), base.lvFoilThick_mm, base.lvFoilWidth_mm,
                                 base.hvBareWidth_mm, base.hvBareThick_mm};
@@ -1016,6 +1029,7 @@ std::optional<OptimizationSettings> EnterCalcPage::showLoopParamsDialog()
     for (auto *spin : stepSpins) if (spin) connect(spin, &QDoubleSpinBox::valueChanged, updateCombo);
     for (auto *check : searchChecks) connect(check, &QCheckBox::toggled, updateCombo);
     connect(mode, &QComboBox::currentIndexChanged, updateCombo);
+    connect(roundSpin, &QSpinBox::valueChanged, updateCombo);
     comboLabel->setWordWrap(true);
     updateCombo();
     layout->addWidget(comboLabel, 0, Qt::AlignCenter);
@@ -1025,7 +1039,11 @@ std::optional<OptimizationSettings> EnterCalcPage::showLoopParamsDialog()
         QDialogButtonBox::Ok | QDialogButtonBox::Cancel, dlg);
     btnBox->button(QDialogButtonBox::Ok)->setText(QStringLiteral("保存"));
     btnBox->button(QDialogButtonBox::Cancel)->setText(QStringLiteral("取消"));
-    connect(btnBox, &QDialogButtonBox::accepted, dlg, [this, dlg, base, gather, stepSpins, rangeSpins, searchChecks]() {
+    connect(btnBox, &QDialogButtonBox::accepted, dlg, [this, dlg, base, gather, roundSpin, stepSpins, rangeSpins, searchChecks]() {
+        if (gather().method == OptimizationSettings::MultiRound && !roundSpin->hasAcceptableInput()) {
+            QMessageBox::warning(dlg, QStringLiteral("搜索设置无效"), QStringLiteral("请完整输入1至5的最大细搜轮数。"));
+            return;
+        }
         for (int i = 0; i < 9; ++i) {
             if (searchChecks[i]->isChecked() && (!rangeSpins[i]->hasAcceptableInput()
                     || (stepSpins[i] && !stepSpins[i]->hasAcceptableInput()))) {
@@ -1059,6 +1077,7 @@ OptimizationSettings EnterCalcPage::loadOptimizeSettings() const
     OptimizationSettings s;   // 默认值即历史硬编码行为
     QSettings settings("ZTF", "Designer");
     s.method = static_cast<OptimizationSettings::Method>(settings.value("optimize/searchMethod", int(s.method)).toInt());
+    s.maxFineRounds = settings.value("optimize/maxFineRounds", s.maxFineRounds).toInt();
     s.diaStep_mm = settings.value("optimize/diaStep", s.diaStep_mm).toDouble();
     s.diaRange = settings.value("optimize/diaRange", s.diaRange).toInt();
     s.straightStep_mm = settings.value("optimize/straightStep", s.straightStep_mm).toDouble();
@@ -1090,6 +1109,7 @@ void EnterCalcPage::saveOptimizeSettings(const OptimizationSettings &s) const
 {
     QSettings settings("ZTF", "Designer");
     settings.setValue("optimize/searchMethod", int(s.method));
+    settings.setValue("optimize/maxFineRounds", s.maxFineRounds);
     settings.setValue("optimize/diaStep", s.diaStep_mm);
     settings.setValue("optimize/diaRange", s.diaRange);
     settings.setValue("optimize/straightStep", s.straightStep_mm);
@@ -1538,8 +1558,9 @@ void EnterCalcPage::onOptimizeProgress(int percent)
     if (m_discardOptimizationResults) {
         return;
     }
-    const QString phase = m_runningOptSettings.method == OptimizationSettings::CoarseFine
-        ? (m_optStage == 2 ? QStringLiteral("细搜") : QStringLiteral("粗搜")) : QStringLiteral("单轮网格");
+    const QString phase = m_runningOptSettings.hasRefinement()
+        ? (m_optStage > 1 ? QStringLiteral("细搜第%1/%2轮").arg(m_optStage - 1).arg(m_runningOptSettings.fineRoundCount())
+                          : QStringLiteral("粗搜")) : QStringLiteral("单轮网格");
     m_statusBar->setText(QStringLiteral("%1进行中：%2%（本阶段计划%3组合）")
         .arg(phase).arg(percent).arg(m_optStagePlanned));
 }
@@ -1596,10 +1617,11 @@ void EnterCalcPage::onOptimizeFinished(bool stopped, const OptimizeCandidate &be
         text += QStringLiteral("另有%1组合因扁线宽=厚预检剔除，未调用引擎。 ").arg(summary.wireFormRejected);
     if (!summary.error.isEmpty()) text += summary.error;
     if (!summary.skippedChecks.isEmpty()) text += QStringLiteral("部分指标未校核。 ");
-    if (m_runningOptSettings.method == OptimizationSettings::CoarseFine) {
+    if (m_runningOptSettings.hasRefinement()) {
         text += QStringLiteral("粗搜/细搜引擎调用%1/%2，去重%3。 ")
             .arg(summary.coarse.evaluated).arg(summary.fine.evaluated).arg(summary.duplicateSkipped);
     }
+    if (!summary.stopReason.isEmpty()) text += summary.stopReason + QLatin1Char(' ');
     text += QStringLiteral("详见「寻优统计」。");
     m_statusBar->setText(text);
 }
@@ -1613,13 +1635,15 @@ void EnterCalcPage::showOptimizationSummary()
         return;
     }
     const auto &s = m_optSummary;
-    const bool twoStages = m_runningOptSettings.method == OptimizationSettings::CoarseFine;
+    const bool twoStages = m_runningOptSettings.hasRefinement();
+    const bool multiRound = m_runningOptSettings.method == OptimizationSettings::MultiRound;
     QString text = QStringLiteral("本轮：%1；%10，单后台计算线程。\n目标：已启用约束通过的候选中，内置基价材料合计最低。\n%2\n\n"
         "计划组合：%3\n实际引擎计算：%4\n入库候选：%5\n计算失败或成本无效：%6\n约束剔除：%7\n未评估：%8\n耗时：%9秒（含暂停）\n")
         .arg(m_optStopped ? QStringLiteral("已停止") : QStringLiteral("已结束"), CostBasisNotes::engine())
         .arg(s.planned).arg(s.evaluated).arg(s.accepted).arg(s.invalid)
         .arg(s.constraintRejected).arg(s.planned - s.processedCount()).arg(s.elapsed_ms / 1000.0, 0, 'f', 3)
-        .arg(twoStages ? QStringLiteral("粗搜＋一轮细搜") : QStringLiteral("单轮网格搜索"));
+        .arg(multiRound ? QStringLiteral("粗搜＋多轮细化")
+                       : (twoStages ? QStringLiteral("粗搜＋一轮细搜") : QStringLiteral("单轮网格搜索")));
     if (twoStages) {
         const auto phaseText = [](const QString &name, const OptimizationStageSummary &stage) {
             return QStringLiteral("%1：计划%2，已处理%3，引擎调用%4，可行%5，失败%6，约束剔除%7，线型预检%8，未处理%9，耗时%10秒。\n")
@@ -1627,20 +1651,37 @@ void EnterCalcPage::showOptimizationSummary()
                 .arg(stage.accepted).arg(stage.invalid).arg(stage.constraintRejected).arg(stage.wireFormRejected)
                 .arg(stage.planned - stage.processedCount()).arg(stage.elapsed_ms / 1000.0, 0, 'f', 3);
         };
-        text += QStringLiteral("\n分轮统计（计划与各类实际数量均按两轮相加）：\n")
-            + phaseText(QStringLiteral("粗搜"), s.coarse) + phaseText(QStringLiteral("细搜"), s.fine);
-        text += QStringLiteral("细搜中心%1个；邻域原始提议%2，重复跳过%3，唯一新增计划%4。\n"
+        text += QStringLiteral("\n分轮统计（总量=粗搜+全部细搜轮的对应数量）：\n")
+            + phaseText(QStringLiteral("粗搜"), s.coarse);
+        int completedRounds = 0;
+        for (const auto &round : s.refinements) {
+            if (round.completed) ++completedRounds;
+            text += phaseText(QStringLiteral("细搜第%1轮%2").arg(round.round)
+                .arg(round.planned == 0 ? QStringLiteral("（无新增组合）")
+                                      : (round.completed ? QStringLiteral("（已完成）") : QStringLiteral("（未完成）"))), round);
+            text += QStringLiteral("  中心%1个，提议%2，重复跳过%3；连续尺寸为原步长的1/%4。\n"
+                "  轮前最低%5元 → 轮后已评估最低%6元；改善%7元（%8%）%9。\n")
+                .arg(round.seedCount).arg(round.generated).arg(round.duplicateSkipped).arg(1 << round.round)
+                .arg(round.bestCostBefore, 0, 'f', 2).arg(round.bestCostAfter, 0, 'f', 2)
+                .arg(round.bestCostBefore - round.bestCostAfter, 0, 'f', 2).arg(round.improvement_pct, 0, 'f', 6)
+                .arg(round.completed ? QString() : QStringLiteral("；不用于低改善判定"));
+        }
+        text += phaseText(QStringLiteral("全部细搜合计（不是额外一轮）"), s.fine);
+        text += QStringLiteral("最大细搜轮数%1；完整完成%2轮；保守总预算≤%3。\n")
+            .arg(m_runningOptSettings.fineRoundCount()).arg(completedRounds).arg(m_runningOptSettings.runUpperBound());
+        if (multiRound) text += QStringLiteral("停止判定：连续2个完整细搜轮的未舍入成本改善均<0.01%，或无新增组合；整数/圆线始终1档。\n");
+        text += QStringLiteral("各轮中心次数累计%1；邻域原始提议合计%2，重复跳过%3，唯一新增计划%4。\n"
             "重复提议不调用引擎、不重复入库、不计入计算失败。\n")
             .arg(s.fineSeedCount).arg(s.fineGenerated).arg(s.duplicateSkipped).arg(s.fine.planned);
-        if (!s.fineSkipReason.isEmpty()) text += s.fineSkipReason + QLatin1Char('\n');
+        if (!s.stopReason.isEmpty()) text += QStringLiteral("停止原因：") + s.stopReason + QLatin1Char('\n');
         if (s.coarseHasBest) {
             const double saving = s.coarseBestCost - m_optBestCost;
             text += QStringLiteral("粗搜已评估最低成本%1元；最终已评估最低成本%2元；改善%3元（%4%）。\n")
                 .arg(s.coarseBestCost, 0, 'f', 2).arg(m_optBestCost, 0, 'f', 2).arg(saving, 0, 'f', 2)
                 .arg(s.coarseBestCost > 0.0 ? saving * 100.0 / s.coarseBestCost : 0.0, 0, 'f', 3);
         }
-        text += QStringLiteral("连续尺寸步长减半，中心左右各1档；整数及圆线保持1档，原边界和固定量不变。\n"
-            "本批仅一轮局部细化，不保证严格改善、不代表全局最优；人工停止时仅报告已处理范围，未生成的细搜不计入计划。\n\n");
+        text += QStringLiteral("连续尺寸逐轮减半，中心左右各1档；整数及圆线保持1档，原边界和固定量不变。\n"
+            "本批为有停止条件的局部细化，不保证严格改善、不代表全局最优；人工停止时仅报告已处理范围，未生成轮次不计入计划。\n\n");
     }
     text += QStringLiteral("尺寸预检剔除（扁线宽=厚，未调用引擎）：%1\n已处理组合：%2\n"
                            "已处理=实际引擎计算+尺寸预检剔除；计划=已处理+未评估。\n")
@@ -1693,8 +1734,11 @@ void EnterCalcPage::showOptimizationSummary()
         text += QStringLiteral("%1：%2 ～ %3；%4；步长%5，±%6步\n").arg(names[i])
             .arg(bases[i] - ranges[i] * steps[i]).arg(bases[i] + ranges[i] * steps[i])
             .arg(enabled[i] ? QStringLiteral("参与") : QStringLiteral("固定")).arg(steps[i]).arg(ranges[i]);
-        if (twoStages && ranges[i] > 0 && i != 2 && i != 3)
-            text += QStringLiteral("  细搜步长：%1 mm（仍裁剪到上述边界）\n").arg(steps[i] * 0.5, 0, 'g', 12);
+        if (twoStages && ranges[i] > 0 && i != 2 && i != 3) {
+            for (const auto &round : s.refinements)
+                text += QStringLiteral("  第%1轮细搜步长：%2 mm（仍裁剪到上述边界）\n")
+                    .arg(round.round).arg(std::ldexp(steps[i], -round.round), 0, 'g', 12);
+        }
     }
     if (settings.searchHvRoundWire) {
         QStringList diameters;
