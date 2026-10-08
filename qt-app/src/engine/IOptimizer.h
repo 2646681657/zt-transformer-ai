@@ -47,6 +47,10 @@ struct OptimizationSettings {
     int hvRoundWireRange = 1; // 表内相邻±N档，不是直径步长
     QVector<double> hvRoundWireDiameters; // 启动前按当前基准与表生成，不持久化
     QString hvRoundWireSelectionError;
+    bool searchSteelGrade = false; // 默认固定基准牌号
+    QStringList selectedSteelGrades; // 用户显式选择，持久化；不自动补入基准
+    QStringList steelGrades; // 每次启动重新核对后生成的规范牌号快照
+    QString steelGradeSelectionError;
     static constexpr int maximumCombinations = 100000;
     static constexpr int fineSeedLimit = 3;
     static constexpr int maximumFineRounds = 5;
@@ -82,6 +86,12 @@ struct OptimizationSettings {
                 return std::numeric_limits<int>::max();
             count *= int(hvRoundWireDiameters.size());
         }
+        if (searchSteelGrade) {
+            if (steelGrades.isEmpty()) return 0;
+            if (count > std::numeric_limits<int>::max() / steelGrades.size())
+                return std::numeric_limits<int>::max();
+            count *= int(steelGrades.size());
+        }
         return count;
     }
     int fineNeighborhoodUpperBound() const {
@@ -105,6 +115,20 @@ struct OptimizationSettings {
             return QStringLiteral("不支持的寻优模式，请重新选择单轮网格、一轮细搜或多轮细化。");
         if (method == MultiRound && (maxFineRounds < 1 || maxFineRounds > maximumFineRounds))
             return QStringLiteral("多轮模式的最大细搜轮数须为1至%1，粗搜不计入该轮数。").arg(maximumFineRounds);
+        if (searchSteelGrade) {
+            if (!steelGradeSelectionError.isEmpty()) return steelGradeSelectionError;
+            if (selectedSteelGrades.isEmpty() || steelGrades.size() != selectedSteelGrades.size())
+                return QStringLiteral("请显式勾选至少一个有效硅钢牌号，并在启动前核对当前曲线数据。");
+            QStringList identities;
+            for (int i = 0; i < steelGrades.size(); ++i) {
+                const QString identity = steelGrades[i].trimmed().toUpper();
+                if (CalcInput::thicknessFromSteelGrade(steelGrades[i]) <= 0.0
+                        || identities.contains(identity)
+                        || identity != selectedSteelGrades[i].trimmed().toUpper())
+                    return QStringLiteral("牌号快照须与显式选择一致、唯一且片厚格式有效，不允许静默替换。");
+                identities.append(identity);
+            }
+        }
         if (searchHvRoundWire) {
             if (!base.isRoundHighVoltageWire())
                 return QStringLiteral("当前为扁线，不能启用圆线规格寻优；请先在设计输入中选择有效圆线规格，或取消圆线参与。");
@@ -228,6 +252,11 @@ struct OptimizationRefinementSummary : OptimizationStageSummary {
     double improvement_pct = 0.0;
 };
 
+struct OptimizationSteelSummary : OptimizationStageSummary {
+    bool hasBest = false;
+    double bestCost = 0.0;
+};
+
 struct OptimizationRunSummary : OptimizationStageSummary {
     OptimizationStageSummary coarse;
     OptimizationStageSummary fine;
@@ -241,6 +270,7 @@ struct OptimizationRunSummary : OptimizationStageSummary {
     QString fineSkipReason;
     QVector<OptimizationRefinementSummary> refinements;
     QString stopReason; // 达到轮数/低改善/无新增组合/人工停止等，不作为全局收敛证明
+    QMap<QString, OptimizationSteelSummary> steelSummaries; // 每个已规划牌号，含未处理/无可行
     QString error;
     QStringList skippedChecks;
     QMap<QString, int> rejectionReasons;

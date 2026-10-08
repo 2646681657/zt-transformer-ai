@@ -8,7 +8,7 @@
 // 同一个坐标只对应一个输入，两阶段沿用同一坐标系和原始边界。
 class GridSearchSpace {
 public:
-    using Point = std::array<int, 9>;
+    using Point = std::array<int, 10>;
     GridSearchSpace(const CalcInput &base, const OptimizationSettings &settings)
         : m_base(base), m_settings(settings), m_scale(1 << settings.fineRoundCount()),
           m_ranges{settings.diameterRadius(), settings.straightRadius(), settings.lvTurnsRadius(),
@@ -17,6 +17,9 @@ public:
 
     Point coarsePoint(int index) const {
         Point point{};
+        const int gradeCount = m_settings.searchSteelGrade ? int(m_settings.steelGrades.size()) : 1;
+        point[9] = index % gradeCount;
+        index /= gradeCount;
         const int count = m_settings.searchHvRoundWire ? int(m_settings.hvRoundWireDiameters.size()) : 1;
         point[8] = index % count;
         index /= count;
@@ -43,11 +46,21 @@ public:
             in.hvBareWidth_mm = m_settings.hvRoundWireDiameters[point[8]];
             in.hvBareThick_mm = in.hvBareWidth_mm;
         }
+        if (m_settings.searchSteelGrade) {
+            in.steelGrade = m_settings.steelGrades[point[9]];
+            in.steelThickness_mm = CalcInput::thicknessFromSteelGrade(in.steelGrade);
+        }
         return in;
+    }
+
+    QString steelGradeFor(const Point &point) const {
+        return m_settings.searchSteelGrade ? m_settings.steelGrades[point[9]] : m_base.steelGrade.trimmed();
     }
 
     QVector<Point> neighbors(const Point &center, int round) const {
         QVector<Point> points(1, center);
+        // 牌号是分类变量：细搜保持中心牌号，不按名单顺序取“相邻牌号”。
+        // 粗搜已遍历每个勾选牌号；其他9维及原有全局最低成本3中心规则不变。
         for (int d = 0; d < 9; ++d) {
             const int stride = continuous(d) ? m_scale >> round : 1;
             const int radius = d == 8 ? 0 : m_ranges[d] * (continuous(d) ? m_scale : 1);

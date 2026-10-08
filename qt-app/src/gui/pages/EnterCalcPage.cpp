@@ -9,6 +9,7 @@
 #include "EmResultPanel.h"
 #include "GridOptimizer.h"
 #include "RoundWireSearch.h"
+#include "SteelGradeSearch.h"
 #include "SchemeConstraints.h"
 #include "SchemeStore.h"
 #include "RecommendSchemes.h"
@@ -56,6 +57,8 @@
 #include <QScreen>
 #include <QTimer>
 #include <QScopedValueRollback>
+#include <QListWidget>
+#include <memory>
 
 EnterCalcPage::EnterCalcPage(QWidget *parent)
     : QWidget(parent)
@@ -890,6 +893,20 @@ std::optional<OptimizationSettings> EnterCalcPage::showLoopParamsDialog()
     fineNotes->setWordWrap(true);
     layout->addWidget(fineNotes);
     const CalcInput base = m_calcInput;
+    auto *steelLayout = new QHBoxLayout;
+    auto *steelCheck = new QCheckBox(QStringLiteral("硅钢牌号参与寻优"), dlg);
+    steelCheck->setChecked(cur.searchSteelGrade);
+    auto *steelButton = new QPushButton(QStringLiteral("勾选候选牌号…"), dlg);
+    auto *steelLabel = new QLabel(dlg);
+    steelLabel->setWordWrap(true);
+    steelLayout->addWidget(steelCheck);
+    steelLayout->addWidget(steelButton);
+    steelLayout->addWidget(steelLabel, 1);
+    layout->addLayout(steelLayout);
+    auto *steelNote = new QLabel(QStringLiteral("各牌号均按17元/kg内置基价比较，不是实际采购成本最优；片厚随牌号联动。细搜沿用全体可行方案最低成本3中心，未保证每个牌号都有细搜中心。"), dlg);
+    steelNote->setWordWrap(true);
+    layout->addWidget(steelNote);
+    auto gradeChoices = std::make_shared<QStringList>(cur.selectedSteelGrades);
     auto *form = new QTableWidget(9, 5, dlg);
     form->setHorizontalHeaderLabels({QStringLiteral("搜索变量"),
         QStringLiteral("参与寻优"), QStringLiteral("步长"), QStringLiteral("范围(±N步)"),
@@ -958,10 +975,12 @@ std::optional<OptimizationSettings> EnterCalcPage::showLoopParamsDialog()
 
     // 组合数实时预览
     auto *comboLabel = new QLabel(dlg);
-    const auto gather = [cur, base, mode, roundSpin, stepSpins, rangeSpins, searchChecks]() {
+    const auto gather = [cur, base, mode, roundSpin, steelCheck, gradeChoices, stepSpins, rangeSpins, searchChecks]() {
         OptimizationSettings s = cur;
         s.method = static_cast<OptimizationSettings::Method>(mode->currentData().toInt());
         s.maxFineRounds = roundSpin->value();
+        s.searchSteelGrade = steelCheck->isChecked();
+        s.selectedSteelGrades = *gradeChoices;
         s.diaStep_mm = stepSpins[0]->value();
         s.straightStep_mm = stepSpins[1]->value();
         s.diaRange = rangeSpins[0]->value();
@@ -987,10 +1006,17 @@ std::optional<OptimizationSettings> EnterCalcPage::showLoopParamsDialog()
         s.searchHvRoundWire = searchChecks[8]->isChecked();
         s.hvRoundWireRange = rangeSpins[8]->value();
         prepareRoundWireSearch(s, base);
+        prepareSteelGradeSearch(s);
         return s;
     };
-    const auto updateCombo = [comboLabel, form, base, gather, roundSpin, rangeSpins, stepSpins, searchChecks]() {
+    const auto updateCombo = [comboLabel, form, base, gather, roundSpin, steelButton, steelLabel,
+                              rangeSpins, stepSpins, searchChecks]() {
         const auto s = gather();
+        steelButton->setEnabled(s.searchSteelGrade);
+        steelLabel->setText(s.searchSteelGrade
+            ? QStringLiteral("已选%1个；有效参与%2个").arg(s.selectedSteelGrades.size()).arg(s.steelGrades.size())
+            : QStringLiteral("固定：%1（片厚%2 mm）").arg(base.steelGrade).arg(CalcInput::thicknessFromSteelGrade(base.steelGrade)));
+        steelLabel->setToolTip(s.selectedSteelGrades.join(QStringLiteral("、")));
         roundSpin->setEnabled(s.method == OptimizationSettings::MultiRound);
         const double values[] = {base.coreDiameter_mm, base.coreStraight_mm,
                                 double(base.lvTurns), double(base.hvTurnsPerLayer), base.lvFoilThick_mm, base.lvFoilWidth_mm,
@@ -1022,6 +1048,8 @@ std::optional<OptimizationSettings> EnterCalcPage::showLoopParamsDialog()
             .arg(s.plannedCount()).arg(s.runUpperBound())
             .arg(roundNames.isEmpty() ? QString() : QStringLiteral("\n圆线实际直径(mm)：") + roundNames.join(QStringLiteral("、")))
             .arg(error.isEmpty() ? QString() : QStringLiteral("\n") + error));
+        if (s.searchSteelGrade && !s.steelGrades.isEmpty())
+            comboLabel->setText(comboLabel->text() + QStringLiteral("\n冻结候选牌号：") + s.steelGrades.join(QStringLiteral("、")));
     };
     for (auto *spin : rangeSpins) {
         connect(spin, &QSpinBox::valueChanged, updateCombo);
@@ -1030,6 +1058,60 @@ std::optional<OptimizationSettings> EnterCalcPage::showLoopParamsDialog()
     for (auto *check : searchChecks) connect(check, &QCheckBox::toggled, updateCombo);
     connect(mode, &QComboBox::currentIndexChanged, updateCombo);
     connect(roundSpin, &QSpinBox::valueChanged, updateCombo);
+    connect(steelCheck, &QCheckBox::toggled, updateCombo);
+    connect(steelButton, &QPushButton::clicked, dlg, [dlg, gradeChoices, updateCombo]() {
+        auto &db = DesignDatabase::instance();
+        if (!db.isLoaded() && !db.load()) {
+            QMessageBox::warning(dlg, QStringLiteral("硅钢曲线加载失败"), db.lastError());
+            return;
+        }
+        QDialog selector(dlg);
+        selector.setWindowTitle(QStringLiteral("勾选候选硅钢牌号"));
+        selector.resize(540, 460);
+        QVBoxLayout selectorLayout(&selector);
+        auto *hint = new QLabel(QStringLiteral("仅勾选具有有效片厚、磁密、铁损和磁化容量曲线的牌号。不会自动加入当前牌号；失效的旧选择需取消勾选。"), &selector);
+        hint->setWordWrap(true);
+        selectorLayout.addWidget(hint);
+        auto *list = new QListWidget(&selector);
+        QSet<QString> displayed;
+        for (const auto &curve : db.steelCurves()) {
+            QString canonical;
+            if (!steelGradeSearchError(db, curve.grade, &canonical).isEmpty()) continue;
+            if (displayed.contains(canonical.toUpper())) continue;
+            displayed.insert(canonical.toUpper());
+            double minT = 0.0, maxT = 0.0;
+            db.steelCurveRange(canonical, minT, maxT);
+            auto *entry = new QListWidgetItem(QStringLiteral("%1  |  %2 mm  |  曲线%3～%4 T")
+                .arg(canonical).arg(CalcInput::thicknessFromSteelGrade(canonical)).arg(minT).arg(maxT), list);
+            entry->setData(Qt::UserRole, canonical);
+            entry->setFlags(entry->flags() | Qt::ItemIsUserCheckable);
+            const bool checked = std::any_of(gradeChoices->cbegin(), gradeChoices->cend(), [&canonical](const QString &name) {
+                return name.trimmed().compare(canonical, Qt::CaseInsensitive) == 0;
+            });
+            entry->setCheckState(checked ? Qt::Checked : Qt::Unchecked);
+        }
+        for (const auto &old : *gradeChoices) {
+            if (displayed.contains(old.trimmed().toUpper())) continue;
+            displayed.insert(old.trimmed().toUpper());
+            auto *entry = new QListWidgetItem(QStringLiteral("%1（失效选择，请取消勾选）").arg(old), list);
+            entry->setData(Qt::UserRole, old);
+            entry->setFlags(entry->flags() | Qt::ItemIsUserCheckable);
+            entry->setCheckState(Qt::Checked);
+            entry->setToolTip(steelGradeSearchError(db, old));
+        }
+        selectorLayout.addWidget(list, 1);
+        auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &selector);
+        connect(buttons, &QDialogButtonBox::accepted, &selector, &QDialog::accept);
+        connect(buttons, &QDialogButtonBox::rejected, &selector, &QDialog::reject);
+        selectorLayout.addWidget(buttons);
+        if (selector.exec() == QDialog::Accepted) {
+            gradeChoices->clear();
+            for (int i = 0; i < list->count(); ++i)
+                if (list->item(i)->checkState() == Qt::Checked)
+                    gradeChoices->append(list->item(i)->data(Qt::UserRole).toString());
+            updateCombo();
+        }
+    });
     comboLabel->setWordWrap(true);
     updateCombo();
     layout->addWidget(comboLabel, 0, Qt::AlignCenter);
@@ -1102,6 +1184,8 @@ OptimizationSettings EnterCalcPage::loadOptimizeSettings() const
     s.searchHvBareThick = settings.value("optimize/searchHvBareThick", false).toBool();
     s.searchHvRoundWire = settings.value("optimize/searchHvRoundWire", false).toBool();
     s.hvRoundWireRange = settings.value("optimize/hvRoundWireRange", s.hvRoundWireRange).toInt();
+    s.searchSteelGrade = settings.value("optimize/searchSteelGrade", false).toBool();
+    s.selectedSteelGrades = settings.value("optimize/selectedSteelGrades", QStringList{}).toStringList();
     return s;
 }
 
@@ -1134,6 +1218,8 @@ void EnterCalcPage::saveOptimizeSettings(const OptimizationSettings &s) const
     settings.setValue("optimize/searchHvBareThick", s.searchHvBareThick);
     settings.setValue("optimize/searchHvRoundWire", s.searchHvRoundWire);
     settings.setValue("optimize/hvRoundWireRange", s.hvRoundWireRange);
+    settings.setValue("optimize/searchSteelGrade", s.searchSteelGrade);
+    settings.setValue("optimize/selectedSteelGrades", s.selectedSteelGrades);
 }
 
 // 竖排"程序选择"导航按钮（点击返回主界面），三个 Tab 各自调用创建
@@ -1498,6 +1584,7 @@ void EnterCalcPage::onOptimizeStart()
     }
     OptimizationSettings preparedSettings = m_optSettings;
     prepareRoundWireSearch(preparedSettings, m_calcInput);
+    prepareSteelGradeSearch(preparedSettings);
     const QString searchError = preparedSettings.validationError(m_calcInput);
     if (!searchError.isEmpty()) {
         QMessageBox::warning(this, QStringLiteral("搜索设置无效"), searchError);
@@ -1692,6 +1779,24 @@ void EnterCalcPage::showOptimizationSummary()
             .arg(m_optBestCost, 0, 'f', 2)
             .arg(m_optStopped ? QStringLiteral("（仅本次已算范围，不代表全部网格最优）") : QString());
     else text += QStringLiteral("无入库候选，本轮没有最优方案。\n");
+    text += QStringLiteral("\n硅钢牌号：%1\n各牌号统一采用17元/kg内置基价，不等于实际采购成本最优。\n")
+        .arg(m_runningOptSettings.searchSteelGrade
+            ? QStringLiteral("联合寻优，冻结参与清单：") + m_runningOptSettings.steelGrades.join(QStringLiteral("、"))
+            : QStringLiteral("固定基准：") + m_runningOptInput.steelGrade);
+    if (m_runningOptSettings.searchSteelGrade && twoStages)
+        text += QStringLiteral("粗搜计划覆盖全部勾选牌号，实际处理量见下表；细搜按全体可行方案最低成本3中心，仅保持中心牌号，不保证各牌号都有细搜中心。\n");
+    text += QStringLiteral("按牌号统计（粗搜及全部细搜的唯一新增计划/实际处理量，暂停或提前停止不补算）：\n");
+    for (auto it = s.steelSummaries.cbegin(); it != s.steelSummaries.cend(); ++it) {
+        const auto &grade = it.value();
+        text += QStringLiteral("%1（片厚%2 mm）：计划%3，已处理%4，引擎调用%5，可行%6，失败%7，约束剔除%8，线型预检%9，未处理%10。\n")
+            .arg(it.key()).arg(CalcInput::thicknessFromSteelGrade(it.key())).arg(grade.planned)
+            .arg(grade.processedCount()).arg(grade.evaluated).arg(grade.accepted).arg(grade.invalid)
+            .arg(grade.constraintRejected).arg(grade.wireFormRejected).arg(grade.planned - grade.processedCount());
+        text += grade.hasBest
+            ? QStringLiteral("  已评估可行候选最低材料合计：%1元。\n").arg(grade.bestCost, 0, 'f', 2)
+            : QStringLiteral("  无已评估可行候选，不报告最低成本。\n");
+    }
+    text += QStringLiteral("牌号各项数量相加应等于本次总量；未处理或不合格牌号不能当作零成本方案。\n");
     text += QStringLiteral("\n冻结订单：%1\n容量%2 kVA；高压%3 kV；低压%4 kV；联结组别%5\n")
         .arg(m_runningOptParams.productModel).arg(m_runningOptInput.capacity_kVA)
         .arg(m_runningOptInput.hvRated_kV).arg(m_runningOptInput.lvRated_kV)
