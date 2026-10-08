@@ -58,6 +58,10 @@ public slots:
         QElapsedTimer timer;
         timer.start();
         const GridSearchSpace space(m_base, m_settings);
+        const QStringList grades = m_settings.searchSteelGrade ? m_settings.steelGrades
+            : QStringList{m_base.steelGrade.trimmed()};
+        for (const auto &grade : grades)
+            summary.steelSummaries[grade].planned = summary.coarse.planned / int(grades.size());
         using Point = GridSearchSpace::Point;
         struct Seed { Point point; double cost; };
         QVector<Seed> seeds;
@@ -75,8 +79,10 @@ public slots:
             }
             visited.insert(GridSearchSpace::key(point));
             const CalcInput in = space.inputFor(point);
+            auto &gradeSummary = summary.steelSummaries[space.steelGradeFor(point)];
             if (!m_base.isRoundHighVoltageWire() && in.isRoundHighVoltageWire()) {
                 ++stage.wireFormRejected;
+                ++gradeSummary.wireFormRejected;
                 ++summary.rejectionReasons[QStringLiteral("扁线宽=厚（禁止自动切换圆线）")];
                 emit progressUpdated(stage.processedCount() * 100 / stage.planned);
                 return true;
@@ -84,12 +90,14 @@ public slots:
 
             CalcResult r;
             ++stage.evaluated;
+            ++gradeSummary.evaluated;
             const bool calculated = engine.calcElectromagnetic(in, r) && r.valid;
             const auto constraints = calculated ? checkSchemeConstraints(m_params, r)
                                                 : SchemeConstraintsResult{};
             if (!calculated || !std::isfinite(optimizationMaterialCost(r))
                     || optimizationMaterialCost(r) < 0.0) {
                 ++stage.invalid;
+                ++gradeSummary.invalid;
                 ++summary.rejectionReasons[QStringLiteral("计算失败或材料成本无效")];
                 QString reason = calculated ? QStringLiteral("材料成本非有限值或为负数") : r.error.trimmed();
                 if (reason.isEmpty()) reason = QStringLiteral("引擎未返回有效结果");
@@ -99,6 +107,7 @@ public slots:
                 ++summary.calculationErrors[reason];
             } else if (!constraints.passed) {
                 ++stage.constraintRejected;
+                ++gradeSummary.constraintRejected;
                 for (const auto &name : constraints.failedChecks)
                     ++summary.rejectionReasons[name];
             } else {
@@ -108,6 +117,12 @@ public slots:
                 c.scheme = makeScheme(0, in, r);  // 序号由接收端按入库顺序编排
                 emit candidateReady(c);
                 ++stage.accepted;
+                ++gradeSummary.accepted;
+                const double cost = optimizationMaterialCost(r);
+                if (!gradeSummary.hasBest || cost < gradeSummary.bestCost) {
+                    gradeSummary.hasBest = true;
+                    gradeSummary.bestCost = cost;
+                }
                 if (m_settings.hasRefinement()) {
                     seeds.append({point, optimizationMaterialCost(r)});
                     std::stable_sort(seeds.begin(), seeds.end(), [](const Seed &a, const Seed &b) {
@@ -161,6 +176,7 @@ public slots:
                             } else {
                                 visited.insert(key);
                                 finePoints.append(point);
+                                ++summary.steelSummaries[space.steelGradeFor(point)].planned;
                             }
                         }
                     }
