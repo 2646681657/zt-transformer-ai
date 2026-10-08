@@ -26,6 +26,12 @@ namespace SchemeStore {
 inline QJsonObject toJson(const CalcInput &in)
 {
     QJsonObject o;
+    QJsonObject craft;
+    craft.insert(QStringLiteral("enabled"), in.craftConstraints.enabled);
+    craft.insert(QStringLiteral("minimumMainDuct_mm"), !in.craftConstraints.enabled
+        && !std::isfinite(in.craftConstraints.minimumMainDuct_mm) ? 0.0 : in.craftConstraints.minimumMainDuct_mm);
+    craft.insert(QStringLiteral("source"), in.craftConstraints.source);
+    o.insert(QStringLiteral("craftConstraints"), craft);
     // 额定值
     o.insert(QStringLiteral("capacity_kVA"), in.capacity_kVA);
     o.insert(QStringLiteral("hvRated_kV"), in.hvRated_kV);
@@ -146,6 +152,20 @@ inline QJsonObject toJson(const CalcInput &in)
 inline CalcInput fromJson(const QJsonObject &o)
 {
     CalcInput in;
+    // Missing object is the legacy unchecked state. Explicit malformed data must fail recalc.
+    if (o.contains(QStringLiteral("craftConstraints"))) {
+        const auto value = o.value(QStringLiteral("craftConstraints"));
+        const auto craft = value.toObject();
+        const auto enabled = craft.value(QStringLiteral("enabled"));
+        const auto minimum = craft.value(QStringLiteral("minimumMainDuct_mm"));
+        const auto source = craft.value(QStringLiteral("source"));
+        const bool wellFormed = value.isObject() && enabled.isBool() && minimum.isDouble()
+            && std::isfinite(minimum.toDouble()) && source.isString();
+        in.craftConstraints.enabled = wellFormed ? enabled.toBool() : true;
+        in.craftConstraints.minimumMainDuct_mm = wellFormed ? minimum.toDouble()
+            : std::numeric_limits<double>::quiet_NaN();
+        in.craftConstraints.source = source.toString();
+    }
     const auto criteria = o.value(QStringLiteral("performanceCriteria")).toObject();
     const QString mode = criteria.value(QStringLiteral("mode")).toString();
     bool criteriaValid = criteria.value(QStringLiteral("version")).isDouble()

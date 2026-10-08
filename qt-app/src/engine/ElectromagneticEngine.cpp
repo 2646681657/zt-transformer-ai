@@ -1396,6 +1396,11 @@ bool ElectromagneticEngine::previewCoreGeometry(const CalcInput &input, CoreResu
 bool ElectromagneticEngine::calcElectromagnetic(const CalcInput &input, CalcResult &result)
 {
     result = CalcResult();
+    const QString craftError = input.craftConstraints.rejectionReason(input.mainDuctWidth_mm);
+    if (!craftError.isEmpty()) {
+        result.error = craftError; // Saved schemes recalculate with the same manufacturing snapshot.
+        return false;
+    }
     if (input.hvCoilFormIdx != 1) {
         result.error = HvCoilFormNotes::unavailableReason();
         return false;
@@ -1546,6 +1551,11 @@ PrintOutputData ElectromagneticEngine::buildPrintOutput(const CalcInput &input,
     };
     addRow(QStringLiteral("高压试验电压（参考）"), result.testVoltage.highVoltage, QStringLiteral("kV"),
            QStringLiteral("低压试验电压（参考）"), result.testVoltage.lowVoltage, QStringLiteral("kV"));
+    addRow(QStringLiteral("企业主油道校核"), input.craftConstraints.enabled ? QStringLiteral("已启用") : QStringLiteral("未校核"), QString(),
+           QStringLiteral("企业最小宽度"), input.craftConstraints.enabled
+               ? QString::number(input.craftConstraints.minimumMainDuct_mm, 'g', 15) : QStringLiteral("未设"), QStringLiteral("mm"));
+    addRow(QStringLiteral("企业工艺来源"), input.craftConstraints.source, QString(),
+           QStringLiteral("其他工艺/库存"), QStringLiteral("待资料核对"), QString());
     // 打印表数值列较窄，使用短说明，避免关键免责声明被截断。
     addRow(QStringLiteral("高压提示来源"), QStringLiteral("计算单C7"), QString(),
            QStringLiteral("低压提示来源"), QStringLiteral("计算单C8"), QString());
