@@ -1,12 +1,15 @@
 #include "GridOptimizer.h"
 #include "ElectromagneticEngine.h"
 #include "SchemeConstraints.h"
+#include "GridSearchSpace.h"
 #include <QThread>
 #include <QMutex>
 #include <QMutexLocker>
 #include <QWaitCondition>
 #include <QMetaObject>
 #include <QElapsedTimer>
+#include <QSet>
+#include <algorithm>
 #include <cmath>
 
 // 后台工作对象：网格遍历 + 电磁计算（引擎无状态，线程内独立实例）
@@ -53,70 +56,39 @@ public slots:
         }
         QElapsedTimer timer;
         timer.start();
-        const double diaStep = m_settings.searchDiameter ? m_settings.diaStep_mm : 0.0;
-        const int diaRange = m_settings.diameterRadius();
-        const double straightStep = m_settings.searchStraight ? m_settings.straightStep_mm : 0.0;
-        const int straightRange = m_settings.straightRadius();
-        const int lvTurnsRange = m_settings.lvTurnsRadius();
-        const int hvTplRange = m_settings.hvLayersRadius();
-        const int thickRange = m_settings.lvFoilThickRadius();
-        const int widthRange = m_settings.lvFoilWidthRadius();
-        const double thickStep = m_settings.searchLvFoilThick ? m_settings.lvFoilThickStep_mm : 0.0;
-        const double widthStep = m_settings.searchLvFoilWidth ? m_settings.lvFoilWidthStep_mm : 0.0;
-        const double hvWidthStep = m_settings.searchHvBareWidth ? m_settings.hvBareWidthStep_mm : 0.0;
-        const double hvThickStep = m_settings.searchHvBareThick ? m_settings.hvBareThickStep_mm : 0.0;
-        const int ranges[] = {diaRange, straightRange, lvTurnsRange, hvTplRange, thickRange, widthRange,
-                              m_settings.hvBareWidthRadius(), m_settings.hvBareThickRadius()};
-
+        const GridSearchSpace space(m_base, m_settings);
+        using Point = GridSearchSpace::Point;
+        struct Seed { Point point; double cost; };
+        QVector<Seed> seeds;
+        QSet<QString> visited;
         ElectromagneticEngine engine;
         OptimizeCandidate best;
         bool haveBest = false;
         bool stopped = false;
 
-        // 混合进制枚举完整笛卡尔积；固定变量只有一档，旧四变量顺序保持不变。
-        for (int index = 0; index < summary.planned; ++index) {
-            const int roundCount = m_settings.searchHvRoundWire ? int(m_settings.hvRoundWireDiameters.size()) : 1;
-            const int roundIndex = index % roundCount;
-            int remaining = index / roundCount;
-            int offsets[8];
-            for (int dimension = 7; dimension >= 0; --dimension) {
-                const int count = 2 * ranges[dimension] + 1;
-                offsets[dimension] = remaining % count - ranges[dimension];
-                remaining /= count;
-            }
+        // 两个阶段使用同一完整引擎、成本目标和冻结的约束。
+        const auto evaluate = [&](const Point &point, OptimizationStageSummary &stage, bool coarse) {
             if (!waitIfPaused()) {
                 stopped = true;
-                break;
+                return false;
             }
-            CalcInput in = m_base;
-            in.coreDiameter_mm += offsets[0] * diaStep;
-            in.coreStraight_mm += offsets[1] * straightStep;
-            in.lvTurns += offsets[2];
-            in.hvTurnsPerLayer += offsets[3];
-            in.lvFoilThick_mm += offsets[4] * thickStep;
-            in.lvFoilWidth_mm += offsets[5] * widthStep;
-            in.hvBareWidth_mm += offsets[6] * hvWidthStep;
-            in.hvBareThick_mm += offsets[7] * hvThickStep;
-            if (m_settings.searchHvRoundWire) {
-                const double diameter = m_settings.hvRoundWireDiameters[roundIndex];
-                in.hvBareWidth_mm = diameter;
-                in.hvBareThick_mm = diameter;
-            }
+            visited.insert(GridSearchSpace::key(point));
+            const CalcInput in = space.inputFor(point);
             if (!m_base.isRoundHighVoltageWire() && in.isRoundHighVoltageWire()) {
-                ++summary.wireFormRejected;
+                ++stage.wireFormRejected;
                 ++summary.rejectionReasons[QStringLiteral("扁线宽=厚（禁止自动切换圆线）")];
-                emit progressUpdated(summary.processedCount() * 100 / summary.planned);
-                continue;
+                emit progressUpdated(stage.processedCount() * 100 / stage.planned);
+                return true;
             }
 
             CalcResult r;
-            ++summary.evaluated;
+            ++stage.evaluated;
             const bool calculated = engine.calcElectromagnetic(in, r) && r.valid;
             const auto constraints = calculated ? checkSchemeConstraints(m_params, r)
                                                 : SchemeConstraintsResult{};
             if (!calculated || !std::isfinite(optimizationMaterialCost(r))
                     || optimizationMaterialCost(r) < 0.0) {
-                ++summary.invalid;
+                ++stage.invalid;
                 ++summary.rejectionReasons[QStringLiteral("计算失败或材料成本无效")];
                 QString reason = calculated ? QStringLiteral("材料成本非有限值或为负数") : r.error.trimmed();
                 if (reason.isEmpty()) reason = QStringLiteral("引擎未返回有效结果");
@@ -125,7 +97,7 @@ public slots:
                     reason = QStringLiteral("其他计算失败原因");
                 ++summary.calculationErrors[reason];
             } else if (!constraints.passed) {
-                ++summary.constraintRejected;
+                ++stage.constraintRejected;
                 for (const auto &name : constraints.failedChecks)
                     ++summary.rejectionReasons[name];
             } else {
@@ -134,19 +106,85 @@ public slots:
                 c.result = r;
                 c.scheme = makeScheme(0, in, r);  // 序号由接收端按入库顺序编排
                 emit candidateReady(c);
-                ++summary.accepted;
+                ++stage.accepted;
+                if (coarse && m_settings.method == OptimizationSettings::CoarseFine) {
+                    seeds.append({point, optimizationMaterialCost(r)});
+                    std::stable_sort(seeds.begin(), seeds.end(), [](const Seed &a, const Seed &b) {
+                        return a.cost < b.cost;
+                    });
+                    if (seeds.size() > OptimizationSettings::fineSeedLimit) seeds.removeLast();
+                }
                 if (!haveBest || optimizationMaterialCost(r) < optimizationMaterialCost(best.result)) {
                     best = c;
                     haveBest = true;
                 }
             }
-            emit progressUpdated(summary.processedCount() * 100 / summary.planned);
+            emit progressUpdated(stage.processedCount() * 100 / stage.planned);
+            return true;
+        };
+
+        summary.coarse.planned = summary.planned;
+        emit stageChanged(1, summary.coarse.planned);
+        for (int index = 0; index < summary.coarse.planned; ++index) {
+            if (!evaluate(space.coarsePoint(index), summary.coarse, true)) break;
         }
+        // 阶段交界处暂停仍归入粗搜耗时，不只计入总耗时。
+        if (m_settings.method == OptimizationSettings::CoarseFine && !stopped && !waitIfPaused())
+            stopped = true;
+        summary.coarse.elapsed_ms = timer.elapsed();
+        summary.coarseCompleted = summary.coarse.processedCount() == summary.coarse.planned;
+        summary.coarseHasBest = haveBest;
+        if (haveBest) summary.coarseBestCost = optimizationMaterialCost(best.result);
+
+        if (m_settings.method == OptimizationSettings::CoarseFine) {
+            if (stopped) {
+                summary.fineSkipReason = QStringLiteral("粗搜阶段已停止，未进入细搜。");
+            } else if (seeds.isEmpty()) {
+                summary.fineSkipReason = QStringLiteral("粗搜没有可行方案，未进入细搜；订单约束不放宽。");
+            } else {
+                QElapsedTimer fineTimer;
+                fineTimer.start();
+                QVector<Point> finePoints;
+                summary.fineSeedCount = int(seeds.size());
+                // 先生成去重后的确切计划，缓存包含失败和线型预检剔除点。
+                for (const auto &seed : seeds) {
+                    for (const auto &point : space.neighbors(seed.point)) {
+                        ++summary.fineGenerated;
+                        const QString key = GridSearchSpace::key(point);
+                        if (visited.contains(key)) {
+                            ++summary.duplicateSkipped;
+                        } else {
+                            visited.insert(key);
+                            finePoints.append(point);
+                        }
+                    }
+                }
+                summary.fine.planned = int(finePoints.size());
+                if (finePoints.isEmpty()) {
+                    summary.fineSkipReason = QStringLiteral("细搜邻域均已在粗搜处理，无新增组合；整数和圆线不插值。");
+                } else {
+                    summary.fineStarted = true;
+                    emit stageChanged(2, summary.fine.planned);
+                    emit progressUpdated(0);
+                    for (const auto &point : finePoints) {
+                        if (!evaluate(point, summary.fine, false)) break;
+                    }
+                }
+                summary.fine.elapsed_ms = fineTimer.elapsed();
+            }
+        }
+        summary.planned = summary.coarse.planned + summary.fine.planned;
+        summary.evaluated = summary.coarse.evaluated + summary.fine.evaluated;
+        summary.accepted = summary.coarse.accepted + summary.fine.accepted;
+        summary.invalid = summary.coarse.invalid + summary.fine.invalid;
+        summary.constraintRejected = summary.coarse.constraintRejected + summary.fine.constraintRejected;
+        summary.wireFormRejected = summary.coarse.wireFormRejected + summary.fine.wireFormRejected;
         summary.elapsed_ms = timer.elapsed();
         emit workFinished(stopped, best, summary);
     }
 
 signals:
+    void stageChanged(int stage, int planned);
     void progressUpdated(int percent);
     void candidateReady(const OptimizeCandidate &candidate);
     void workFinished(bool stopped, const OptimizeCandidate &best,
@@ -209,6 +247,7 @@ void GridOptimizer::start(const TransformerParams &params, const StructureConfig
     connect(thread, &QThread::finished, thread, &QObject::deleteLater);
     connect(m_worker, &Worker::progressUpdated,
             this, &GridOptimizer::progressUpdated);
+    connect(m_worker, &Worker::stageChanged, this, &GridOptimizer::stageChanged);
     connect(m_worker, &Worker::candidateReady,
             this, &GridOptimizer::candidateReady);
     connect(m_worker, &Worker::workFinished, this,
