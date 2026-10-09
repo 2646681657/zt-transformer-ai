@@ -9,8 +9,10 @@
 #include <cmath>
 #include "PerformanceCriteria.h"
 #include "MaterialPrices.h"
+#include "CraftConstraints.h"
 
 struct CalcInput {
+    CraftConstraints craftConstraints; // Frozen user manufacturing evidence, persisted for recalculation.
     // 持久化/校核元数据，不参与电磁实际值公式。
     bool hasPerformanceCriteria = false;
     TransformerParams performanceCriteria;

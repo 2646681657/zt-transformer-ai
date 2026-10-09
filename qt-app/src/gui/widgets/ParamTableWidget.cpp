@@ -1367,7 +1367,8 @@ void ParamTableWidget::loadParamsForConfig(const TransformerParams &params, cons
 
     // 六 主空道（设计变量，初值取自 CalcInput）
     addSectionRow(row++, QStringLiteral("六 主空道"));
-    addInputRow(row++, "主空道宽(mm)", QString::number(input.mainDuctWidth_mm),
+    // Search widths must survive an unchanged load/collect at a strict craft minimum.
+    addInputRow(row++, "主空道宽(mm)", QString::number(input.mainDuctWidth_mm, 'g', 17),
                 "纸板厚(mm)", QString::number(input.mainDuctInsul_mm),
                 "mainDuctWidth", "mainDuctInsul");
     item(row - 1, 5)->setText(QStringLiteral("第二油道AG43自动联动：高压>12kV为5mm，否则0；>24kV另加1.5+5mm"));

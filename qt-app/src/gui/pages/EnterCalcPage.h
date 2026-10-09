@@ -59,6 +59,7 @@ private slots:
     void onOptimizeProgress(int percent);
     // 候选方案入库（方案表）
     void onOptimizeCandidate(const OptimizeCandidate &candidate);
+    void onOptimizeCandidates(const QVector<OptimizeCandidate> &candidates);
     // 寻优结束：最优方案加载到结果面板
     void onOptimizeFinished(bool stopped, const OptimizeCandidate &best,
                             const OptimizationRunSummary &summary);
@@ -180,6 +181,7 @@ private:
     double m_optBestCost = 0.0;
     int m_optStage = 1;
     int m_optStagePlanned = 0;
+    int m_optProgressPercent = 0;
     bool m_optRunning = false;            // 寻优运行中标志
     bool m_discardOptimizationResults = false; // 输入已更换，忽略旧寻优线程的后续信号
     SchemeTableWidget *m_schemeTable;

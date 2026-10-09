@@ -8,6 +8,7 @@
 #include <QMap>
 #include <cmath>
 #include <limits>
+#include <array>
 #include "TransformerParams.h"
 #include "StructureConfig.h"
 #include "CalcInput.h"
@@ -57,6 +58,16 @@ struct OptimizationSettings {
     QMap<QString, QString> steelGradePriceTexts; // 保留用户输入及空/非法值，设置持久化用
     MaterialPrices materialPrices;
     QStringList materialPriceTexts{QStringLiteral("60"), QStringLiteral("60"), QStringLiteral("10"), QStringLiteral("9")};
+    int combinationBudget = 100000;
+    bool enhancedCoverage = false;
+    int centerLimit = 6;
+    bool expandCoverage = false;
+    int maxExpansionRounds = 2;
+    bool searchMainDuct = false;
+    double mainDuctStep_mm = 0.5;
+    int mainDuctRange = 1;
+    std::array<QString, 9> hardMinimumTexts{}, hardMaximumTexts{};
+    CraftConstraints craftConstraints;
     static constexpr int maximumCombinations = 100000;
     static constexpr int fineSeedLimit = 3;
     static constexpr int maximumFineRounds = 5;
@@ -67,6 +78,27 @@ struct OptimizationSettings {
         return method == MultiRound ? maxFineRounds : (method == CoarseFine ? 1 : 0);
     }
     bool hasRefinement() const { return method == CoarseFine || method == MultiRound; }
+    int coordinateRounds() const {
+        return enhancedCoverage && expandCoverage ? qMax(1, fineRoundCount()) : fineRoundCount();
+    }
+    int mainDuctRadius() const { return searchMainDuct ? mainDuctRange : 0; }
+    std::array<int, 9> numericRanges() const {
+        return {diameterRadius(), straightRadius(), lvTurnsRadius(), hvLayersRadius(),
+            lvFoilThickRadius(), lvFoilWidthRadius(), hvBareWidthRadius(), hvBareThickRadius(), mainDuctRadius()};
+    }
+    std::array<double, 9> numericSteps() const {
+        return {diaStep_mm, straightStep_mm, 1.0, 1.0, lvFoilThickStep_mm,
+            lvFoilWidthStep_mm, hvBareWidthStep_mm, hvBareThickStep_mm, mainDuctStep_mm};
+    }
+    static std::array<double, 9> numericBases(const CalcInput &base) {
+        return {base.coreDiameter_mm, base.coreStraight_mm, double(base.lvTurns), double(base.hvTurnsPerLayer),
+            base.lvFoilThick_mm, base.lvFoilWidth_mm, base.hvBareWidth_mm, base.hvBareThick_mm, base.mainDuctWidth_mm};
+    }
+    static QStringList numericNames() {
+        return {QStringLiteral("铁芯直径"), QStringLiteral("直线段长"), QStringLiteral("低压匝数"),
+            QStringLiteral("高压总层数W12"), QStringLiteral("低压箔厚"), QStringLiteral("低压箔宽"),
+            QStringLiteral("高压裸线宽"), QStringLiteral("高压裸线厚"), QStringLiteral("主油道宽")};
+    }
 
     int diameterRadius() const { return searchDiameter ? diaRange : 0; }
     int straightRadius() const { return searchStraight ? straightRange : 0; }
@@ -77,12 +109,13 @@ struct OptimizationSettings {
     int hvBareWidthRadius() const { return searchHvBareWidth ? hvBareWidthRange : 0; }
     int hvBareThickRadius() const { return searchHvBareThick ? hvBareThickRange : 0; }
     int plannedCount() const {
-        const int ranges[] = {diameterRadius(), straightRadius(), lvTurnsRadius(), hvLayersRadius(),
-                              lvFoilThickRadius(), lvFoilWidthRadius(), hvBareWidthRadius(), hvBareThickRadius()};
+        const auto ranges = numericRanges();
         int count = 1;
         for (int range : ranges) {
             if (range < 0 || range > 5) return 0;
-            count *= 2 * range + 1;
+            const int factor = 2 * range + 1;
+            count = count > std::numeric_limits<int>::max() / factor
+                ? std::numeric_limits<int>::max() : count * factor;
         }
         if (searchHvRoundWire) {
             if (hvRoundWireRange < 0 || hvRoundWireRange > 5 || hvRoundWireDiameters.isEmpty()
@@ -101,8 +134,7 @@ struct OptimizationSettings {
         return count;
     }
     int fineNeighborhoodUpperBound() const {
-        const int ranges[] = {diameterRadius(), straightRadius(), lvTurnsRadius(), hvLayersRadius(),
-                              lvFoilThickRadius(), lvFoilWidthRadius(), hvBareWidthRadius(), hvBareThickRadius()};
+        const auto ranges = numericRanges();
         int count = 1;
         for (int range : ranges) count *= range > 0 ? 3 : 1;
         if (searchHvRoundWire) count *= qMin(3, int(hvRoundWireDiameters.size()));
@@ -117,6 +149,14 @@ struct OptimizationSettings {
                 * fineNeighborhoodUpperBound() : 0);
     }
     QString validationError(const CalcInput &base) const {
+        if (combinationBudget < 1000 || combinationBudget > 1000000)
+            return QStringLiteral("总处理预算须为1000至1000000。");
+        if (enhancedCoverage && (centerLimit < 3 || centerLimit > 12))
+            return QStringLiteral("增强细搜中心数须为3至12。");
+        if (enhancedCoverage && expandCoverage && (maxExpansionRounds < 1 || maxExpansionRounds > 5))
+            return QStringLiteral("最大扩展轮数须为1至5。");
+        const QString craftError = craftConstraints.validationError();
+        if (!craftError.isEmpty()) return craftError;
         const auto materialPriceError = materialPrices.validationError();
         if (!materialPriceError.isEmpty()) return materialPriceError;
         if (steelPricing != BuiltInSteelPrice && steelPricing != CustomSteelPrices)
@@ -168,11 +208,18 @@ struct OptimizationSettings {
             return QStringLiteral("当前为圆线，不能使用扁线宽/厚寻优。请取消高压裸线宽、厚的参与勾选；圆线仍只支持有效表内规格。");
         if (plannedCount() == 0)
             return QStringLiteral("参与寻优的范围必须为0至5步。");
-        if (plannedCount() > maximumCombinations)
-            return QStringLiteral("单轮最多%1组合，请缩小搜索范围或固定部分变量。").arg(maximumCombinations);
-        if (runUpperBound() > maximumCombinations)
+        if (plannedCount() > combinationBudget)
+            return QStringLiteral("初始粗搜%1组合超过总处理预算%2，请调整预算、搜索范围或参与变量。")
+                .arg(plannedCount()).arg(combinationBudget);
+        if (!enhancedCoverage && runUpperBound() > combinationBudget)
             return QStringLiteral("本次保守预算%1组合超过上限%2，请减少细搜轮数、缩小范围或固定部分变量（预算尚未扣除重复与边界裁剪）。")
-                .arg(runUpperBound()).arg(maximumCombinations);
+                .arg(runUpperBound()).arg(combinationBudget);
+        if (searchMainDuct && (!std::isfinite(mainDuctStep_mm) || mainDuctStep_mm < 0.1 || mainDuctStep_mm > 5.0))
+            return QStringLiteral("主油道步长须为0.1至5 mm。");
+        const double ductSpan = mainDuctRadius() * (searchMainDuct ? mainDuctStep_mm : 0.0);
+        if (searchMainDuct && (!std::isfinite(base.mainDuctWidth_mm - ductSpan)
+                || base.mainDuctWidth_mm - ductSpan <= 0.0 || !std::isfinite(base.mainDuctWidth_mm + ductSpan)))
+            return QStringLiteral("主油道搜索下界须为正数，上界须为有限值。");
         const double wireBases[] = {base.hvBareWidth_mm, base.hvBareThick_mm};
         const double wireSteps[] = {searchHvBareWidth ? hvBareWidthStep_mm : 0.0,
                                     searchHvBareThick ? hvBareThickStep_mm : 0.0};
@@ -229,12 +276,49 @@ struct OptimizationSettings {
         const int radii[] = {diameterRadius(), straightRadius(), lvFoilThickRadius(),
                             lvFoilWidthRadius(), hvBareWidthRadius(), hvBareThickRadius()};
         for (int i = 0; i < 6; ++i) {
-            const double delta = std::ldexp(steps[i], -fineRoundCount());
+            const double delta = std::ldexp(steps[i], -coordinateRounds());
             const double upper = bases[i] + radii[i] * steps[i];
             const double lower = bases[i] - radii[i] * steps[i];
             if (radii[i] > 0 && (upper + delta == upper || upper - delta == upper
                     || lower + delta == lower || lower - delta == lower))
                 return QStringLiteral("搜索步长小于当前尺寸的可表示精度，请核对基准与步长。");
+        }
+        const auto allBases = numericBases(base);
+        const auto allSteps = numericSteps();
+        const auto allRanges = numericRanges();
+        const auto names = numericNames();
+        for (int d = 0; d < 9; ++d) {
+            const double step = allRanges[d] > 0 ? allSteps[d] : 0.0;
+            const double low = allBases[d] - allRanges[d] * step;
+            const double high = allBases[d] + allRanges[d] * step;
+            const double delta = std::ldexp(step, -coordinateRounds());
+            if (allRanges[d] > 0 && (high + delta == high || low - delta == low))
+                return QStringLiteral("%1步长小于数值可表示精度。").arg(names[d]);
+            if (!enhancedCoverage || !expandCoverage) continue;
+            const bool emptyLow = hardMinimumTexts[d].trimmed().isEmpty();
+            const bool emptyHigh = hardMaximumTexts[d].trimmed().isEmpty();
+            if (emptyLow && emptyHigh) continue;
+            bool okLow = false, okHigh = false;
+            const double hardLow = hardMinimumTexts[d].trimmed().toDouble(&okLow);
+            const double hardHigh = hardMaximumTexts[d].trimmed().toDouble(&okHigh);
+            if (emptyLow || emptyHigh || !okLow || !okHigh || !std::isfinite(hardLow)
+                    || !std::isfinite(hardHigh) || hardLow > hardHigh || hardLow > low || hardHigh < high)
+                return QStringLiteral("%1硬边界须成对填写有限、有序数值，并涵盖初始范围。").arg(names[d]);
+            if ((d == 1 ? hardLow < 0.0 : hardLow <= 0.0)
+                    || ((d == 2 || d == 3) && (std::floor(hardLow) != hardLow
+                        || std::floor(hardHigh) != hardHigh || hardHigh > std::numeric_limits<int>::max()
+                        || hardLow < (d == 3 ? 2.0 : 1.0))))
+                return QStringLiteral("%1硬边界不满足尺寸正数或有效整数条件。").arg(names[d]);
+            if (allRanges[d] > 0) {
+                const double unit = (d == 2 || d == 3) ? 1.0
+                    : std::ldexp(allSteps[d], -coordinateRounds());
+                const double a = (hardLow - allBases[d]) / unit;
+                const double b = (hardHigh - allBases[d]) / unit;
+                const double limit = double(std::numeric_limits<int>::max()) - (1 << coordinateRounds());
+                if (!std::isfinite(a) || !std::isfinite(b) || a < -limit || b > limit
+                        || hardHigh + unit == hardHigh || hardLow - unit == hardLow)
+                    return QStringLiteral("%1硬边界超出有效坐标或可表示精度范围。").arg(names[d]);
+            }
         }
         return {};
     }
@@ -244,15 +328,17 @@ struct OptimizationStageSummary {
     int planned = 0;
     int evaluated = 0;
     int wireFormRejected = 0; // 扁线宽=厚预检剔除，未调用引擎，不算计算失败
+    int craftRejected = 0;
     int accepted = 0;
     int invalid = 0;
     int constraintRejected = 0;
     qint64 elapsed_ms = 0; // 墙钟时间，包含暂停
-    int processedCount() const { return evaluated + wireFormRejected; }
+    int processedCount() const { return evaluated + wireFormRejected + craftRejected; }
     void accumulate(const OptimizationStageSummary &other) {
         planned += other.planned;
         evaluated += other.evaluated;
         wireFormRejected += other.wireFormRejected;
+        craftRejected += other.craftRejected;
         accepted += other.accepted;
         invalid += other.invalid;
         constraintRejected += other.constraintRejected;
@@ -261,6 +347,7 @@ struct OptimizationStageSummary {
 };
 
 struct OptimizationRefinementSummary : OptimizationStageSummary {
+    QString phaseLabel; // Enhanced local re-entry / expansion label; legacy remains empty.
     int round = 0;
     int seedCount = 0;
     int generated = 0;
@@ -277,6 +364,10 @@ struct OptimizationSteelSummary : OptimizationStageSummary {
 };
 
 struct OptimizationRunSummary : OptimizationStageSummary {
+    int retained = 0;
+    int omitted = 0;
+    QVector<OptimizationRefinementSummary> expansions;
+    QStringList centerDetails, coverageDetails;
     bool hasBest = false;
     int boundarySearchDimensions = 0; // 仅非零范围尺寸及至少两档的圆线
     QStringList bestBoundaryHits; // 已评估最低成本可行方案，相对本轮冻结范围
@@ -298,7 +389,7 @@ struct OptimizationRunSummary : OptimizationStageSummary {
     QStringList skippedChecks;
     QMap<QString, int> rejectionReasons;
     QMap<QString, int> calculationErrors; // 最多20种失败描述，其余归入其他
-    int processedCount() const { return evaluated + wireFormRejected; }
+    int processedCount() const { return evaluated + wireFormRejected + craftRejected; }
 };
 Q_DECLARE_METATYPE(OptimizationRunSummary)
 
@@ -309,6 +400,7 @@ struct OptimizeCandidate {
     OptimizationResult scheme;
 };
 Q_DECLARE_METATYPE(OptimizeCandidate)
+Q_DECLARE_METATYPE(QVector<OptimizeCandidate>)
 
 class IOptimizer : public QObject {
     Q_OBJECT
@@ -330,6 +422,7 @@ signals:
     void stageChanged(int stage, int planned); // 1粗搜（或单轮），2及以后为细搜第stage-1轮
     void progressUpdated(int percent);
     void candidateReady(const OptimizeCandidate &candidate);
+    void candidatesReady(const QVector<OptimizeCandidate> &candidates);
     // 寻优结束（stopped=true 表示被手动停止）；
     // accepted>0 时 best 为已评估候选中材料成本最低的方案。
     void finished(bool stopped, const OptimizeCandidate &best, const OptimizationRunSummary &summary);
