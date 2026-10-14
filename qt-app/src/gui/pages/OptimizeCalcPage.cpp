@@ -377,11 +377,18 @@ void OptimizeCalcPage::applySchemeInput(const CalcInput &input)
     // 先收集用户在表格中编辑过的输入信息（海拔/环境温度等），
     // 重建表格时保留这些值；再同步额定值（容量/电压）
     m_params = m_paramTable->getParams();
+    const double oldCap = m_params.capacity_kVA;   // 容量变化检测（联动触发条件）
     m_params.capacity_kVA = input.capacity_kVA;
     m_params.hvRatedVoltage_kV = input.hvRated_kV;
     m_params.lvRatedVoltage_kV = input.lvRated_kV;
     const bool proMode = (m_config.calcMode == StructureConfig::Professional);
     m_paramTable->loadParamsForConfig(m_params, m_config, m_input, proMode);
+    // 容量变化且落 GB 表内 → 自动按新容量联动损耗标准值（与手动切换一致），
+    // 结果经 stdValuesUpdated 信号显示在提示条；非标容量查表失败自动跳过
+    if (qAbs(m_params.capacity_kVA - oldCap) > 0.5
+            && m_config.coreType == StructureConfig::StackedSilicon) {
+        m_paramTable->applyModelLinkage();
+    }
 }
 
 // 侧边栏方案按钮分发（0=导入参数表 1=AI助手 7=进入计算，均已独立连接，此处忽略；

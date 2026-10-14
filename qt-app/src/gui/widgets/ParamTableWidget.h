@@ -23,16 +23,18 @@ public:
     TransformerParams getParams() const;
     // 从表格设计变量节读回 CalcInput（未绑定或非法输入的域保持原值）
     void saveToInput(CalcInput &input) const;
+    // 公共入口：AI 助手/方案库等外部应用方案后，容量变化时可调用按
+    // GB 20052-2024 刷新损耗标准值（非标容量/非叠铁芯内部自动跳过）
+    void applyModelLinkage();
 
 signals:
     // 型号/容量联动：按 GB 20052-2024 叠铁芯标准值自动覆盖损耗/阻抗标准值后发出
     void stdValuesUpdated(const QString &summary);
 
 private:
-    // 叠铁芯时产品型号/容量改为下拉，切换后按国标表联动标准值
-    void applyModelLinkage();
-    QComboBox *m_modelCombo = nullptr;   // 产品型号（叠铁芯：SB22/SB20/SB13-M）
-    QComboBox *m_capacityCombo = nullptr; // 容量（标准 19 档）
+    // 型号/容量联动实现：查表覆盖损耗标准值单元格（applyModelLinkage 为公共入口）
+    QComboBox *m_modelCombo = nullptr;   // 产品型号（叠铁芯：SB22/SB20/SB13-M，可输入非标）
+    QComboBox *m_capacityCombo = nullptr; // 容量（标准 19 档，非标容量追加为额外选项）
     bool m_loading = false;               // 加载期间抑制联动信号
 
     void setupTable();

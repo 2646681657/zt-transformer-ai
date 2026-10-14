@@ -3,6 +3,7 @@
 #include <QHeaderView>
 #include <QFont>
 #include <QComboBox>
+#include <QLineEdit>
 
 ParamTableWidget::ParamTableWidget(QWidget *parent)
     : QTableWidget(parent)
@@ -116,9 +117,14 @@ TransformerParams ParamTableWidget::getParams() const
         }
     };
 
-    // 输入信息（叠铁芯时容量/型号来自下拉控件，其余来自文本单元格）
+    // 输入信息（叠铁芯时容量/型号来自可编辑下拉，其余来自文本单元格；
+    // 手动输入容量非法（空/非数字/≤0）时保持原值，不写入 0）
     if (m_capacityCombo) {
-        params.capacity_kVA = m_capacityCombo->currentData().toDouble();
+        bool ok = false;
+        const double v = m_capacityCombo->currentText().trimmed().toDouble(&ok);
+        if (ok && v > 0) {
+            params.capacity_kVA = v;
+        }
     } else {
         setDouble("capacity", params.capacity_kVA);
     }
@@ -130,9 +136,12 @@ TransformerParams ParamTableWidget::getParams() const
     setDouble("maxAltitude", params.maxAltitude_m);
     setString("efficiencyCalcMethod", params.efficiencyCalcMethod);
     if (m_modelCombo) {
-        // 完整型号 = 系列 + 容量（如 SB20-M-630），与铭牌命名一致
-        params.productModel = m_modelCombo->currentText() + QStringLiteral("-")
-                              + QString::number((int)params.capacity_kVA);
+        // 完整型号 = 系列 + 容量（如 SB20-M-630）；非标型号原样保留
+        const QString txt = m_modelCombo->currentText().trimmed();
+        if (!txt.isEmpty()) {
+            params.productModel = txt + QStringLiteral("-")
+                                  + QString::number((int)params.capacity_kVA);
+        }
     } else {
         setString("productModel", params.productModel);
     }
@@ -168,7 +177,13 @@ void ParamTableWidget::applyModelLinkage()
         return;
     }
     const QString series = m_modelCombo->currentText();
-    const double cap = m_capacityCombo->currentData().toDouble();
+    // 可编辑下拉：容量取当前文本（下拉选中与手动输入统一走 toDouble 解析），
+    // 非法或非正值跳过联动，不覆盖任何单元格
+    bool capOk = false;
+    const double cap = m_capacityCombo->currentText().trimmed().toDouble(&capOk);
+    if (!capOk || cap <= 0) {
+        return;
+    }
     const ModelStdTable::StdEntry *e = ModelStdTable::lookup(series, cap);
     if (!e) {
         return;
@@ -222,37 +237,60 @@ void ParamTableWidget::loadParamsForConfig(const TransformerParams &params, cons
     // 一 输入信息（所有类型共有；静态行同样绑定 key，getParams 按 key 读取）
     addSectionRow(row++, QStringLiteral("一 输入信息"),
                   QStringLiteral("变压器效率计算方式"), params.efficiencyCalcMethod);
-    // 容量/产品型号：叠铁芯用下拉（标准 19 档容量 + SB 系列型号），
-    // 切换后按 GB 20052-2024 联动覆盖损耗标准值（阻抗为铭牌参数不联动）；
+    // 容量/产品型号：叠铁芯用可编辑下拉（标准 19 档容量 + SB 系列型号），
+    // 切换/输入后按 GB 20052-2024 联动覆盖损耗标准值（阻抗为铭牌参数不联动）；
     // 其他铁芯类型保持原文本展示
     if (config.coreType == StructureConfig::StackedSilicon) {
         addParamRow(row, "容量(kVA)", QString::number(params.capacity_kVA),
                     "产品型号", params.productModel);
         m_capacityCombo = new QComboBox(this);
+        // 可编辑下拉：下拉选标准档自动联动；直接输入任意容量
+        // （非标如 750 不联动，落 GB 档如 630 输入后回车同样联动）
+        m_capacityCombo->setEditable(true);
+        m_capacityCombo->setInsertPolicy(QComboBox::NoInsert);
+        m_capacityCombo->setToolTip(QStringLiteral(
+            "下拉选择或输入容量（kVA）：落在 GB 20052-2024 标准档时自动联动损耗标准值"));
         const QVector<double> caps = ModelStdTable::capacities();
         for (const double c : caps) {
             m_capacityCombo->addItem(QString::number((int)c), c);
         }
         setCellWidget(row, 2, m_capacityCombo);
         m_modelCombo = new QComboBox(this);
+        // 可编辑下拉：选标准系列（SB22/SB20/SB13-M）触发 GB 标准值联动；
+        // 直接输入非标型号（如 SCB10）不联动，标准值保持当前设置
+        m_modelCombo->setEditable(true);
+        m_modelCombo->setInsertPolicy(QComboBox::NoInsert);
+        m_modelCombo->setToolTip(QStringLiteral(
+            "选择标准系列自动联动损耗标准值；也可直接输入非标型号（此时不联动）"));
         m_modelCombo->addItems({QStringLiteral("SB22-M"), QStringLiteral("SB20-M"),
                                 QStringLiteral("SB13-M")});
         setCellWidget(row, 4, m_modelCombo);
         m_loading = true;
-        // 非标准容量（如历史方案 750kVA）追加为额外选项，不静默回落到 630；
-        // 此时 GB 表查不到标准值，applyModelLinkage 自动跳过（不覆盖任何单元格）
-        int ci = m_capacityCombo->findData(params.capacity_kVA);
-        if (ci < 0) {
-            m_capacityCombo->addItem(QString::number((int)params.capacity_kVA), params.capacity_kVA);
-            ci = m_capacityCombo->findData(params.capacity_kVA);
+        // 标准容量直接选中对应档；非标容量（如历史方案 750kVA）以纯文本显示，
+        // 不追加列表项、不静默回落——GB 表查不到标准值，联动自动跳过
+        const int ci = m_capacityCombo->findData(params.capacity_kVA);
+        if (ci >= 0) {
+            m_capacityCombo->setCurrentIndex(ci);
+        } else {
+            m_capacityCombo->setCurrentIndex(-1);
+            m_capacityCombo->setCurrentText(QString::number((int)params.capacity_kVA));
         }
-        m_capacityCombo->setCurrentIndex(ci);
-        // productModel 可能是完整型号（如 SB20-M-630），取前两段匹配系列
-        const int mi = m_modelCombo->findText(params.productModel.section('-', 0, 1));
-        m_modelCombo->setCurrentIndex(mi >= 0 ? mi : 1);  // 默认 SB20-M
+        // productModel 可能是完整型号（如 SB20-M-630），取前两段匹配标准系列；
+        // 非标型号（如 SCB10-1250）匹配不上时直接显示原文本，不回落不联动
+        const QString series = params.productModel.section('-', 0, 1);
+        const int mi = m_modelCombo->findText(series);
+        if (mi >= 0) {
+            m_modelCombo->setCurrentIndex(mi);
+        } else {
+            m_modelCombo->setCurrentIndex(-1);
+            m_modelCombo->setCurrentText(series);
+        }
         m_loading = false;
         connect(m_capacityCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
                 this, [this](int) { applyModelLinkage(); });
+        // 手动输入容量回车/失焦 → 尝试联动（非标值查表失败自动跳过）
+        connect(m_capacityCombo->lineEdit(), &QLineEdit::editingFinished,
+                this, [this]() { applyModelLinkage(); });
         connect(m_modelCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
                 this, [this](int) { applyModelLinkage(); });
         ++row;
