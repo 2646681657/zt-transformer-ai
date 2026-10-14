@@ -673,8 +673,28 @@ void calcWindingLayout(EmCtx &c)
     rememberSheetValue(sheet, "W24", w24);
     rememberSheetValue(sheet, "W25", x25, 4);
     rememberSheetValue(sheet, "W26", w26, 4);
+    rememberSheetValue(sheet, "W27", c.hvRadial_mm - w26, 4);
+    rememberSheetValue(sheet, "AA27", c.hvAxial_mm - aa26);
+    sheet.calculationSheetNotes.insert(QStringLiteral("W27"), QStringLiteral("高压辐向裕度=W28−W26；保留实际差值，显示结果不代替工艺判定。"));
+    sheet.calculationSheetNotes.insert(QStringLiteral("AA27"), QStringLiteral("高压轴向裕度=AA28−AA26；保留实际差值，负值需人工核对。"));
     rememberSheetValue(sheet, "X41 Z41 Y42", c.x41Sheets, 0);
     rememberSheetValue(sheet, "X42 Y41 Z42", c.x42Sheets, 0);
+    const bool oddLayers = w12 % 2 == 1;
+    rememberSheetValue(sheet, "V41", c.x42Sheets + 2.0, 0);
+    rememberSheetValue(sheet, "V42", (oddLayers ? c.x41Sheets : c.x42Sheets) + 2.0, 0);
+    rememberSheetValue(sheet, "AB41", (oddLayers ? c.x41Sheets : c.x42Sheets) + 1.0, 0);
+    rememberSheetValue(sheet, "AB42", (oddLayers ? c.x42Sheets : c.x41Sheets) + 1.0, 0);
+    sheet.calculationSheetTexts.insert(QStringLiteral("AC40"), oddLayers ? QString() : QStringLiteral("X"));
+    sheet.calculationSheetTexts.insert(QStringLiteral("AC42"), oddLayers ? QStringLiteral("X") : QString());
+    sheet.calculationSheetNotes.insert(QStringLiteral("AC40"), QStringLiteral("原表绝缘排列标记：偶数总层数显示X，奇数层留空。"));
+    sheet.calculationSheetNotes.insert(QStringLiteral("AC42"), QStringLiteral("原表绝缘排列标记：奇数总层数显示X，偶数层留空。"));
+    rememberSheetValue(sheet, "Z35", double(w12) - c.ductLayerIdx[0] - c.ductLayerIdx[1] - c.ductLayerIdx[2], 0);
+    sheet.calculationSheetNotes.insert(QStringLiteral("Z35"), QStringLiteral("按原表Z35仅扣除Z30、Z31、Z32，不等同于扣除所有油道层序后的剩余层数。"));
+    rememberSheetValue(sheet, "AH43", kV > 24.0 ? 1.5 : 0.0, 1);
+    rememberSheetValue(sheet, "AI43", kV > 24.0 ? 5.0 : 0.0, 1);
+    if (kV > 24.0) sheet.calculationSheetTexts.insert(QStringLiteral("AJ43"), QStringLiteral("取消"));
+    else rememberSheetValue(sheet, "AJ43", 0.0, 0);
+    sheet.calculationSheetNotes.insert(QStringLiteral("AJ43"), QStringLiteral("原表静电屏标记：高压额定电压>24kV时为“取消”，其余为0；只显示现有主空道等级规则。"));
     rememberSheetValue(sheet, "AB36", c.ab36Wide_mm);
     rememberSheetValue(sheet, "AB39", c.ab39Long_mm);
     rememberSheetValue(sheet, "AK33", c.ak33Wide_mm);
@@ -773,6 +793,12 @@ void calcTankGeometry(EmCtx &c)
     rememberSheetValue(*c.out, "B36", b36);
     rememberSheetValue(*c.out, "B38", B38);
     rememberSheetValue(*c.out, "D52", d52);
+    rememberSheetValue(*c.out, "D53 F23", d51 + d52);
+    rememberSheetValue(*c.out, "H23", 2.0 * c.centerDist_mm);
+    rememberSheetValue(*c.out, "S23", in.waveHeight_mm, 0);
+    rememberSheetValue(*c.out, "Q25", in.waveDepth_mm, 0);
+    rememberSheetValue(*c.out, "B48", c.centerDist_mm - c.bChainFull_mm);
+    c.out->calculationSheetNotes.insert(QStringLiteral("B48"), QStringLiteral("实际相间净距=B49中心距−B47绕组辐向全链；不是新增制造约束，也不代替工艺核对。"));
     rememberSheetValue(*c.out, "J24", j24);
     rememberSheetValue(*c.out, "B45", c.bChain_mm);
     rememberSheetValue(*c.out, "B47 H24", c.bChainFull_mm);
@@ -782,6 +808,10 @@ void calcTankGeometry(EmCtx &c)
         const auto hv = QStringLiteral("M%1").arg(34 + i);
         rememberSheetValue(*c.out, qPrintable(lv), c.m29_33[i]);
         rememberSheetValue(*c.out, qPrintable(hv), c.m34_38[i]);
+        const auto lvChain = QStringLiteral("B%1").arg(31 + i);
+        const auto hvChain = QStringLiteral("B%1").arg(40 + i);
+        rememberSheetValue(*c.out, qPrintable(lvChain), in.lvDuctWidthSide[i]);
+        rememberSheetValue(*c.out, qPrintable(hvChain), in.hvDuctWidthSide[i]);
     }
     }
 }
@@ -1057,6 +1087,10 @@ void calcImpedance(EmCtx &c)
     c.out->impedance.a2 = a2;
     c.out->impedance.leakArea_mm2 = leakArea;
     c.out->impedance.kx = q32;
+    if (c.out->sheetDetailsSnapshotAvailable) {
+        rememberSheetValue(*c.out, "Q29", q29, 1);
+        rememberSheetValue(*c.out, "Q31", q31);
+    }
 
     // 负载损耗（依赖 λ/hx）
     calcLoadLoss(c, c.lambda_mm, q33);
@@ -1283,6 +1317,8 @@ void calcThermal(EmCtx &c)
         rememberSheetValue(*c.out, "O46", o46);
         rememberSheetValue(*c.out, "I49", i49, 0);
         rememberSheetValue(*c.out, "S50", ks, 3);
+        rememberSheetValue(*c.out, "L51", 6.0, 0);
+        c.out->calculationSheetNotes.insert(QStringLiteral("L51"), QStringLiteral("当前油顶层温升公式固定修正项：N51=ROUND(1.2×N49+6,1)。此处为只读常数显示。"));
     }
 }
 
