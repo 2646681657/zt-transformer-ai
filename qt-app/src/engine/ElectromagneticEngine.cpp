@@ -8,6 +8,7 @@
 #include "DesignDatabase.h"
 #include "HvCoilFormNotes.h"
 #include "HvEndInsulationNotes.h"
+#include "CalculationSheetDescriptions.h"
 
 // ============================================================================
 // 工具函数：Excel 语义复现
@@ -1689,7 +1690,10 @@ bool ElectromagneticEngine::calcElectromagnetic(const CalcInput &input, CalcResu
     result.sheetLayoutSnapshotAvailable = result.valid;
     result.sheetDetailsSnapshotAvailable = result.valid && captureSheetDetails;
     result.calculationSheetDetailVersion = result.sheetDetailsSnapshotAvailable ? SheetDetailVersion : 0;
-    if (result.sheetDetailsSnapshotAvailable) capturePerformanceDeviations(input, result);
+    if (result.sheetDetailsSnapshotAvailable) {
+        capturePerformanceDeviations(input, result);
+        CalculationSheetDescriptions::capture(input, result);
+    }
     result.error = ctx.error;
     return result.valid;
 }
