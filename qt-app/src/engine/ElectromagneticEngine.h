@@ -8,6 +8,7 @@
 
 class ElectromagneticEngine : public ICalcEngine {
 public:
+    static constexpr int SheetDetailVersion = 2;
     // 旧接口（打印输出）：以默认设计变量（SB20）计算并组行
     PrintOutputData calculate(const TransformerParams &params,
                               const StructureConfig &config) override;

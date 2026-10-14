@@ -35,6 +35,43 @@ void rememberSheetValue(CalcResult &result, const char *addresses, double value,
         result.calculationSheetDetails.insert(address, {value, decimals});
 }
 
+void capturePerformanceDeviations(const CalcInput &input, CalcResult &result)
+{
+    const auto &criteria = input.performanceCriteria;
+    const bool hasSource = input.hasPerformanceCriteria
+        && PerformanceCriteria::validModel(criteria.productModel)
+        && criteria.standardMode != TransformerParams::StandardMode::Unconfirmed;
+    const char *addresses[] = {"L11", "M11", "O11", "R11"};
+    const double actual[] = {result.winding.loadLoss_W, result.core.noLoadLoss_W,
+        result.core.noLoadCurrent_pct, result.impedance.impedance_pct};
+    const double standards[] = {criteria.loadLossStd_W, criteria.noLoadLossStd_W,
+        criteria.noLoadCurrentStd_pct, criteria.impedanceVoltageStd_pct};
+    for (int i = 0; i < 4; ++i) {
+        const QString address = QString::fromLatin1(addresses[i]);
+        if (!hasSource) {
+            result.calculationSheetNotes.insert(address, QStringLiteral("指标来源待确认"));
+            continue;
+        }
+        if (!std::isfinite(standards[i]) || standards[i] < 0.0) {
+            result.calculationSheetNotes.insert(address, QStringLiteral("标准值无效"));
+            continue;
+        }
+        if (standards[i] == 0.0) {
+            result.calculationSheetNotes.insert(address, QStringLiteral("不适用：标准值为0"));
+            continue;
+        }
+        const double deviation = (actual[i] - standards[i]) / standards[i] * 100.0;
+        if (!std::isfinite(deviation) || !std::isfinite(excelRound(deviation, 2))) {
+            result.calculationSheetNotes.insert(address, QStringLiteral("偏差不可用"));
+            continue;
+        }
+        rememberSheetValue(result, addresses[i], excelRound(deviation, 2), 2);
+        result.calculationSheetNotes.insert(address,
+            QStringLiteral("（实际值−当前方案标准）/标准×100%；实际%1，标准%2。正值表示高于标准，负值表示低于标准；不代替允许偏差或合格判定。")
+                .arg(PerformanceCriteria::valueText(actual[i]), PerformanceCriteria::valueText(standards[i])));
+    }
+}
+
 LvTurnsRecommendation recommendationForArea(const CalcInput &in, double area)
 {
     LvTurnsRecommendation r;
@@ -618,6 +655,17 @@ void calcWindingLayout(EmCtx &c)
     rememberSheetValue(sheet, "W9", c.segLayers[0], 0);
     rememberSheetValue(sheet, "W10", c.segLayers[1], 0);
     rememberSheetValue(sheet, "W11", c.segLayers[2], 0);
+    // 原表 AA9/AA10 是各段匝数，Y11 是末层剩余匝数。
+    // 仅生成显示快照；不改动用于电磁计算的匝数及层分布。
+    const double aa9 = double(c.segLayers[0]) * c.segTurnsPerLayer;
+    const double aa10 = double(c.segLayers[1]) * c.segTurnsPerLayer;
+    const double y11 = double(c.hvTurnsMax) - aa9 - aa10;
+    rememberSheetValue(sheet, "AA9", aa9, 0);
+    rememberSheetValue(sheet, "AA10", aa10, 0);
+    rememberSheetValue(sheet, "Y11", y11, 0);
+    rememberSheetValue(sheet, "AA11", double(c.segLayers[2]) * y11, 0);
+    if (c.segLayers[0] < 0 || c.segLayers[1] < 0 || y11 <= 0)
+        sheet.calculationSheetNotes.insert(QStringLiteral("Y11"), QStringLiteral("末层或段层数非正，请核对总层数与匝数分布；此明细不代替工艺判定。"));
     rememberSheetValue(sheet, "AA22", c.hvAxialPerWire_mm, 3);
     rememberSheetValue(sheet, "AA24", aa24);
     rememberSheetValue(sheet, "AA25", aa25);
@@ -640,6 +688,10 @@ void calcWindingLayout(EmCtx &c)
             for (int j = 0; j <= i; ++j) active = active && in.lvDuctHeightSide[j] != 0.0;
         if (active) rememberSheetValue(sheet, segmentCells[i], c.lvSegmentTurns[i], 0);
     }
+    double allocatedLvTurns = 0.0;
+    for (int turns : c.lvSegmentTurns) allocatedLvTurns += turns;
+    rememberSheetValue(sheet, "AK10", double(in.lvTurns) - allocatedLvTurns, 0);
+    sheet.calculationSheetNotes.insert(QStringLiteral("AK10"), QStringLiteral("低压剩余匝数=实际匝数−已分配各段匝数；停用段按现有计算口径计0，全部油道停用时剩余为0。"));
     }
     c.out->winding.lvAxial_mm = c.lvAxialOuter_mm;
     for (int i = 0; i < 5; ++i) c.out->winding.ductLayerIdx[i] = c.ductLayerIdx[i];
@@ -932,6 +984,11 @@ void calcLoadLoss(EmCtx &c, double lambda_mm, double hx_mm)
     c.out->winding.strayLossFactor = in.strayLossFactor;
     c.out->winding.loadLossBeforeStray_W =
         h10 + (in.isRoundHighVoltageWire() ? 0.0 : i10);
+    if (c.out->sheetDetailsSnapshotAvailable) {
+        rememberSheetValue(*c.out, "H10", h10, 0);
+        rememberSheetValue(*c.out, "I10", i10, 3);
+        c.out->calculationSheetNotes.insert(QStringLiteral("I10"), QStringLiteral("附加损耗显示值含当前低压附加项；圆线分支不将此合计加入L10负载损耗，低压热负荷仍按原规则计算。"));
+    }
 }
 
 // ============================================================================
@@ -1595,6 +1652,8 @@ bool ElectromagneticEngine::calcElectromagnetic(const CalcInput &input, CalcResu
     result.linkageSnapshotAvailable = result.valid;
     result.sheetLayoutSnapshotAvailable = result.valid;
     result.sheetDetailsSnapshotAvailable = result.valid && captureSheetDetails;
+    result.calculationSheetDetailVersion = result.sheetDetailsSnapshotAvailable ? SheetDetailVersion : 0;
+    if (result.sheetDetailsSnapshotAvailable) capturePerformanceDeviations(input, result);
     result.error = ctx.error;
     return result.valid;
 }
