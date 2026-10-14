@@ -2539,7 +2539,7 @@ void EnterCalcPage::onSchemeSelected(int row)
             return false;
         }
         CalcResult res;
-        if (!m_engine.calcElectromagnetic(in, res) || !res.valid) {
+        if (!m_engine.calcElectromagnetic(in, res, true) || !res.valid) {
             sheet->showCalculationError(res.error);
             summary->setText(QStringLiteral("当前参数计算失败：") + res.error);
             if (interactive) QMessageBox::warning(&dlg, QStringLiteral("方案计算"), QStringLiteral("计算失败: %1").arg(res.error));
@@ -2602,7 +2602,8 @@ void EnterCalcPage::onSchemeSelected(int row)
 
     connect(cancelBtn, &QPushButton::clicked, &dlg, &QDialog::reject);
     connect(&dlg, &QDialog::finished, &autoCalcTimer, &QTimer::stop);
-    if (!pendingResult.valid) autoCalcTimer.start(0);
+    if (!pendingResult.valid || !pendingResult.linkageSnapshotAvailable || !pendingResult.sheetLayoutSnapshotAvailable
+        || !pendingResult.sheetDetailsSnapshotAvailable) autoCalcTimer.start(0);
 
     // 默认占满屏幕工作区，保留标题栏、关闭按钮和还原能力。
     dlg.showMaximized();

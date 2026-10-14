@@ -5,6 +5,7 @@
 
 #include <QString>
 #include <QVector>
+#include <QMap>
 #include "TestVoltageHints.h"
 #include "MaterialPrices.h"
 
@@ -30,6 +31,8 @@ struct CoreResult {
     double yokeFlat_mm = 0.0;          // O20 圆心到轴
     double junctionHeight_mm = 0.0;    // R20 交接点高
     double minorAxis_mm = 0.0;         // L20 短轴长
+    double majorAngle_deg = 0.0;       // P12 大圆心角（椭圆角派生）
+    double minorAngle_deg = 0.0;       // S12 小圆心角（椭圆角派生）
     // 叠积（16 级：11 级主叠积 + 轭片基宽 90/80/60 + 空）
     QVector<double> widths_mm;         // 各级片宽
     QVector<double> stacks_mm;         // 各级叠厚
@@ -222,8 +225,12 @@ struct ElectricalResult {
 };
 
 struct CalcResult {
+    // 仅“计算单”工作表的已有中间量快照；Sheet1 地址不能混入。
+    QMap<QString, QPair<double, int>> calculationSheetDetails;
+    bool sheetDetailsSnapshotAvailable = false;
     ElectricalResult electrical;
     bool linkageSnapshotAvailable = false; // 旧快照不能把新增默认0显示为实际结果。
+    bool sheetLayoutSnapshotAvailable = false; // 原表布局新增输出需由本版本重算。
     OilExpansionResult oilExpansion;
     TestVoltageHints testVoltage;
     CoreResult core;
