@@ -356,12 +356,17 @@ auto sheetGroups(const CalcResult &result)
         "AB36 AB39 AK33 AK34 AK36 AK39 AF10 AG10 AH10 AI10 AJ10 "
         "D51 D52 J24 B27 B29 B36 B38 B45 B47 H24 S44 C17 M29 M30 M31 M32 M33 M34 M35 M36 M37 M38 "
         "C12 C13 Q22 C14 C15 D12 D13 D14 D15 D16 D17 Q26 C20 C21 C22 O46 I49 S50 "
-        "AA9 AA10 Y11 AA11 AK10 H10 I10 L11 M11 O11 R11").split(QLatin1Char(' '));
+        "AA9 AA10 Y11 AA11 AK10 H10 I10 L11 M11 O11 R11 "
+        "D53 F23 H23 S23 Q25 B48 B31 B32 B33 B34 B35 B40 B41 B42 B43 B44 "
+        "W27 AA27 Q29 Q31 Z35 V41 V42 AB41 AB42 AC40 AC42 AH43 AI43 AJ43 L51").split(QLatin1Char(' '));
     for (const auto &address : detailAddresses) {
         const auto it = result.calculationSheetDetails.constFind(address);
+        const auto textIt = result.calculationSheetTexts.constFind(address);
         const QString note = result.calculationSheetNotes.value(address);
         const bool hasValue = result.sheetDetailsSnapshotAvailable && it != result.calculationSheetDetails.cend();
-        const QString value = result.sheetDetailsSnapshotAvailable && it != result.calculationSheetDetails.cend()
+        const bool hasText = result.sheetDetailsSnapshotAvailable && textIt != result.calculationSheetTexts.cend();
+        const QString value = hasText ? textIt.value()
+            : result.sheetDetailsSnapshotAvailable && it != result.calculationSheetDetails.cend()
             ? snapshotValue(it.value().first, it.value().second)
             : result.sheetDetailsSnapshotAvailable && !note.isEmpty() ? note
             : result.sheetDetailsSnapshotAvailable && (address == QStringLiteral("AG10") || address == QStringLiteral("AH10")
