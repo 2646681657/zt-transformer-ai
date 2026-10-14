@@ -227,6 +227,8 @@ struct ElectricalResult {
 struct CalcResult {
     // 仅“计算单”工作表的已有中间量快照；Sheet1 地址不能混入。
     QMap<QString, QPair<double, int>> calculationSheetDetails;
+    QMap<QString, QString> calculationSheetNotes;
+    int calculationSheetDetailVersion = 0;
     bool sheetDetailsSnapshotAvailable = false;
     ElectricalResult electrical;
     bool linkageSnapshotAvailable = false; // 旧快照不能把新增默认0显示为实际结果。

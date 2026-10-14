@@ -355,15 +355,21 @@ auto sheetGroups(const CalcResult &result)
         "W9 W10 W11 AA22 AA24 AA25 AA26 W24 W25 W26 X41 Z41 Y42 X42 Y41 Z42 "
         "AB36 AB39 AK33 AK34 AK36 AK39 AF10 AG10 AH10 AI10 AJ10 "
         "D51 D52 J24 B27 B29 B36 B38 B45 B47 H24 S44 C17 M29 M30 M31 M32 M33 M34 M35 M36 M37 M38 "
-        "C12 C13 Q22 C14 C15 D12 D13 D14 D15 D16 D17 Q26 C20 C21 C22 O46 I49 S50").split(QLatin1Char(' '));
+        "C12 C13 Q22 C14 C15 D12 D13 D14 D15 D16 D17 Q26 C20 C21 C22 O46 I49 S50 "
+        "AA9 AA10 Y11 AA11 AK10 H10 I10 L11 M11 O11 R11").split(QLatin1Char(' '));
     for (const auto &address : detailAddresses) {
         const auto it = result.calculationSheetDetails.constFind(address);
+        const QString note = result.calculationSheetNotes.value(address);
+        const bool hasValue = result.sheetDetailsSnapshotAvailable && it != result.calculationSheetDetails.cend();
         const QString value = result.sheetDetailsSnapshotAvailable && it != result.calculationSheetDetails.cend()
             ? snapshotValue(it.value().first, it.value().second)
+            : result.sheetDetailsSnapshotAvailable && !note.isEmpty() ? note
             : result.sheetDetailsSnapshotAvailable && (address == QStringLiteral("AG10") || address == QStringLiteral("AH10")
                 || address == QStringLiteral("AI10") || address == QStringLiteral("AJ10"))
                 ? QStringLiteral("不适用") : QStringLiteral("待重新计算");
-        original.append({address, value, QString()});
+        const bool deviation = address == QStringLiteral("L11") || address == QStringLiteral("M11")
+            || address == QStringLiteral("O11") || address == QStringLiteral("R11");
+        original.append({address, value, hasValue && deviation ? QStringLiteral("%") : QString(), note});
     }
     groups.append({QStringLiteral("原单"), original});
     // 预留条件分支字段，使圆线/油膨缩状态变化时无需重建正在编辑的表。
@@ -643,6 +649,7 @@ void SchemeCalculationSheet::rebuildSheet()
                     else if (displayName == QStringLiteral("铁轭分项重量 U23")) displayName = QStringLiteral("铁轭分项重量（Sheet1!U23）");
                 }
                 QString tip = displayName + QStringLiteral("\n计算值（只读）：") + value;
+                if (!values.value(3).isEmpty()) tip += QLatin1Char('\n') + values.value(3);
                 if (displayName.contains(QStringLiteral("几何叠厚")))
                     tip += QStringLiteral("\n几何叠厚来自当前叠积快照，不等同于片数取整后的实际叠厚。");
                 fields[resultZone(group.first, values.value(0))].append({displayName, value,
@@ -891,7 +898,8 @@ void SchemeCalculationSheet::refreshResult(const CalcResult &result)
             const auto cells = m_resultBindings.values(group.first + QLatin1Char('\n') + row.value(0));
             for (auto *cell : cells) {
             const QString value = row.value(1) + (row.value(2).isEmpty() ? QString() : QLatin1Char(' ') + row.value(2));
-            cell->setText(value); cell->setToolTip(row.value(0) + QStringLiteral("\n计算值（只读）：") + value);
+            cell->setText(value); cell->setToolTip(row.value(0) + QStringLiteral("\n计算值（只读）：") + value
+                + (row.value(3).isEmpty() ? QString() : QLatin1Char('\n') + row.value(3)));
             bool numeric = false; row.value(1).toDouble(&numeric);
             cell->setTextAlignment((numeric ? Qt::AlignRight : Qt::AlignLeft) | Qt::AlignVCenter);
             }

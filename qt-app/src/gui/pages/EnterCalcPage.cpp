@@ -2603,7 +2603,8 @@ void EnterCalcPage::onSchemeSelected(int row)
     connect(cancelBtn, &QPushButton::clicked, &dlg, &QDialog::reject);
     connect(&dlg, &QDialog::finished, &autoCalcTimer, &QTimer::stop);
     if (!pendingResult.valid || !pendingResult.linkageSnapshotAvailable || !pendingResult.sheetLayoutSnapshotAvailable
-        || !pendingResult.sheetDetailsSnapshotAvailable) autoCalcTimer.start(0);
+        || !pendingResult.sheetDetailsSnapshotAvailable
+        || pendingResult.calculationSheetDetailVersion < ElectromagneticEngine::SheetDetailVersion) autoCalcTimer.start(0);
 
     // 默认占满屏幕工作区，保留标题栏、关闭按钮和还原能力。
     dlg.showMaximized();
