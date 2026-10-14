@@ -27,6 +27,14 @@ int excelInt(double x)
     return static_cast<int>(std::floor(x));
 }
 
+// 复制现有计算量供原表显示；不会反向参与计算或寻优。
+void rememberSheetValue(CalcResult &result, const char *addresses, double value, int decimals = 2)
+{
+    if (!result.sheetDetailsSnapshotAvailable) return;
+    for (const auto &address : QString::fromLatin1(addresses).split(QLatin1Char(' ')))
+        result.calculationSheetDetails.insert(address, {value, decimals});
+}
+
 LvTurnsRecommendation recommendationForArea(const CalcInput &in, double area)
 {
     LvTurnsRecommendation r;
@@ -367,6 +375,8 @@ void calcCoreGeometry(EmCtx &c)
     c.out->core.yokeFlat_mm = c.yokeFlat_mm;
     c.out->core.junctionHeight_mm = c.junctionH_mm;
     c.out->core.minorAxis_mm = c.minorAxis_mm;
+    c.out->core.majorAngle_deg = c.majorAngle_deg;
+    c.out->core.minorAngle_deg = c.minorAngle_deg;
     for (int i = 0; i < 16; ++i) {
         c.out->core.widths_mm.append(c.lamWidth[i]);
         c.out->core.stacks_mm.append(c.stack[i]);
@@ -603,6 +613,36 @@ void calcWindingLayout(EmCtx &c)
     c.out->winding.hvMeanTurn_m = c.hvMeanTurn_m;
     c.out->winding.lvMeanTurn_m = c.lvMeanTurn_m;
     c.out->winding.layerCount = c.segTurnsPerLayer;
+    if (c.out->sheetDetailsSnapshotAvailable) {
+    auto &sheet = *c.out;
+    rememberSheetValue(sheet, "W9", c.segLayers[0], 0);
+    rememberSheetValue(sheet, "W10", c.segLayers[1], 0);
+    rememberSheetValue(sheet, "W11", c.segLayers[2], 0);
+    rememberSheetValue(sheet, "AA22", c.hvAxialPerWire_mm, 3);
+    rememberSheetValue(sheet, "AA24", aa24);
+    rememberSheetValue(sheet, "AA25", aa25);
+    rememberSheetValue(sheet, "AA26", aa26);
+    rememberSheetValue(sheet, "W24", w24);
+    rememberSheetValue(sheet, "W25", x25, 4);
+    rememberSheetValue(sheet, "W26", w26, 4);
+    rememberSheetValue(sheet, "X41 Z41 Y42", c.x41Sheets, 0);
+    rememberSheetValue(sheet, "X42 Y41 Z42", c.x42Sheets, 0);
+    rememberSheetValue(sheet, "AB36", c.ab36Wide_mm);
+    rememberSheetValue(sheet, "AB39", c.ab39Long_mm);
+    rememberSheetValue(sheet, "AK33", c.ak33Wide_mm);
+    rememberSheetValue(sheet, "AK34", c.ak34Long_mm);
+    rememberSheetValue(sheet, "AK36", c.ak36Wide_mm);
+    rememberSheetValue(sheet, "AK39", c.ak39Long_mm);
+    const char *segmentCells[] = {"AF10", "AG10", "AH10", "AI10", "AJ10"};
+    for (int i = 0; i < 5; ++i) {
+        bool active = true;
+        if (i > 0)
+            for (int j = 0; j <= i; ++j) active = active && in.lvDuctHeightSide[j] != 0.0;
+        if (active) rememberSheetValue(sheet, segmentCells[i], c.lvSegmentTurns[i], 0);
+    }
+    }
+    c.out->winding.lvAxial_mm = c.lvAxialOuter_mm;
+    for (int i = 0; i < 5; ++i) c.out->winding.ductLayerIdx[i] = c.ductLayerIdx[i];
 }
 
 // ============================================================================
@@ -674,6 +714,24 @@ void calcTankGeometry(EmCtx &c)
     c.out->mass.tankWidth_mm = c.tankWidth_mm;
     c.out->mass.tankLength_mm = c.tankLength_mm;
     c.out->mass.tankHeight_mm = c.tankHeight_mm;
+    if (c.out->sheetDetailsSnapshotAvailable) {
+    rememberSheetValue(*c.out, "D51", d51);
+    rememberSheetValue(*c.out, "B27", c.halfMinor_mm);
+    rememberSheetValue(*c.out, "B29", B29);
+    rememberSheetValue(*c.out, "B36", b36);
+    rememberSheetValue(*c.out, "B38", B38);
+    rememberSheetValue(*c.out, "D52", d52);
+    rememberSheetValue(*c.out, "J24", j24);
+    rememberSheetValue(*c.out, "B45", c.bChain_mm);
+    rememberSheetValue(*c.out, "B47 H24", c.bChainFull_mm);
+    rememberSheetValue(*c.out, "S44 C17", c.waveThick_mm, 1);
+    for (int i = 0; i < 5; ++i) {
+        const auto lv = QStringLiteral("M%1").arg(29 + i);
+        const auto hv = QStringLiteral("M%1").arg(34 + i);
+        rememberSheetValue(*c.out, qPrintable(lv), c.m29_33[i]);
+        rememberSheetValue(*c.out, qPrintable(hv), c.m34_38[i]);
+    }
+    }
 }
 
 // ============================================================================
@@ -1164,6 +1222,11 @@ void calcThermal(EmCtx &c)
     c.out->thermal.lvSurfaceRise_K = ak49;
     c.out->thermal.lvLayerCorrection_K = ak50;
     c.out->thermal.lvRiseAboveOil_K = ak51;
+    if (c.out->sheetDetailsSnapshotAvailable) {
+        rememberSheetValue(*c.out, "O46", o46);
+        rememberSheetValue(*c.out, "I49", i49, 0);
+        rememberSheetValue(*c.out, "S50", ks, 3);
+    }
 }
 
 // ============================================================================
@@ -1242,6 +1305,22 @@ void calcMassCost(EmCtx &c)
     c.out->mass.oilWeight_kg = oilWeight;
     c.out->mass.activePartWeight_kg = activePart;
     c.out->mass.totalWeight_kg = totalWeight;
+    if (c.out->sheetDetailsSnapshotAvailable) {
+    rememberSheetValue(*c.out, "C12", c12, 0);
+    rememberSheetValue(*c.out, "C13 Q22", q22, 0);
+    rememberSheetValue(*c.out, "C14", c14, 0);
+    rememberSheetValue(*c.out, "C15", c15, 0);
+    rememberSheetValue(*c.out, "D12", d12, 0);
+    rememberSheetValue(*c.out, "D13", d13, 0);
+    rememberSheetValue(*c.out, "D14", d14, 0);
+    rememberSheetValue(*c.out, "D15", d15, 0);
+    rememberSheetValue(*c.out, "D16", d16);
+    rememberSheetValue(*c.out, "D17", d17, 0);
+    rememberSheetValue(*c.out, "Q26", q26);
+    rememberSheetValue(*c.out, "C20", c20, 0);
+    rememberSheetValue(*c.out, "C21", c21, 0);
+    rememberSheetValue(*c.out, "C22", c22, 0);
+    }
 
     // 仅替换材料基价，加工加价、计价重量和舍入保留计算单公式。
     c.out->cost.materialPrices = in.materialPrices.effective();
@@ -1395,7 +1474,13 @@ bool ElectromagneticEngine::previewCoreGeometry(const CalcInput &input, CoreResu
 
 bool ElectromagneticEngine::calcElectromagnetic(const CalcInput &input, CalcResult &result)
 {
+    return calcElectromagnetic(input, result, false);
+}
+
+bool ElectromagneticEngine::calcElectromagnetic(const CalcInput &input, CalcResult &result, bool captureSheetDetails)
+{
     result = CalcResult();
+    result.sheetDetailsSnapshotAvailable = captureSheetDetails;
     const QString craftError = input.craftConstraints.rejectionReason(input.mainDuctWidth_mm);
     if (!craftError.isEmpty()) {
         result.error = craftError; // Saved schemes recalculate with the same manufacturing snapshot.
@@ -1508,6 +1593,8 @@ bool ElectromagneticEngine::calcElectromagnetic(const CalcInput &input, CalcResu
 
     result.valid = !ctx.failed;
     result.linkageSnapshotAvailable = result.valid;
+    result.sheetLayoutSnapshotAvailable = result.valid;
+    result.sheetDetailsSnapshotAvailable = result.valid && captureSheetDetails;
     result.error = ctx.error;
     return result.valid;
 }

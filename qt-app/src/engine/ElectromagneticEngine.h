@@ -24,6 +24,8 @@ public:
 
     // 电磁计算全链路：CalcInput（默认即 SB20-M-630-10）→ CalcResult
     bool calcElectromagnetic(const CalcInput &input, CalcResult &result) override;
+    // 仅方案计算单预览请求中间量，寻优候选不分配明细映射。
+    bool calcElectromagnetic(const CalcInput &input, CalcResult &result, bool captureSheetDetails);
 
     // 对拍自检：用 SB20-M-630-10 计算单缓存值验证全链路，返回逐项对照文本
     static QString selfTestReport();

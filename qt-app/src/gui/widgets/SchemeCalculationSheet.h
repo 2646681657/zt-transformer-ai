@@ -42,9 +42,11 @@ private:
     QTableWidget *m_results = nullptr;
     QLabel *m_resultStatus = nullptr;
     CalcResult m_snapshot;
+    QString m_coreShapeName;
+    QString m_coolingName;
     QVector<Binding> m_bindings;
     QHash<QObject *, QPointer<QWidget>> m_editors;
-    QHash<QString, QTableWidgetItem *> m_resultBindings;
+    QMultiHash<QString, QTableWidgetItem *> m_resultBindings;
 };
 
 #endif
