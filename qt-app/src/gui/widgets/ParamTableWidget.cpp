@@ -326,7 +326,7 @@ bool ParamTableWidget::collectForCalculation(TransformerParams &params, CalcInpu
         }
     }
     const QStringList textKeys = {"connectionGroup", "environmentGrade", "efficiencyCalcMethod",
-        "lvConnectionBarThickness", "lvConnectionBarWidth"}; // 可选参考记录单独判可用，不阻断整机。
+        "lvConnectionBarThickness", "lvConnectionBarWidth", "legacyUnitLossRecord", "legacyCraftCoefRecord"}; // 可选记录不阻断整机。
     const QStringList integerKeys = {"frequency", "seamCount", "lvTurns", "hvTurnsPerLayer", "hvParallelCount",
         "hvStackCount", "lvLayerInsulCount", "yokeWidenStages", "waveDepth", "waveHeight", "wavePitch"};
     for (auto it = m_inputRefs.constBegin(); it != m_inputRefs.constEnd(); ++it) {
@@ -1254,6 +1254,12 @@ void ParamTableWidget::loadParamsForConfig(const TransformerParams &params, cons
                 "铁轭铁损工艺系数", QString::number(input.yokeLossCraftCoef, 'g', 15),
                 "coreLossCraftCoef", "yokeLossCraftCoef");
     item(row - 1, 5)->setText(QStringLiteral("分别作用；总铁损统一取整"));
+    addInputRow(row++, QStringLiteral("原单单位铁损记录(W/kg)"), input.legacyUnitLossRecordText,
+                QStringLiteral("原单旧工艺系数记录"), input.legacyCraftCoefRecordText,
+                QStringLiteral("legacyUnitLossRecord"), QStringLiteral("legacyCraftCoefRecord"));
+    const QString legacyCoreNote = QStringLiteral("原计算单H16/M16可选历史记录，空白表示未录入；不使用示例0.76/1.13，不跟随硅钢牌号自动覆盖。未参与计算，不替代当前查表单位铁损、心柱工艺系数或铁轭工艺系数；不得解释为当前引擎实际采用值。");
+    item(row-1, 5)->setText(QStringLiteral("原单记录，未参与计算"));
+    for (int col : {2,4,5}) item(row-1, col)->setToolTip(legacyCoreNote);
     addInputRow(row++, "接缝数", QString::number(input.seamCount), {}, {}, "seamCount", {});
 
     addInputRow(row++, "宽90补充片叠厚模式", QString(),
@@ -1474,6 +1480,8 @@ void ParamTableWidget::saveToInput(CalcInput &input) const
     setDouble("ellipseAngle", input.ellipseAngle_deg);
     setDouble("coreLossCraftCoef", input.coreLossCraftCoef);
     setDouble("yokeLossCraftCoef", input.yokeLossCraftCoef);
+    input.legacyUnitLossRecordText = cellText(QStringLiteral("legacyUnitLossRecord"));
+    input.legacyCraftCoefRecordText = cellText(QStringLiteral("legacyCraftCoefRecord"));
     setInt("seamCount", input.seamCount);
     const QString grade = selectedSteelGrade();
     input.steelGrade = grade;

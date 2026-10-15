@@ -64,6 +64,8 @@ inline QJsonObject toJson(const CalcInput &in)
     o.insert(QStringLiteral("materialPrices"), materialPrices);
     o.insert(QStringLiteral("seamCount"), in.seamCount);
     o.insert(QStringLiteral("coreLossCraftCoef"), in.coreLossCraftCoef);
+    o.insert(QStringLiteral("legacyUnitLossRecordText"), in.legacyUnitLossRecordText);
+    o.insert(QStringLiteral("legacyCraftCoefRecordText"), in.legacyCraftCoefRecordText);
     o.insert(QStringLiteral("yokeLossCraftCoef"), in.yokeLossCraftCoef);
     o.insert(QStringLiteral("yokePiece1Stack_mm"), in.yokePiece1Stack_mm);
     o.insert(QStringLiteral("yokePiece1Auto"), in.yokePiece1Auto);
@@ -322,16 +324,18 @@ inline CalcInput fromJson(const QJsonObject &o)
     in.lvLayerInsulCount = integ("lvLayerInsulCount", in.lvLayerInsulCount);
     in.lvLayerInsul_mm = num("lvLayerInsul_mm", in.lvLayerInsul_mm);
     in.lvEndInsul_mm = num("lvEndInsul_mm", in.lvEndInsul_mm);
-    // 缺失的新记录字段保持空白，不引入原计算单的6×50示例尺寸。
-    const auto barRecordText = [&o](const QString &key) {
+    // 可选记录缺失时保持空白，不引入原计算单示例值。
+    const auto optionalRecordText = [&o](const QString &key) {
         const auto value = o.value(key);
         if (value.isUndefined() || value.isNull()) return QString();
         if (value.isString()) return value.toString();
         // 保留非法外部记录的可见证据，不静默变成未录入或示例值。
         return QStringLiteral("非法记录（需要文本）");
     };
-    in.lvConnectionBarThicknessText = barRecordText(QStringLiteral("lvConnectionBarThicknessText"));
-    in.lvConnectionBarWidthText = barRecordText(QStringLiteral("lvConnectionBarWidthText"));
+    in.lvConnectionBarThicknessText = optionalRecordText(QStringLiteral("lvConnectionBarThicknessText"));
+    in.lvConnectionBarWidthText = optionalRecordText(QStringLiteral("lvConnectionBarWidthText"));
+    in.legacyUnitLossRecordText = optionalRecordText(QStringLiteral("legacyUnitLossRecordText"));
+    in.legacyCraftCoefRecordText = optionalRecordText(QStringLiteral("legacyCraftCoefRecordText"));
     in.lvCopperFoil = o.value(QStringLiteral("lvCopperFoil")).toBool(in.lvCopperFoil);
     // 旧方案只有低压材料标志，旧版也用它控制高压导线重量；据此迁移高压材料。
     in.hvCopperWire = o.value(QStringLiteral("hvCopperWire")).toBool(in.lvCopperFoil);
