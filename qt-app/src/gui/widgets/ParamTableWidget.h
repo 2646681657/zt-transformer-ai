@@ -52,6 +52,7 @@ private:
     // 复合产品型号：型号-M-容量/高压额定电压-低压额定电压
     bool parseCompositeModel(const QString &text, bool commitLowVoltage);
     void applyModelLinkage();
+    void refreshStandardSelectorTip(); // Display-only, including incomplete model edits.
     QString standardKey() const;
     QString standardUnavailableReason() const;
     QString selectedSteelGrade() const;
