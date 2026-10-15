@@ -15,7 +15,8 @@ inline QStringList addresses()
         "L12 L19 M19 O19 R19 Q44 Q45 Q46 Q47 Q48 Q49 Q50 Q51 "
         "E27 F27 Q52 Q53 E29 E30 E31 E32 E33 E34 E35 E36 E37 E38 "
         "E39 E40 E41 E42 E43 H44 E45 E46 E47 E49 J49 H51 E50 "
-        "U48 AD48 U49 AD49 U50 U51 U52 AD50 E52 E53 E54 I53 H54 O53 O54 P54 P49 AA53")
+        "U48 AD48 U49 AD49 U50 U51 U52 AD50 E52 E53 E54 I53 H54 O53 O54 P54 P49 AA53 "
+        "AF33 AF34 W36 W39 AF36 AF39")
         .split(QLatin1Char(' '));
 }
 
@@ -58,6 +59,49 @@ inline void capture(const CalcInput &in, CalcResult &r)
     for (int i = 0; i < waveLabels.size(); ++i) text(waveAddresses[i], waveLabels[i]);
     for (const char *a : {"E27", "F27", "Q52", "Q53"})
         text(a, QString(), QStringLiteral("原表仅片散油箱分支显示；当前支持波纹油箱，此处按原表留空，不代表储油柜/片散算法已接入。"));
+
+    // 只展开本次平均宽/长数值公式的操作数，不在说明层重新求解几何结果。
+    double lvDuctHeightSum = 0.0, lvDuctWidthSum = 0.0, hvDuctHeightSum = 0.0;
+    double lvFirstThreeWidths = 0.0, hvFirstThreeWidths = 0.0;
+    for (int i = 0; i < 5; ++i) {
+        lvDuctHeightSum += in.lvDuctHeightSide[i];
+        lvDuctWidthSum += in.lvDuctWidthSide[i];
+        hvDuctHeightSum += in.hvDuctHeightSide[i];
+        if (i < 3) {
+            lvFirstThreeWidths += in.lvDuctWidthSide[i];
+            hvFirstThreeWidths += in.hvDuctWidthSide[i];
+        }
+    }
+    const QString diameter = number(in.coreDiameter_mm);
+    const QString phaseGap = number(in.phaseGapBase_mm);
+    const QString radius = number(r.core.majorRadius_mm);
+    const QString lvRadial = number(r.winding.lvRadial_mm);
+    const QString hvRadial = number(r.winding.hvRadial_mm);
+    const QString mainDuct = number(r.winding.mainDuct_mm);
+    const QString p12 = number(r.core.majorAngle_deg);
+    const QString s12 = number(r.core.minorAngle_deg);
+    const QString geometryNote = QStringLiteral("当前椭圆形算法的操作数展开；数值结果由引擎ROUND到两位小数，说明不额外取整。P12、S12分别读取本次原单角度快照，不按历史成员名称另行推导。单位mm，只读，不参与筛选。");
+    text("AF33", QStringLiteral("π×(%1/2+%2+(%3+%4)/2)×%5/180=")
+        .arg(diameter, phaseGap, lvRadial, number(lvDuctHeightSum), p12),
+        geometryNote + QStringLiteral(" 对应AK33；末项为五级低压端部侧油道之和。原表文字先将半径取一位小数，数值公式没有该步骤；这里服从数值公式。"));
+    text("AF34", QStringLiteral("π×(%1+%2+(%3+%4)/2)×%5/180=")
+        .arg(radius, phaseGap, lvRadial, number(lvDuctWidthSum), s12),
+        geometryNote + QStringLiteral(" 对应AK34；末项为五级低压相间侧油道之和。"));
+    text("W36", QStringLiteral("π×(%1/2+%2+%3+%4+%5+(%6+%7)/2)×%8/180=")
+        .arg(diameter, phaseGap, lvRadial, number(lvDuctHeightSum), mainDuct,
+            hvRadial, number(hvDuctHeightSum), p12),
+        geometryNote + QStringLiteral(" 对应AB36；低压、高压端部侧均累计五级；不使用原表文字的半径额外舍入。"));
+    const QString longSideNote = geometryNote + QStringLiteral(" 对应AB39；实际数值公式仅累计前三级低压和高压相间侧油道。原W39拼接文字写五级，与数值公式不一致；本说明按现有数值算法显示，未改成五级。更改后两级仍可能经其他尺寸联动影响本式，不应理解为结果必然不变。");
+    text("W39", QStringLiteral("π×(%1+%2+%3+%4+%5+(%6+%7)/2)×%8/180=")
+        .arg(radius, phaseGap, lvRadial, number(lvFirstThreeWidths), mainDuct,
+            hvRadial, number(hvFirstThreeWidths), s12), longSideNote);
+    r.calculationSheetNotes.insert(QStringLiteral("AB39"), longSideNote);
+    text("AF36", QStringLiteral("π×(%1/2+%2+%3+%4+%5/2)×%6/180=")
+        .arg(diameter, phaseGap, lvRadial, number(lvDuctHeightSum), mainDuct, p12),
+        geometryNote + QStringLiteral(" 对应AK36；五级低压端部侧油道累加，主空道只取半值；不使用原表文字的半径额外舍入。"));
+    text("AF39", QStringLiteral("π×(%1+%2+%3+%4+%5/2)×%6/180=")
+        .arg(radius, phaseGap, lvRadial, number(lvDuctWidthSum), mainDuct, s12),
+        geometryNote + QStringLiteral(" 对应AK39；五级低压相间侧油道累加，主空道只取半值。"));
 
     for (int i = 0; i < 5; ++i) {
         const QString low = QStringLiteral("E%1").arg(29 + i);
