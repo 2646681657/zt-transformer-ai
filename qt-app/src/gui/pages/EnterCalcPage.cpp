@@ -2680,7 +2680,7 @@ void EnterCalcPage::onLoadSchemes()
                 QStringLiteral("文件中有旧方案或缺少完整指标来源的方案。当前方案表未替换；请先在设计输入页载入并核对来源，再保存新版方案。"));
             return;
         }
-        const QString reason = calculationScopeError(m_config, m_params, in);
+        const QString reason = calculationScopeError(m_config, ParamTableWidget::paramsForInput(m_params, in), in);
         if (!reason.isEmpty()) {
             QMessageBox::warning(this, QStringLiteral("方案库包含不支持的配置"),
                 reason + QStringLiteral("。本次未替换当前方案表，请先在设计输入页调整方案。"));

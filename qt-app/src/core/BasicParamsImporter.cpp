@@ -138,8 +138,11 @@ QPair<int, QStringList> BasicParamsImporter::parseRows(const QStringList &rows,
                 case 10: { bool ok=false; const double v=extractNumber(valueCell,&ok);
                     if (ok && v>0) { params.capacity_kVA=v; input.capacity_kVA=v; detail=QStringLiteral("容量 = %1 kVA").arg(v); applied=true; } break; }
                 case 11: {
-                    // 联结组别（Dyn11 / Yyn0 等字母数字组合）
-                    static const QRegularExpression cgRe(QStringLiteral("[DYdy]{1,2}[ynYNzd]{1,3}\\d{1,2}"));
+                    // Dd/Yd have no clock suffix in this sheet. Preserve numbered
+                    // unknown groups for the calculation gate to reject, not truncate.
+                    static const QRegularExpression cgRe(
+                        QStringLiteral("(?<![A-Za-z0-9])(?:[DY]{1,2}[YNZD]{1,3}\\d{1,2}|Dyn|Yyn|Dd|Yd)(?![A-Za-z0-9])"),
+                        QRegularExpression::CaseInsensitiveOption);
                     const auto m = cgRe.match(valueCell);
                     if (m.hasMatch()) { params.connectionGroup=m.captured(0).toUpper();
                         detail=QStringLiteral("联结组别 = %1").arg(params.connectionGroup); applied=true; } break; }

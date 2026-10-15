@@ -14,6 +14,8 @@ inline QString calculationScopeError(const StructureConfig &config,
                                      const CalcInput &input)
 {
     QStringList reasons;
+    if (!input.lvStarConnected && params.standardMode != TransformerParams::StandardMode::Custom)
+        reasons << QStringLiteral("低压d接的Dd/Yd仅限非标手工指标模式，无对应内置损耗标准列");
     const QString ductError = input.oilDuctInputError();
     if (!ductError.isEmpty())
         reasons << ductError;

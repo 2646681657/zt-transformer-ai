@@ -427,7 +427,7 @@ void OptimizeCalcPage::applySchemeInput(const CalcInput &input)
             ? QStringLiteral("Dyn11") : QStringLiteral("Yyn0");
     } else {
         m_params.connectionGroup = input.hvDeltaConnected
-            ? QStringLiteral("Dd（暂不支持）") : QStringLiteral("Yd（暂不支持）");
+            ? QStringLiteral("Dd") : QStringLiteral("Yd");
     }
     m_params.hvTapPlusSteps = input.hvTapPlusSteps;
     m_params.hvTapMinusSteps = input.hvTapMinusSteps;
@@ -464,7 +464,7 @@ void OptimizeCalcPage::onSchemeButtonClicked(int index)
         }
         if (!m_paramTable->hasSupportedConnectionGroup()) {
             QMessageBox::warning(this, QStringLiteral("联结组别暂不支持"),
-                QStringLiteral("当前版本仅支持 Dyn11（可填 Dyn）和 Yyn0，请修改联结组别后再保存方案。"));
+                QStringLiteral("请选择Dyn11、Yyn0，或在非标手工指标模式下选择Dd、Yd，并核对各项性能指标后再保存方案。"));
             return;
         }
         if (!m_paramTable->hasValidSteelGrade()) {
