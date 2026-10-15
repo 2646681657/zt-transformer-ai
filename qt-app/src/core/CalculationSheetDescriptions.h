@@ -62,21 +62,23 @@ inline void capture(const CalcInput &in, CalcResult &r)
     for (int i = 0; i < 5; ++i) {
         const QString low = QStringLiteral("E%1").arg(29 + i);
         const QString high = QStringLiteral("E%1").arg(34 + i);
+        const char *lvWidthWeight = i < 3 ? "AK34" : "AK33";
+        const char *lvHeightWeight = i < 3 ? "AK33" : "AK34";
+        const char *hvWidthWeight = i < 3 ? "AB39" : "AB36";
+        const char *hvHeightWeight = i < 3 ? "AB36" : "AB39";
         const QString lvFormula = QStringLiteral("DE2%1=(%2×%3+%4×%5)/(%3+%5)=")
-            .arg(i + 1).arg(number(in.lvDuctWidthSide[i]), detail("AK34"),
-                number(in.lvDuctHeightSide[i]), detail("AK33"));
+            .arg(i + 1).arg(number(in.lvDuctWidthSide[i]), detail(lvWidthWeight),
+                number(in.lvDuctHeightSide[i]), detail(lvHeightWeight));
         const QString hvFormula = QStringLiteral("DE1%1=(%2×%3+%4×%5)/(%3+%5)=")
-            .arg(i + 1).arg(number(in.hvDuctWidthSide[i]), detail("AB39"),
-                number(in.hvDuctHeightSide[i]), detail("AB36"));
+            .arg(i + 1).arg(number(in.hvDuctWidthSide[i]), detail(hvWidthWeight),
+                number(in.hvDuctHeightSide[i]), detail(hvHeightWeight));
         const QString note = i < 3
-            ? QStringLiteral("当前引擎两侧加权式；相间侧×平均长＋端部侧×平均宽，再除以两者之和，结果取两位小数。")
-            : QStringLiteral("待核对差异：原Excel第4、5级交换两侧平均宽/长权重；当前引擎仍沿用前三级顺序。本说明反映实际引擎，没有修改算法；两侧尺寸不同时结果可能不同。");
+            ? QStringLiteral("按原计算单第1—3级：相间侧×平均长＋端部侧×平均宽，再除以两者之和，结果取两位小数。")
+            : QStringLiteral("已按原计算单第4、5级修正：相间侧×平均宽＋端部侧×平均长，再除以两者之和，结果取两位小数。非对称油道可改变漏磁与阻抗结果；旧寻优排序需重新寻优，不作整机合格判定。");
         text(qPrintable(low), lvFormula, note);
         text(qPrintable(high), hvFormula, note);
-        if (i >= 3) {
-            r.calculationSheetNotes.insert(QStringLiteral("M%1").arg(29+i), note);
-            r.calculationSheetNotes.insert(QStringLiteral("M%1").arg(34+i), note);
-        }
+        r.calculationSheetNotes.insert(QStringLiteral("M%1").arg(29+i), note);
+        r.calculationSheetNotes.insert(QStringLiteral("M%1").arg(34+i), note);
     }
     QStringList lambdaTerms = {number(r.winding.lvRadial_mm)};
     for (int i = 0; i < 5; ++i) lambdaTerms.append(detail(qPrintable(QStringLiteral("M%1").arg(29+i))));
