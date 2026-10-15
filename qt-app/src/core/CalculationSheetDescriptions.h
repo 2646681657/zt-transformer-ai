@@ -172,8 +172,10 @@ inline void capture(const CalcInput &in, CalcResult &r)
         .arg(number(r.winding.loadLoss_W), number(r.core.noLoadLoss_W), number(r.thermal.totalSurface_m2)));
     text("J49", QStringLiteral("TY=0.262×%1^0.8=").arg(detail("I49")));
     text("H51", QStringLiteral("TM=1.2×%1+").arg(number(r.thermal.oilRise_K)));
-    text("E50", QStringLiteral("Hf/Hs=(箱底油空+首级片宽+窗高/2)/(底部距离+波纹高/2)="),
-        QStringLiteral("原表N50高度比尚未接入；现有温升引擎未使用该因子。这里只展示原表定义，N50仍保留未接入标识，不能当作已计算值。"));
+    text("E50", QStringLiteral("Hf/Hs（参考）=(%1+%2+%3/2)/(%4+%5/2)=")
+        .arg(number(in.tankBottomOil_mm), r.core.widths_mm.isEmpty() ? QStringLiteral("未接入") : number(r.core.widths_mm.first()),
+            number(r.mass.windowHeight_mm), detail("Q26"), number(in.waveHeight_mm)),
+        QStringLiteral("J23箱底油空＋G17首级片宽＋J14窗高/2，除以Q26箱顶油空＋S23波纹高/2；N50取两位小数。仅当前椭圆形/波纹油箱只读参考，不参与温升、合格判定或寻优筛选。"));
     text("U48", QStringLiteral("q1=(%1+%2)/%3=")
         .arg(number(r.winding.hvCopperLoss_W), number(r.winding.hvExtraLoss_W), number(r.thermal.hvSurface_m2)),
         QStringLiteral("按实际引擎显示高压电阻损耗+附加损耗。圆线附加项的实际值同样读取本次结果，不沿用原表文字中的省略分支。"));

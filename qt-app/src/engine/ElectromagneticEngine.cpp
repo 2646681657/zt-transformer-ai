@@ -36,6 +36,41 @@ void rememberSheetValue(CalcResult &result, const char *addresses, double value,
         result.calculationSheetDetails.insert(address, {value, decimals});
 }
 
+// 原单N50独立参考；只在有效方案的明细采集阶段计算，不反馈温升或寻优。
+void captureHeightRatioReference(const CalcInput &input, CalcResult &result)
+{
+    if (!result.valid || !result.sheetDetailsSnapshotAvailable) return;
+    const QString key = QStringLiteral("N50");
+    const auto unavailable = [&](const QString &reason) {
+        result.calculationSheetTexts.insert(key, QStringLiteral("不可用"));
+        result.calculationSheetNotes.insert(key, reason + QStringLiteral("；仅高度比参考不可用，不改变温升结果或寻优筛选。"));
+    };
+    const auto topClearance = result.calculationSheetDetails.constFind(QStringLiteral("Q26"));
+    if (topClearance == result.calculationSheetDetails.cend() || result.core.widths_mm.isEmpty()) {
+        unavailable(QStringLiteral("缺少箱顶油空Q26或首级片宽G17快照"));
+        return;
+    }
+    const double numerator = input.tankBottomOil_mm + result.core.widths_mm.first()
+        + result.mass.windowHeight_mm / 2.0;
+    const double denominator = topClearance.value().first + input.waveHeight_mm / 2.0;
+    if (!std::isfinite(numerator) || !std::isfinite(denominator)) {
+        unavailable(QStringLiteral("高度比分子或分母不是有限数值"));
+        return;
+    }
+    if (denominator <= 0.0) {
+        unavailable(QStringLiteral("箱顶油空Q26＋波纹高S23/2必须大于0"));
+        return;
+    }
+    const double ratio = excelRound(numerator / denominator, 2);
+    if (!std::isfinite(ratio)) {
+        unavailable(QStringLiteral("高度比结果超出有效数值范围"));
+        return;
+    }
+    rememberSheetValue(result, "N50", ratio, 2);
+    result.calculationSheetNotes.insert(key,
+        QStringLiteral("原单椭圆形/波纹油箱高度比：ROUND((J23箱底油空＋G17首级片宽＋J14窗高/2)/(Q26箱顶油空＋S23波纹高/2),2)。无量纲，只读参考；未参与当前温升计算、合格判定或寻优筛选。"));
+}
+
 void capturePerformanceDeviations(const CalcInput &input, CalcResult &result)
 {
     const auto &criteria = input.performanceCriteria;
@@ -1698,6 +1733,7 @@ bool ElectromagneticEngine::calcElectromagnetic(const CalcInput &input, CalcResu
     result.calculationSheetDetailVersion = result.sheetDetailsSnapshotAvailable ? SheetDetailVersion : 0;
     if (result.sheetDetailsSnapshotAvailable) {
         capturePerformanceDeviations(input, result);
+        captureHeightRatioReference(input, result);
         CalculationSheetDescriptions::capture(input, result);
     }
     result.error = ctx.error;
