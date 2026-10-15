@@ -125,6 +125,9 @@ struct CalcInput {
     int lvLayerInsulCount = 1;        // AG26 层间绝缘层数
     double lvLayerInsul_mm = 0.18;    // AI26 层间绝缘厚
     double lvEndInsul_mm = 17.5;      // AI25 端绝缘
+    // 原单AG12/AJ12可选工艺记录；保留未录入/未完成文本，不是电磁设计变量。
+    QString lvConnectionBarThicknessText;
+    QString lvConnectionBarWidthText;
     bool lvCopperFoil = true;         // 低压铜箔（false 铝箔）
     // 低压轴向油道（宽侧 AG28..AG32 / 高侧 AH28..AH32，0=无）
     double lvDuctWidthSide[5] = {3.5, 3.5, 3.5, 3.5, 3.5};

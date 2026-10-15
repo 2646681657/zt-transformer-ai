@@ -71,6 +71,40 @@ void captureHeightRatioReference(const CalcInput &input, CalcResult &result)
         QStringLiteral("原单椭圆形/波纹油箱高度比：ROUND((J23箱底油空＋G17首级片宽＋J14窗高/2)/(Q26箱顶油空＋S23波纹高/2),2)。无量纲，只读参考；未参与当前温升计算、合格判定或寻优筛选。"));
 }
 
+// 可选工艺记录的独立截面参考；缺失/非法记录不改变电磁计算状态。
+void captureConnectionBarReference(const CalcInput &input, CalcResult &result)
+{
+    if (!result.valid || !result.sheetDetailsSnapshotAvailable) return;
+    const QString key = QStringLiteral("AK12");
+    const QString thickness = input.lvConnectionBarThicknessText.trimmed();
+    const QString width = input.lvConnectionBarWidthText.trimmed();
+    const QString scope = QStringLiteral("原单截面参考=AG12厚×AJ12宽−5mm²。固定扣减5的工艺依据待确认；未参与损耗、温升、整机合格、寻优筛选或成本。不是载流能力/制造安全结论。");
+    const auto unavailable = [&](const QString &status, const QString &reason) {
+        result.calculationSheetTexts.insert(key, status);
+        result.calculationSheetNotes.insert(key, reason + QLatin1Char('\n') + scope);
+    };
+    if (thickness.isEmpty() || width.isEmpty()) {
+        unavailable(thickness.isEmpty() && width.isEmpty() ? QStringLiteral("未录入") : QStringLiteral("待补全"),
+            QStringLiteral("请填写内连接排厚度和宽度，不使用原计算单示例尺寸。"));
+        return;
+    }
+    bool thicknessOk = false, widthOk = false;
+    const double t = thickness.toDouble(&thicknessOk);
+    const double w = width.toDouble(&widthOk);
+    if (!thicknessOk || !widthOk || !std::isfinite(t) || !std::isfinite(w) || t <= 0.0 || w <= 0.0) {
+        unavailable(QStringLiteral("不可用"), QStringLiteral("厚度、宽度须为大于0的有限数值。"));
+        return;
+    }
+    const double area = t * w - 5.0;
+    if (!std::isfinite(area) || area <= 0.0) {
+        unavailable(QStringLiteral("不可用"), QStringLiteral("厚×宽−5须为大于0的有限截面参考值。"));
+        return;
+    }
+    rememberSheetValue(result, "AK12", area, 2); // 原值不额外ROUND；两位小数仅用于显示。
+    result.calculationSheetNotes.insert(key, scope + QStringLiteral("\n当前：%1×%2−5=%3mm²；格内显示两位小数，原参考值未额外舍入。")
+        .arg(thickness, width, QString::number(area, 'g', 15)));
+}
+
 void capturePerformanceDeviations(const CalcInput &input, CalcResult &result)
 {
     const auto &criteria = input.performanceCriteria;
@@ -1734,6 +1768,7 @@ bool ElectromagneticEngine::calcElectromagnetic(const CalcInput &input, CalcResu
     if (result.sheetDetailsSnapshotAvailable) {
         capturePerformanceDeviations(input, result);
         captureHeightRatioReference(input, result);
+        captureConnectionBarReference(input, result);
         CalculationSheetDescriptions::capture(input, result);
     }
     result.error = ctx.error;

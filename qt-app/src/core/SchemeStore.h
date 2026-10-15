@@ -103,6 +103,8 @@ inline QJsonObject toJson(const CalcInput &in)
     o.insert(QStringLiteral("lvLayerInsulCount"), in.lvLayerInsulCount);
     o.insert(QStringLiteral("lvLayerInsul_mm"), in.lvLayerInsul_mm);
     o.insert(QStringLiteral("lvEndInsul_mm"), in.lvEndInsul_mm);
+    o.insert(QStringLiteral("lvConnectionBarThicknessText"), in.lvConnectionBarThicknessText);
+    o.insert(QStringLiteral("lvConnectionBarWidthText"), in.lvConnectionBarWidthText);
     o.insert(QStringLiteral("lvCopperFoil"), in.lvCopperFoil);
     QJsonArray lws, lhs;
     for (double v : in.lvDuctWidthSide) {
@@ -320,6 +322,16 @@ inline CalcInput fromJson(const QJsonObject &o)
     in.lvLayerInsulCount = integ("lvLayerInsulCount", in.lvLayerInsulCount);
     in.lvLayerInsul_mm = num("lvLayerInsul_mm", in.lvLayerInsul_mm);
     in.lvEndInsul_mm = num("lvEndInsul_mm", in.lvEndInsul_mm);
+    // 缺失的新记录字段保持空白，不引入原计算单的6×50示例尺寸。
+    const auto barRecordText = [&o](const QString &key) {
+        const auto value = o.value(key);
+        if (value.isUndefined() || value.isNull()) return QString();
+        if (value.isString()) return value.toString();
+        // 保留非法外部记录的可见证据，不静默变成未录入或示例值。
+        return QStringLiteral("非法记录（需要文本）");
+    };
+    in.lvConnectionBarThicknessText = barRecordText(QStringLiteral("lvConnectionBarThicknessText"));
+    in.lvConnectionBarWidthText = barRecordText(QStringLiteral("lvConnectionBarWidthText"));
     in.lvCopperFoil = o.value(QStringLiteral("lvCopperFoil")).toBool(in.lvCopperFoil);
     // 旧方案只有低压材料标志，旧版也用它控制高压导线重量；据此迁移高压材料。
     in.hvCopperWire = o.value(QStringLiteral("hvCopperWire")).toBool(in.lvCopperFoil);
