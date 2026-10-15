@@ -16,7 +16,7 @@ inline QStringList addresses()
         "E27 F27 Q52 Q53 E29 E30 E31 E32 E33 E34 E35 E36 E37 E38 "
         "E39 E40 E41 E42 E43 H44 E45 E46 E47 E49 J49 H51 E50 "
         "U48 AD48 U49 AD49 U50 U51 U52 AD50 E52 E53 E54 I53 H54 O53 O54 P54 P49 AA53 "
-        "AF33 AF34 W36 W39 AF36 AF39")
+        "AF33 AF34 W36 W39 AF36 AF39 AD12")
         .split(QLatin1Char(' '));
 }
 
@@ -47,6 +47,8 @@ inline void capture(const CalcInput &in, CalcResult &r)
     text("AK25", QStringLiteral("-Hw"));
     text("AC33", QStringLiteral("-Hw"));
     text("B46", QStringLiteral("× 2"));
+    text("AD12", in.lvCopperFoil ? QStringLiteral("铜排") : QStringLiteral("铝排"),
+        QStringLiteral("原单随AD13低压箔材料联动的内连接排标签；只读工艺记录，不是新的独立材料选择。"));
     text("L12", QStringLiteral("椭圆角"));
     text("L19", QStringLiteral("短轴长"));
     text("M19", QStringLiteral("大圆半径"));

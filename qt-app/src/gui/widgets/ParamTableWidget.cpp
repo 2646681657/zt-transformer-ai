@@ -325,7 +325,8 @@ bool ParamTableWidget::collectForCalculation(TransformerParams &params, CalcInpu
             return false;
         }
     }
-    const QStringList textKeys = {"connectionGroup", "environmentGrade", "efficiencyCalcMethod"};
+    const QStringList textKeys = {"connectionGroup", "environmentGrade", "efficiencyCalcMethod",
+        "lvConnectionBarThickness", "lvConnectionBarWidth"}; // 可选参考记录单独判可用，不阻断整机。
     const QStringList integerKeys = {"frequency", "seamCount", "lvTurns", "hvTurnsPerLayer", "hvParallelCount",
         "hvStackCount", "lvLayerInsulCount", "yokeWidenStages", "waveDepth", "waveHeight", "wavePitch"};
     for (auto it = m_inputRefs.constBegin(); it != m_inputRefs.constEnd(); ++it) {
@@ -1306,6 +1307,12 @@ void ParamTableWidget::loadParamsForConfig(const TransformerParams &params, cons
     addInputRow(row++, "低压箔宽(mm)", QString::number(input.lvFoilWidth_mm, 'g', 15),
                 "低压端绝缘(mm)", QString::number(input.lvEndInsul_mm),
                 "lvFoilWidth", "lvEndInsul");
+    addInputRow(row++, QStringLiteral("低压内连接排厚(mm)"), input.lvConnectionBarThicknessText,
+                QStringLiteral("低压内连接排宽(mm)"), input.lvConnectionBarWidthText,
+                QStringLiteral("lvConnectionBarThickness"), QStringLiteral("lvConnectionBarWidth"));
+    const QString connectionBarNote = QStringLiteral("可选工艺记录；空白为未录入，不套用示例尺寸。截面参考=厚×宽−5mm²，固定扣减5的工艺依据待确认。未参与损耗、温升、整机合格或寻优筛选；无效记录仅使参考不可用。");
+    item(row-1, 5)->setText(QStringLiteral("可选记录，未参与计算"));
+    for (int col : {2,4,5}) item(row-1, col)->setToolTip(connectionBarNote);
     addParamRow(row, QStringLiteral("高压导线形状"), QString(), QStringLiteral("圆线裸直径(mm)"), QString());
     m_wireFormCombo = new QComboBox(this);
     m_wireFormCombo->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
@@ -1478,6 +1485,8 @@ void ParamTableWidget::saveToInput(CalcInput &input) const
     setDouble("lvFoilThick", input.lvFoilThick_mm);
     setDouble("lvFoilWidth", input.lvFoilWidth_mm);
     setDouble("lvEndInsul", input.lvEndInsul_mm);
+    input.lvConnectionBarThicknessText = cellText(QStringLiteral("lvConnectionBarThickness"));
+    input.lvConnectionBarWidthText = cellText(QStringLiteral("lvConnectionBarWidth"));
 
     // 高压绕组
     setDouble("hvBareWidth", input.hvBareWidth_mm);

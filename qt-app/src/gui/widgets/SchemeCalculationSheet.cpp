@@ -359,7 +359,7 @@ auto sheetGroups(const CalcResult &result)
         "C12 C13 Q22 C14 C15 D12 D13 D14 D15 D16 D17 Q26 C20 C21 C22 O46 I49 S50 "
         "AA9 AA10 Y11 AA11 AK10 H10 I10 L11 M11 O11 R11 "
         "D53 F23 H23 S23 Q25 B48 B31 B32 B33 B34 B35 B40 B41 B42 B43 B44 "
-        "W27 AA27 Q29 Q31 Z35 V41 V42 AB41 AB42 AC40 AC42 AH43 AI43 AJ43 L51 N50").split(QLatin1Char(' '))
+        "W27 AA27 Q29 Q31 Z35 V41 V42 AB41 AB42 AC40 AC42 AH43 AI43 AJ43 L51 N50 AK12").split(QLatin1Char(' '))
         + CalculationSheetDescriptions::addresses();
     for (const auto &address : detailAddresses) {
         const auto it = result.calculationSheetDetails.constFind(address);
@@ -777,6 +777,8 @@ void SchemeCalculationSheet::rebuildSheet()
     inputAt(QStringLiteral("AB14"),QStringLiteral("高压叠绕根数"));
     inputAt(QStringLiteral("W12"),QStringLiteral("高压总层数 W12"));
     inputAt(QStringLiteral("AH8"),QStringLiteral("低压匝数"));
+    inputAt(QStringLiteral("AG12"),QStringLiteral("低压内连接排厚(mm)"));
+    inputAt(QStringLiteral("AJ12"),QStringLiteral("低压内连接排宽(mm)"));
     inputAt(QStringLiteral("AF14"),QStringLiteral("低压箔厚(mm)"));
     inputAt(QStringLiteral("AJ14"),QStringLiteral("低压箔宽(mm)"));
     inputAt(QStringLiteral("AI25"),QStringLiteral("低压端绝缘(mm)"));
