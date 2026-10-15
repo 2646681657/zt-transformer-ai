@@ -35,6 +35,26 @@ SupportedConnection connectionType(QString value)
     }
     return SupportedConnection::Invalid;
 }
+
+// Basic electrical preview is broader than validated full-calculation support.
+// Do not use this parser for calculation gates, standard columns or persistence.
+enum class ElectricalPreviewConnection { Invalid, Dyn11, Yyn0, Dd, Yd };
+
+ElectricalPreviewConnection electricalPreviewConnectionType(QString value)
+{
+    const auto supported = connectionType(value);
+    if (supported == SupportedConnection::Dyn11) return ElectricalPreviewConnection::Dyn11;
+    if (supported == SupportedConnection::Yyn0) return ElectricalPreviewConnection::Yyn0;
+    value.remove(QRegularExpression(QStringLiteral("[\\s,/]+")));
+    // Exact legacy labels are produced when opening an existing input snapshot.
+    if (value.compare(QLatin1String("Dd"), Qt::CaseInsensitive) == 0
+        || value.compare(QStringLiteral("Dd（暂不支持）"), Qt::CaseInsensitive) == 0)
+        return ElectricalPreviewConnection::Dd;
+    if (value.compare(QLatin1String("Yd"), Qt::CaseInsensitive) == 0
+        || value.compare(QStringLiteral("Yd（暂不支持）"), Qt::CaseInsensitive) == 0)
+        return ElectricalPreviewConnection::Yd;
+    return ElectricalPreviewConnection::Invalid;
+}
 }
 
 ParamTableWidget::ParamTableWidget(QWidget *parent)
@@ -718,14 +738,19 @@ void ParamTableWidget::updateDesignConnection()
     const QSignalBlocker blocker(this);
     QString error;
     const bool supported = hasSupportedConnectionGroup();
-    const auto type = connectionType(item(m_designConnectionRow, 2)->text());
+    const auto type = electricalPreviewConnectionType(item(m_designConnectionRow, 2)->text());
+    const bool previewOnly = type == ElectricalPreviewConnection::Dd || type == ElectricalPreviewConnection::Yd;
     const QString note = supported
-        ? (type == SupportedConnection::Dyn11 ? QStringLiteral("高压D / 低压yn；内置匹配时按Dyn列")
+        ? (type == ElectricalPreviewConnection::Dyn11 ? QStringLiteral("高压D / 低压yn；内置匹配时按Dyn列")
                                              : QStringLiteral("高压Y / 低压yn；内置匹配时按Yyn列"))
-        : QStringLiteral("当前接法尚未支持；禁止计算，不沿用旧接法");
+        : previewOnly
+            ? (type == ElectricalPreviewConnection::Dd ? QStringLiteral("高压D / 低压d") : QStringLiteral("高压Y / 低压d"))
+                + QStringLiteral("；仅相电量预览，无内置标准列；完整计算及保存仍禁止")
+            : QStringLiteral("当前接法无法识别；禁止计算，不沿用旧接法");
     item(m_designConnectionRow, 5)->setText(note + QStringLiteral("；仅50Hz"));
     item(m_designConnectionRow, 5)->setToolTip(item(m_designConnectionRow, 5)->text());
-    if (!supported) error = QStringLiteral("当前联结组别未支持，请选择Dyn11或Yyn0");
+    if (type == ElectricalPreviewConnection::Invalid)
+        error = QStringLiteral("当前联结组别无法识别，不能预览相电量");
     static const QRegularExpression modelPattern(
         QStringLiteral("^([A-Za-z0-9]+-M)-([0-9]+(?:\\.[0-9]+)?)/([0-9]+(?:\\.[0-9]+)?)-([0-9]+(?:\\.[0-9]+)?)$"),
         QRegularExpression::CaseInsensitiveOption);
@@ -748,6 +773,10 @@ void ParamTableWidget::updateDesignConnection()
     if (error.isEmpty()) {
         CalcInput preview = m_recommendationBaseInput;
         saveToInput(preview);
+        // Override only the temporary preview. saveToInput and calculation gates
+        // still accept only Dyn11/Yyn0; Dd/Yd must not inherit old connection bits.
+        preview.hvDeltaConnected = type == ElectricalPreviewConnection::Dyn11 || type == ElectricalPreviewConnection::Dd;
+        preview.lvStarConnected = type == ElectricalPreviewConnection::Dyn11 || type == ElectricalPreviewConnection::Yyn0;
         preview.capacity_kVA = m_modelCapacity_kVA;
         preview.hvRated_kV = m_modelHvRated_kV;
         preview.lvRated_kV = m_modelLvRated_kV;
@@ -760,10 +789,16 @@ void ParamTableWidget::updateDesignConnection()
             auto *cell = item(m_designPhaseRow + r, c == 0 ? 2 : 4);
             cell->setText(error.isEmpty() ? QString::number(values[r][c], 'f', r == 0 ? 0 : 2) : QStringLiteral("不可用"));
             cell->setTextAlignment(Qt::AlignRight | Qt::AlignVCenter);
-            cell->setToolTip(error.isEmpty() ? QStringLiteral("当前已提交额定值与接法，复用引擎基础电量公式；只读，不改实际匝数。") : error);
+            cell->setToolTip(error.isEmpty()
+                ? (previewOnly ? QStringLiteral("Dd/Yd仅临时相电量预览；完整计算及保存仍禁止，不改实际匝数或套用内置标准。")
+                               : QStringLiteral("当前已提交额定值与接法，复用引擎基础电量公式；只读，不改实际匝数。"))
+                : error);
         }
         auto *remark = item(m_designPhaseRow + r, 5);
-        remark->setText(error.isEmpty() ? QStringLiteral("仅基础电量联动；不代表完整方案可算或合格") : error);
+        remark->setText(error.isEmpty()
+            ? (previewOnly ? QStringLiteral("仅相电量预览；完整计算及保存仍禁止")
+                           : QStringLiteral("仅基础电量联动；不代表完整方案可算或合格"))
+            : error);
         remark->setToolTip(remark->text());
     }
 }
@@ -1079,8 +1114,8 @@ void ParamTableWidget::loadParamsForConfig(const TransformerParams &params, cons
         m_designConnectionCombo = new QComboBox(this);
         m_designConnectionCombo->addItem(QStringLiteral("Dyn（Dyn11）"), QStringLiteral("Dyn11"));
         m_designConnectionCombo->addItem(QStringLiteral("Yyn（Yyn0）"), QStringLiteral("Yyn0"));
-        m_designConnectionCombo->addItem(QStringLiteral("Dd（暂不支持计算）"), QStringLiteral("Dd"));
-        m_designConnectionCombo->addItem(QStringLiteral("Yd（暂不支持计算）"), QStringLiteral("Yd"));
+        m_designConnectionCombo->addItem(QStringLiteral("Dd（仅相电量预览，完整计算未开放）"), QStringLiteral("Dd"));
+        m_designConnectionCombo->addItem(QStringLiteral("Yd（仅相电量预览，完整计算未开放）"), QStringLiteral("Yd"));
         QString selected = params.connectionGroup.trimmed();
         const auto type = connectionType(selected);
         if (type == SupportedConnection::Dyn11) selected = QStringLiteral("Dyn11");
@@ -1096,6 +1131,12 @@ void ParamTableWidget::loadParamsForConfig(const TransformerParams &params, cons
             // Compact worksheet labels; authoritative values remain in UserRole.
             m_designConnectionCombo->setItemText(0, QStringLiteral("Dyn11"));
             m_designConnectionCombo->setItemText(1, QStringLiteral("Yyn0"));
+            // This compact popup has no basic electrical preview rows.
+            m_designConnectionCombo->setItemText(2, QStringLiteral("Dd（未开放）"));
+            m_designConnectionCombo->setItemText(3, QStringLiteral("Yd（未开放）"));
+            for (int i : {2, 3})
+                m_designConnectionCombo->setItemData(i,
+                    QStringLiteral("完整计算及确认保存未开放；相电量预览请到设计输入页查看；无对应内置标准列。"), Qt::ToolTipRole);
         }
         m_designConnectionCombo->setCurrentIndex(selectedIndex);
         item(m_designConnectionRow, 2)->setText(selected);
