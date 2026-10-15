@@ -763,6 +763,8 @@ void SchemeCalculationSheet::rebuildSheet()
     inputAt(QStringLiteral("M12"),QStringLiteral("椭圆角(°)"));
     inputAt(QStringLiteral("P14"),QStringLiteral("硅钢片牌号"));
     inputAt(QStringLiteral("L16"),QStringLiteral("叠片系数"));
+    inputAt(QStringLiteral("H16"),QStringLiteral("原单单位铁损记录(W/kg)"));
+    inputAt(QStringLiteral("M16"),QStringLiteral("原单旧工艺系数记录"));
     inputAt(QStringLiteral("L9"),QStringLiteral("负载损耗标准值(W)"));
     inputAt(QStringLiteral("M9"),QStringLiteral("空载损耗标准值(W)"));
     inputAt(QStringLiteral("O9"),QStringLiteral("空载电流标准值(%)"));

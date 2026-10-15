@@ -63,6 +63,9 @@ struct CalcInput {
     int seamCount = 5;                // 接缝数
     double coreLossCraftCoef = 1.23;  // 心柱工艺系数（Sheet1 T25），保留旧字段名
     double yokeLossCraftCoef = 1.23;  // 铁轭工艺系数（Sheet1 W25）
+    // 原单H16/M16历史记录，仅供人工对照，不替代查表铁损或现用工艺系数。
+    QString legacyUnitLossRecordText;
+    QString legacyCraftCoefRecordText;
     // 宽90支持F20自动几何；手填值独立保留，宽80/60仍是工艺手动值。
     bool yokePiece1Auto = true;
     double yokePiece1Stack_mm = 4.0;  // 宽 90 片叠厚（Sheet1 D16）
