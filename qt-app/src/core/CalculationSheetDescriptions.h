@@ -16,7 +16,8 @@ inline QStringList addresses()
         "E27 F27 Q52 Q53 E29 E30 E31 E32 E33 E34 E35 E36 E37 E38 "
         "E39 E40 E41 E42 E43 H44 E45 E46 E47 E49 J49 H51 E50 "
         "U48 AD48 U49 AD49 U50 U51 U52 AD50 E52 E53 E54 I53 H54 O53 O54 P54 P49 AA53 "
-        "AF33 AF34 W36 W39 AF36 AF39 AD12")
+        "AF33 AF34 W36 W39 AF36 AF39 AD12 "
+        "AB12 A27 AD41 U44 U45 AB45 U46 AD46 U47 AD47 C49 B51")
         .split(QLatin1Char(' '));
 }
 
@@ -34,6 +35,40 @@ inline void capture(const CalcInput &in, CalcResult &r)
         r.calculationSheetNotes.insert(key, note.isEmpty()
             ? QStringLiteral("原计算单说明文字；只读，不作为新增输入或合格判定。") : note);
     };
+    const auto turnsTotal = r.calculationSheetDetails.constFind(QStringLiteral("AA12"));
+    text("AB12", turnsTotal == r.calculationSheetDetails.cend() ? QStringLiteral("不可用")
+        : turnsTotal.value().first != r.winding.hvTurnsMax ? QStringLiteral("需核对") : QString(),
+        QStringLiteral("原单比较AA12=SUM(AA9:AA11)与V8最大分接匝数；不相等提示需核对，相等留空。仅匝数合计提示，不是整机合格结论。"));
+    text("A27", QStringLiteral("%1/2=").arg(number(r.core.minorAxis_mm)),
+        QStringLiteral("当前椭圆形分支取L20短轴长/2，对应B27；不开放其他心柱算法。"));
+    text("AD41", QStringLiteral("%1kV级主空道的构成").arg(number(in.hvRated_kV)));
+    text("C49", QStringLiteral("-Mo"), QStringLiteral("原单相间净距说明符号，不是新增设计参数。"));
+    text("B51", QStringLiteral("%1+%2=")
+        .arg(number(in.coreDiameter_mm + 2.0 * in.phaseGapBase_mm), number(in.coreStraight_mm)),
+        QStringLiteral("D51线圈长轴方向尺寸的操作数：H12+2×B28，再加K12；数值取整仍由原引擎完成。"));
+    if (in.isRoundHighVoltageWire()) {
+        for (const char *a : {"U44", "U45", "AB45"})
+            text(a, QString(), QStringLiteral("圆线分支按原单留空；实际附加损耗沿用原有圆线规则，不套用扁线公式。"));
+    } else {
+        text("U44", QStringLiteral("Kw1=%1/10^7×(50×%2×%3×")
+            .arg(in.hvCopperWire ? QStringLiteral("3.8") : QStringLiteral("1.4"))
+            .arg(r.winding.hvTurnsMax).arg(number(in.hvBareWidth_mm)));
+        text("U45", QStringLiteral("%1×%2/%3)^2=")
+            .arg(number(r.winding.hvEffectiveSection_mm2), detail("HvExtraRoundCoef"), number(r.winding.hvInnerAxial_mm)),
+            QStringLiteral("AA15总有效截面×引擎实际ROUND(1−M39/Q33/π,2)系数÷AC30，接上行后平方。只说明原有AA45，不重新求解损耗。"));
+        text("AB45", QStringLiteral("%"));
+    }
+    const QString surfaceNote = QStringLiteral("只读展开当前引擎散热面积操作数，最终AC47/AK47仍取原计算结果。油道贡献按相间侧和端部侧分别累计，不照抄原表说明文字的合并条件；不改变面积、温升或筛选算法。单位mm，面积换算为m²。");
+    text("U46", QStringLiteral("S1=6×%1×[%2×%3+1.7×%4")
+        .arg(number(r.thermal.hvEffectiveHeight_mm), detail("HvSurfaceInnerPerimeter"),
+            in.hvRated_kV > 12.0 ? QStringLiteral("0.85") : QStringLiteral("0"), detail("HvSurfaceDuctTerm")), surfaceNote);
+    text("U47", QStringLiteral("+%1]/10^6=").arg(detail("HvSurfaceOuterPerimeter")), surfaceNote);
+    text("AD46", QStringLiteral("S2=6×%1×[1.7×%2")
+        .arg(number(in.lvFoilWidth_mm), detail("LvSurfaceDuctTerm")), surfaceNote
+        + QStringLiteral(" 原单内表面乘0项不参与数值，这里省略该无贡献项。"));
+    text("AD47", r.winding.mainDuct_mm < 4.0 ? QStringLiteral("+0]/10^6=")
+        : QStringLiteral("+(%1+%2)×0.85]/10^6=").arg(detail("AK36"), detail("AK39")), surfaceNote
+        + QStringLiteral(" 主空道AK43<4mm时该项为0，否则采用(AK36+AK39)×0.85；等于4mm时采用后者。"));
     text("X8", QStringLiteral("(%1)").arg(r.winding.hvTurnsMax - r.winding.hvTurnsRated));
     text("Z8", QStringLiteral("(%1)").arg(r.winding.hvTurnsRated - r.winding.hvTurnsMin));
     for (const char *a : {"Z9", "Z11", "Z15"}) text(a, QStringLiteral("="));
