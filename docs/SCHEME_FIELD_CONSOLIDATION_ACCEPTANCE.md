@@ -18,6 +18,8 @@ Sheet1 中的实际截面、磁密和分项铁芯重量仍在校核区，名称�
 
 > 2026-10-15再次核对候选动态位置：本批补齐13处已有数据/说明，另3处D18、C23、AJ45留到下一批。D18/C23在源单本身为字面量0，不能将模板动态标记都当作源单公式或缺失输入。最新逐项清单见 `SCHEME_REMAINING_FIELDS_BATCH1_ACCEPTANCE.md`；下表是早期历史清单，不代表当前剩余数量。
 
+> 第二批已为D18/C23补“未接入”状态、为AJ45补“待核对”状态及详细说明，见 `SCHEME_REMAINING_FIELDS_BATCH2_ACCEPTANCE.md`。只是显示缺口被明确标识，储油柜模型和AJ45/AS45口径仍未完成，不代表所有结构与算法已接通。
+
 > 此处记录上一版清单。AA9/AA10/Y11/AA11/AK10、H10/I10及L11/M11/O11/R11已在下一批接入，口径及验收见 `SCHEME_TURNS_PERFORMANCE_ACCEPTANCE.md`。
 
 > 油箱展开、几何链、裕度、绝缘排列与L51固定修正项也已在后续批次接入，详见 `SCHEME_GEOMETRY_INSULATION_ACCEPTANCE.md`；N50高度比等仍待核对。
