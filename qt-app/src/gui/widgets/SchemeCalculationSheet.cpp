@@ -359,7 +359,7 @@ auto sheetGroups(const CalcResult &result)
         "C12 C13 Q22 C14 C15 D12 D13 D14 D15 D16 D17 Q26 C20 C21 C22 O46 I49 S50 "
         "AA9 AA10 Y11 AA11 AK10 H10 I10 L11 M11 O11 R11 "
         "D53 F23 H23 S23 Q25 B48 B31 B32 B33 B34 B35 B40 B41 B42 B43 B44 "
-        "W27 AA27 Q29 Q31 Z35 V41 V42 AB41 AB42 AC40 AC42 AH43 AI43 AJ43 L51 N50 AK12").split(QLatin1Char(' '))
+        "W27 AA27 Q29 Q31 Z35 V41 V42 AB41 AB42 AC40 AC42 AH43 AI43 AJ43 L51 N50 AK12 K19 K20").split(QLatin1Char(' '))
         + CalculationSheetDescriptions::addresses();
     for (const auto &address : detailAddresses) {
         const auto it = result.calculationSheetDetails.constFind(address);
@@ -379,6 +379,16 @@ auto sheetGroups(const CalcResult &result)
         original.append({address, value, hasValue && deviation ? QStringLiteral("%") : QString(), note});
     }
     groups.append({QStringLiteral("原单"), original});
+    // AN列在主表AL范围之外；只在下方校核区保留一个参考行，不扩展图形区域。
+    const QString chordAddress = QStringLiteral("AN14");
+    const auto chordIt = result.calculationSheetDetails.constFind(chordAddress);
+    const bool chordAvailable = result.valid && result.sheetDetailsSnapshotAvailable;
+    const bool chordNumber = chordAvailable && chordIt != result.calculationSheetDetails.cend();
+    const QString chordValue = !chordAvailable ? QStringLiteral("待重新计算")
+        : result.calculationSheetTexts.contains(chordAddress) ? result.calculationSheetTexts.value(chordAddress)
+        : chordNumber ? snapshotValue(chordIt.value().first, chordIt.value().second) : QStringLiteral("待重新计算");
+    groups.append({QStringLiteral("内连接排参考"), {{QStringLiteral("内排弦高（原单AN14，参考）"),
+        chordValue, chordNumber ? QStringLiteral("mm") : QString(), result.calculationSheetNotes.value(chordAddress)}}});
     // 预留条件分支字段，使圆线/油膨缩状态变化时无需重建正在编辑的表。
     for (auto &group : groups) {
         QStringList optional;
