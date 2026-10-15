@@ -772,14 +772,20 @@ void calcTankGeometry(EmCtx &c)
 
     // 油道等效宽（M29..M38，阻抗用）
     for (int i = 0; i < 5; ++i) {
+        // 原计算单第4/5级交换宽、长权重：M32/M33及M37/M38。
+        // 不交换输入字段，不重排油道，停用0与两位小数ROUND规则不变。
+        const double lvWidthWeight = i < 3 ? c.ak34Long_mm : c.ak33Wide_mm;
+        const double lvHeightWeight = i < 3 ? c.ak33Wide_mm : c.ak34Long_mm;
+        const double hvWidthWeight = i < 3 ? c.ab39Long_mm : c.ab36Wide_mm;
+        const double hvHeightWeight = i < 3 ? c.ab36Wide_mm : c.ab39Long_mm;
         c.m29_33[i] = excelRound(
-            (in.lvDuctWidthSide[i] * c.ak34Long_mm
-             + in.lvDuctHeightSide[i] * c.ak33Wide_mm)
-                / (c.ak34Long_mm + c.ak33Wide_mm), 2);
+            (in.lvDuctWidthSide[i] * lvWidthWeight
+             + in.lvDuctHeightSide[i] * lvHeightWeight)
+                / (lvWidthWeight + lvHeightWeight), 2);
         c.m34_38[i] = excelRound(
-            (in.hvDuctWidthSide[i] * c.ab39Long_mm
-             + in.hvDuctHeightSide[i] * c.ab36Wide_mm)
-                / (c.ab39Long_mm + c.ab36Wide_mm), 2);
+            (in.hvDuctWidthSide[i] * hvWidthWeight
+             + in.hvDuctHeightSide[i] * hvHeightWeight)
+                / (hvWidthWeight + hvHeightWeight), 2);
     }
 
     c.out->mass.windowHeight_mm = c.windowHeight_mm;
