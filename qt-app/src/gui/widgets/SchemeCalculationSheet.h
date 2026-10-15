@@ -10,6 +10,7 @@ class ParamTableWidget;
 class QTableWidget;
 class QLabel;
 class QTableWidgetItem;
+class QComboBox;
 struct TransformerParams;
 struct StructureConfig;
 struct CalcInput;
@@ -44,6 +45,8 @@ private:
     CalcResult m_snapshot;
     QString m_coreShapeName;
     QString m_coolingName;
+    QPointer<QComboBox> m_coreShapeCombo;
+    QPointer<QComboBox> m_yokeShapeCombo;
     QVector<Binding> m_bindings;
     QHash<QObject *, QPointer<QWidget>> m_editors;
     QMultiHash<QString, QTableWidgetItem *> m_resultBindings;

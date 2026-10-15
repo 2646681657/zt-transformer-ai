@@ -735,6 +735,8 @@ void calcWindingLayout(EmCtx &c)
     rememberSheetValue(sheet, "AA10", aa10, 0);
     rememberSheetValue(sheet, "Y11", y11, 0);
     rememberSheetValue(sheet, "AA11", double(c.segLayers[2]) * y11, 0);
+    rememberSheetValue(sheet, "AA12", aa9 + aa10 + double(c.segLayers[2]) * y11, 0);
+    rememberSheetValue(sheet, "Y15", double(in.hvParallelCount) * double(in.hvStackCount), 0);
     if (c.segLayers[0] < 0 || c.segLayers[1] < 0 || y11 <= 0)
         sheet.calculationSheetNotes.insert(QStringLiteral("Y11"), QStringLiteral("末层或段层数非正，请核对总层数与匝数分布；此明细不代替工艺判定。"));
     rememberSheetValue(sheet, "AA22", c.hvAxialPerWire_mm, 3);
@@ -1093,6 +1095,7 @@ void calcLoadLoss(EmCtx &c, double lambda_mm, double hx_mm)
         h10 + (in.isRoundHighVoltageWire() ? 0.0 : i10);
     if (c.out->sheetDetailsSnapshotAvailable) {
         rememberSheetValue(*c.out, "H10", h10, 0);
+        rememberSheetValue(*c.out, "HvExtraRoundCoef", roundCoef);
         rememberSheetValue(*c.out, "I10", i10, 3);
         c.out->calculationSheetNotes.insert(QStringLiteral("I10"), QStringLiteral("附加损耗显示值含当前低压附加项；圆线分支不将此合计加入L10负载损耗，低压热负荷仍按原规则计算。"));
     }
@@ -1392,6 +1395,11 @@ void calcThermal(EmCtx &c)
     c.out->thermal.lvRiseAboveOil_K = ak51;
     if (c.out->sheetDetailsSnapshotAvailable) {
         rememberSheetValue(*c.out, "O46", o46);
+        // Existing operands only: descriptions must not re-solve the thermal chain.
+        rememberSheetValue(*c.out, "HvSurfaceInnerPerimeter", perimHvInner, 1);
+        rememberSheetValue(*c.out, "HvSurfaceOuterPerimeter", perimHv, 1);
+        rememberSheetValue(*c.out, "HvSurfaceDuctTerm", ductTermHv);
+        rememberSheetValue(*c.out, "LvSurfaceDuctTerm", ductTermLv);
         rememberSheetValue(*c.out, "I49", i49, 0);
         rememberSheetValue(*c.out, "S50", ks, 3);
         rememberSheetValue(*c.out, "L51", 6.0, 0);

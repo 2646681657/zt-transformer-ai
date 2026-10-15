@@ -255,7 +255,7 @@ auto sheetGroups(const CalcResult &result)
     at("AH5", result.electrical.lvLine_V, 0);
     at("AH6", result.electrical.lvPhase_V, 0);
     at("AG7", result.electrical.lvPhaseCurrent_A, 2);
-    at("V8 AA12", result.winding.hvTurnsMax, 0);
+    at("V8", result.winding.hvTurnsMax, 0);
     at("Y8", result.winding.hvTurnsRated, 0);
     at("AA8", result.winding.hvTurnsMin, 0);
     at("Y9 Y10", result.winding.layerCount, 0);
@@ -357,7 +357,7 @@ auto sheetGroups(const CalcResult &result)
         "AB36 AB39 AK33 AK34 AK36 AK39 AF10 AG10 AH10 AI10 AJ10 "
         "D51 D52 J24 B27 B29 B36 B38 B45 B47 H24 S44 C17 M29 M30 M31 M32 M33 M34 M35 M36 M37 M38 "
         "C12 C13 Q22 C14 C15 D12 D13 D14 D15 D16 D17 Q26 C20 C21 C22 O46 I49 S50 "
-        "AA9 AA10 Y11 AA11 AK10 H10 I10 L11 M11 O11 R11 "
+        "AA9 AA10 Y11 AA11 AA12 Y15 AK10 H10 I10 L11 M11 O11 R11 "
         "D53 F23 H23 S23 Q25 B48 B31 B32 B33 B34 B35 B40 B41 B42 B43 B44 "
         "W27 AA27 Q29 Q31 Z35 V41 V42 AB41 AB42 AC40 AC42 AH43 AI43 AJ43 L51 N50 AK12 K19 K20").split(QLatin1Char(' '))
         + CalculationSheetDescriptions::addresses();
@@ -452,7 +452,8 @@ SchemeCalculationSheet::SchemeCalculationSheet(const TransformerParams &params,
     m_input = new ParamTableWidget(this);
     // The complete worksheet exposes existing advanced parameters in-place.
     Q_UNUSED(proMode);
-    m_input->loadParamsForConfig(params, config, input, true);
+    // Only expose the existing selectors, not the design page's extra preview rows.
+    m_input->loadParamsForConfig(params, config, input, true, false, true);
     m_input->hide();
     m_results = new QTableWidget(this);
     m_results->setItemDelegate(new LiveInputDelegate(m_results));
@@ -767,6 +768,31 @@ void SchemeCalculationSheet::rebuildSheet()
                 bind(2,9,f,false); break;
             }
     inputAt(QStringLiteral("C3"),QStringLiteral("联结组别"));
+    inputAt(QStringLiteral("F3"),QStringLiteral("指标来源模式"));
+    // Original dropdowns; unsupported structures are selectable for inspection,
+    // but inputsReady rejects them before either preview calculation or confirmation.
+    m_coreShapeCombo = new QComboBox(m_results);
+    for (const auto &name : {QStringLiteral("圆形"), QStringLiteral("长圆形"), QStringLiteral("椭圆形")})
+        m_coreShapeCombo->addItem(name + (name == QStringLiteral("椭圆形") ? QString() : QStringLiteral("（暂不支持计算）")), name);
+    int shapeIndex = m_coreShapeCombo->findData(m_coreShapeName);
+    if (shapeIndex < 0) {
+        m_coreShapeCombo->addItem(m_coreShapeName + QStringLiteral("（暂不支持计算）"), m_coreShapeName);
+        shapeIndex = m_coreShapeCombo->count() - 1;
+    }
+    m_coreShapeCombo->setCurrentIndex(shapeIndex);
+    m_coreShapeCombo->setToolTip(QStringLiteral("原单心柱选型；当前仅椭圆形有对应算法，其他形状不能计算或确认。"));
+    m_results->setCellWidget(3,5,m_coreShapeCombo);
+    connect(m_coreShapeCombo, &QComboBox::currentIndexChanged, this, [this]() {
+        m_coreShapeName = m_coreShapeCombo->currentData().toString();
+        syncInputs(); markPending();
+    });
+    m_yokeShapeCombo = new QComboBox(m_results);
+    m_yokeShapeCombo->addItem(QStringLiteral("同心柱（暂不支持计算）"), false);
+    m_yokeShapeCombo->addItem(QStringLiteral("T形轭"), true);
+    m_yokeShapeCombo->setCurrentIndex(1);
+    m_yokeShapeCombo->setToolTip(QStringLiteral("当前按T形轭计算；同心柱尚无独立对应算法，禁止计算或确认。"));
+    m_results->setCellWidget(4,5,m_yokeShapeCombo);
+    connect(m_yokeShapeCombo, &QComboBox::currentIndexChanged, this, [this]() { markPending(); });
     inputAt(QStringLiteral("C5"),QStringLiteral("频率(Hz)"));
     inputAt(QStringLiteral("H12"),QStringLiteral("铁芯直径(mm)"));
     inputAt(QStringLiteral("K12"),QStringLiteral("直线段长(mm)"));
@@ -895,6 +921,14 @@ void SchemeCalculationSheet::markPending()
 
 bool SchemeCalculationSheet::inputsReady(QString &error) const
 {
+    if (!m_coreShapeCombo || m_coreShapeCombo->currentData().toString() != QStringLiteral("椭圆形")) {
+        error = QStringLiteral("当前心柱仅支持椭圆形；所选形状尚无对应算法，不能计算或确认。");
+        return false;
+    }
+    if (!m_yokeShapeCombo || !m_yokeShapeCombo->currentData().toBool()) {
+        error = QStringLiteral("当前铁轭仅支持T形轭；同心柱尚无对应算法，不能计算或确认。");
+        return false;
+    }
     for (auto it = m_editors.constBegin(); it != m_editors.constEnd(); ++it) {
         auto *spin = qobject_cast<QAbstractSpinBox *>(it.value().data());
         if (spin && spin->isEnabled() && !spin->isHidden() && !spin->hasAcceptableInput()) {

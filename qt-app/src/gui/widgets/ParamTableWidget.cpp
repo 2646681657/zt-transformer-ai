@@ -927,7 +927,8 @@ void ParamTableWidget::updateWireForm()
 // 四/五/六节为可编辑设计变量，与 CalcInput 双向同步（saveToInput 读回）；
 // proMode=true 时追加七~十节高级参数（专业模式）
 void ParamTableWidget::loadParamsForConfig(const TransformerParams &params, const StructureConfig &config,
-                                           const CalcInput &input, bool proMode, bool designConnectionUi)
+                                           const CalcInput &input, bool proMode, bool designConnectionUi,
+                                           bool sheetSelectionUi)
 {
     // 普通/专业模式会在同一对象上重载。销毁旧单元格前保留扁线会话备份；
     // 当前圆线输入不包含这份备份，不得用圆线增厚或默认宽厚覆盖它。
@@ -1047,7 +1048,7 @@ void ParamTableWidget::loadParamsForConfig(const TransformerParams &params, cons
                 "频率(Hz)", QString::number(params.frequency_Hz),
                 "connectionGroup", "frequency");
     item(row - 1, 5)->setText(QStringLiteral("仅50Hz；其他频率禁止计算"));
-    if (m_designConnectionUi) {
+    if (m_designConnectionUi || sheetSelectionUi) {
         m_designConnectionRow = row - 1;
         m_designConnectionCombo = new QComboBox(this);
         m_designConnectionCombo->addItem(QStringLiteral("Dyn（Dyn11）"), QStringLiteral("Dyn11"));
@@ -1072,6 +1073,8 @@ void ParamTableWidget::loadParamsForConfig(const TransformerParams &params, cons
             if (m_loading || connectionCombo != m_designConnectionCombo) return;
             item(m_designConnectionRow, 2)->setText(connectionCombo->currentData().toString());
         });
+    }
+    if (m_designConnectionUi) {
         m_designPhaseRow = row;
         addParamRow(row++, QStringLiteral("高压额定相电压(V)"), QStringLiteral("待确认"),
                     QStringLiteral("低压相电压(V)"), QStringLiteral("待确认"));
@@ -1135,7 +1138,7 @@ void ParamTableWidget::loadParamsForConfig(const TransformerParams &params, cons
     // 二 性能指标
     addSectionRow(row++, QStringLiteral("二 性能指标"),
                   QStringLiteral("设计允许偏差:最小值(可选填)"), QStringLiteral("最大值(可选填)"));
-    if (m_designConnectionUi) {
+    if (m_designConnectionUi || sheetSelectionUi) {
         m_standardModeRow = row;
         addParamRow(row++, QStringLiteral("指标来源模式"), QString(), QString(), QString());
         item(m_standardModeRow, 2)->setFlags(item(m_standardModeRow, 2)->flags() & ~Qt::ItemIsEditable);

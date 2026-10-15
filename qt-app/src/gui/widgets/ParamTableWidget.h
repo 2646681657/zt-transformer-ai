@@ -24,7 +24,8 @@ public:
     // 设计变量节初值取自 input（默认即 SB20-M-630-10）；
     // proMode=true 时追加工艺/油道/损耗/油箱四节高级参数（专业模式）
     void loadParamsForConfig(const TransformerParams &params, const StructureConfig &config,
-                             const CalcInput &input, bool proMode = false, bool designConnectionUi = false);
+                             const CalcInput &input, bool proMode = false, bool designConnectionUi = false,
+                             bool sheetSelectionUi = false);
     TransformerParams getParams() const;
     // 当前联结组别是否能同时用于电磁计算与现有标准损耗表。
     bool hasSupportedConnectionGroup() const;
