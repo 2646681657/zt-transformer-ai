@@ -9,6 +9,7 @@
 #include "HvCoilFormNotes.h"
 #include "HvEndInsulationNotes.h"
 #include "CalculationSheetDescriptions.h"
+#include "ConnectionBarChordReference.h"
 
 // ============================================================================
 // 工具函数：Excel 语义复现
@@ -1769,6 +1770,7 @@ bool ElectromagneticEngine::calcElectromagnetic(const CalcInput &input, CalcResu
         capturePerformanceDeviations(input, result);
         captureHeightRatioReference(input, result);
         captureConnectionBarReference(input, result);
+        ConnectionBarChordReference::capture(input, result);
         CalculationSheetDescriptions::capture(input, result);
     }
     result.error = ctx.error;
