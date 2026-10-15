@@ -17,7 +17,7 @@ inline QStringList addresses()
         "E39 E40 E41 E42 E43 H44 E45 E46 E47 E49 J49 H51 E50 "
         "U48 AD48 U49 AD49 U50 U51 U52 AD50 E52 E53 E54 I53 H54 O53 O54 P54 P49 AA53 "
         "AF33 AF34 W36 W39 AF36 AF39 AD12 "
-        "AB12 A27 AD41 U44 U45 AB45 U46 AD46 U47 AD47 C49 B51")
+        "AB12 A27 AD41 U44 U45 AB45 U46 AD46 U47 AD47 C49 B51 D18 C23 AJ45")
         .split(QLatin1Char(' '));
 }
 
@@ -35,6 +35,13 @@ inline void capture(const CalcInput &in, CalcResult &r)
         r.calculationSheetNotes.insert(key, note.isEmpty()
             ? QStringLiteral("原计算单说明文字；只读，不作为新增输入或合格判定。") : note);
     };
+    text("D18", QStringLiteral("未接入"),
+        QStringLiteral("储油柜相关项：当前程序未接入独立储油柜选型、重量及排油模型。原单该位置的字面量0不能证明当前方案未配置储油柜，也不能作为计算结果；本批仅补显示状态，不新增输入或制造判断。"));
+    text("C23", QStringLiteral("未接入"),
+        QStringLiteral("储油柜油重：当前没有独立容量、充油量及排油计算来源，不能将原单字面量0当作已算油重。现有总油重和成本仍沿用原模型；需要储油柜的方案不能凭本状态视为已覆盖。"));
+    text("AJ45", QStringLiteral("待核对"),
+        QStringLiteral("原单AJ45为固定0，与AS45及程序低压附加损耗的工艺口径尚未确认，不直接绑定或替换为0。本次程序实际低压附加损耗为%1 W（见下方高级工艺参数“低压附加损耗(W)”）：扁线计入负载损耗及低压热负荷AK48；圆线不计入L10，但仍进入AK48。仅说明既有行为，不代表与原单等价，也不改变损耗、温升或筛选公式。")
+            .arg(number(r.winding.lvExtraLoss_W)));
     const auto turnsTotal = r.calculationSheetDetails.constFind(QStringLiteral("AA12"));
     text("AB12", turnsTotal == r.calculationSheetDetails.cend() ? QStringLiteral("不可用")
         : turnsTotal.value().first != r.winding.hvTurnsMax ? QStringLiteral("需核对") : QString(),
