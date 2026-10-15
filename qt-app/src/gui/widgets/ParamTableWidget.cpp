@@ -528,10 +528,34 @@ QString ParamTableWidget::standardUnavailableReason() const
     return QString();
 }
 
+void ParamTableWidget::refreshStandardSelectorTip()
+{
+    if (m_loading) return;
+    static const QRegularExpression modelPattern(
+        QStringLiteral("^([A-Za-z0-9]+-M)-([0-9]+(?:\\.[0-9]+)?)/([0-9]+(?:\\.[0-9]+)?)-([0-9]+(?:\\.[0-9]+)?)$"),
+        QRegularExpression::CaseInsensitiveOption);
+    const auto model = modelPattern.match(m_productModelEdit ? m_productModelEdit->text().trimmed() : QString());
+    const bool modelReady = model.hasMatch()
+        && model.captured(1).compare(m_modelSeries, Qt::CaseInsensitive) == 0
+        && model.captured(2).toDouble() == m_modelCapacity_kVA
+        && model.captured(3).toDouble() == m_modelHvRated_kV
+        && model.captured(4).toDouble() == m_modelLvRated_kV;
+    const QString modeName = m_standardMode == TransformerParams::StandardMode::BuiltIn
+        ? QStringLiteral("内置表") : m_standardMode == TransformerParams::StandardMode::Custom
+        ? QStringLiteral("非标") : QStringLiteral("待确认");
+    const QString status = modelReady ? m_standardStatus
+        : QStringLiteral("产品型号未完整提交；当前模式为%1。旧匹配状态无效，请补全型号并按回车提交低压电压后核对；当前保留的指标不代表已匹配此规格。").arg(modeName);
+    const QString tip = QStringLiteral("指标来源模式：内置表仅自动匹配已有损耗标准，不代表完整国标认证；非标保留手工指标。\n") + status;
+    if (m_standardModeRow >= 0) item(m_standardModeRow, 2)->setToolTip(tip);
+    if (m_standardModeCombo) m_standardModeCombo->setToolTip(tip);
+}
+
 void ParamTableWidget::applyModelLinkage()
 {
     updateTestVoltageHints();
-    if (m_loading || m_modelSeries.isEmpty() || m_modelCapacity_kVA <= 0.0) {
+    if (m_loading) return;
+    if (m_modelSeries.isEmpty() || m_modelCapacity_kVA <= 0.0) {
+        refreshStandardSelectorTip();
         return;
     }
     const QString series = m_modelSeries;
@@ -591,6 +615,7 @@ void ParamTableWidget::applyModelLinkage()
             ? QStringLiteral("全部指标手工；规格切换不覆盖") : QStringLiteral("旧方案来源缺失，请核对"));
         item(m_standardModeRow, 5)->setToolTip(m_standardStatus);
     }
+    refreshStandardSelectorTip();
     emit stdValuesUpdated(m_standardStatus);
     updateYokePiece1();
     updateLvTurnsRecommendation();
@@ -1037,6 +1062,7 @@ void ParamTableWidget::loadParamsForConfig(const TransformerParams &params, cons
         if (capacityComplete) {
             applyModelLinkage();
         }
+        refreshStandardSelectorTip();
     });
     connect(m_productModelEdit, &QLineEdit::returnPressed, this, [this]() {
         parseCompositeModel(m_productModelEdit->text(), true);
@@ -1063,6 +1089,13 @@ void ParamTableWidget::loadParamsForConfig(const TransformerParams &params, cons
         if (selectedIndex < 0) {
             m_designConnectionCombo->addItem(selected + QStringLiteral("（未支持，需修改）"), selected);
             selectedIndex = m_designConnectionCombo->count() - 1;
+        }
+        for (int i = 0; i < m_designConnectionCombo->count(); ++i)
+            m_designConnectionCombo->setItemData(i, m_designConnectionCombo->itemText(i), Qt::ToolTipRole);
+        if (sheetSelectionUi && !m_designConnectionUi) {
+            // Compact worksheet labels; authoritative values remain in UserRole.
+            m_designConnectionCombo->setItemText(0, QStringLiteral("Dyn11"));
+            m_designConnectionCombo->setItemText(1, QStringLiteral("Yyn0"));
         }
         m_designConnectionCombo->setCurrentIndex(selectedIndex);
         item(m_designConnectionRow, 2)->setText(selected);
@@ -1147,6 +1180,13 @@ void ParamTableWidget::loadParamsForConfig(const TransformerParams &params, cons
         modeCombo->addItem(QStringLiteral("内置标准（损耗表）"), int(TransformerParams::StandardMode::BuiltIn));
         modeCombo->addItem(QStringLiteral("非标（手工指标）"), int(TransformerParams::StandardMode::Custom));
         modeCombo->addItem(QStringLiteral("来源待确认"), int(TransformerParams::StandardMode::Unconfirmed));
+        for (int i = 0; i < modeCombo->count(); ++i)
+            modeCombo->setItemData(i, modeCombo->itemText(i), Qt::ToolTipRole);
+        if (sheetSelectionUi && !m_designConnectionUi) {
+            modeCombo->setItemText(0, QStringLiteral("内置表"));
+            modeCombo->setItemText(1, QStringLiteral("非标"));
+            modeCombo->setItemText(2, QStringLiteral("待确认"));
+        }
         modeCombo->setCurrentIndex(int(m_standardMode));
         setCellWidget(m_standardModeRow, 2, modeCombo);
         connect(modeCombo, &QComboBox::currentIndexChanged, this, [this, modeCombo](int index) {

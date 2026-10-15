@@ -498,7 +498,13 @@ QWidget *SchemeCalculationSheet::mirrorEditor(QWidget *source)
     if (auto *s = qobject_cast<QComboBox *>(source)) {
         auto *d = new QComboBox(m_results);
         d->setModel(s->model()); d->setModelColumn(s->modelColumn()); d->setCurrentIndex(s->currentIndex());
-        connect(d, &QComboBox::currentIndexChanged, s, [s](int index) { s->setCurrentIndex(index); });
+        connect(d, &QComboBox::currentIndexChanged, s, [s,d](int index) {
+            s->setCurrentIndex(index);
+            // A source handler may reject/revert a selection with signals blocked.
+            // Always finish with the authoritative index, without a second edit.
+            const QSignalBlocker block(d);
+            d->setCurrentIndex(s->currentIndex());
+        });
         connect(s, &QComboBox::currentIndexChanged, d, [s,d]() { const QSignalBlocker block(d); d->setCurrentIndex(s->currentIndex()); });
         copy = d;
     } else if (auto *s = qobject_cast<QDoubleSpinBox *>(source)) {
