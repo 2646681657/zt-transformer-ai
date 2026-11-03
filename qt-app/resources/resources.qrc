@@ -81,5 +81,7 @@
         <file>icons/help_dark.svg</file>
         <file>icons/logout_dark.svg</file>
         <file>icons/calculate_dark.svg</file>
+        <file>templates/linked_calculation_sheet.xlsx</file>
+        <file>scripts/export_calculation_sheet.ps1</file>
     </qresource>
 </RCC>

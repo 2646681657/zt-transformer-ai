@@ -5,6 +5,7 @@
 //       导线长/电阻/负载损耗 → 阻抗电压 → 温升 → 重量/成本
 
 #include "ICalcEngine.h"
+#include "ShapeBranchPreview.h"
 
 class ElectromagneticEngine : public ICalcEngine {
 public:
@@ -22,6 +23,10 @@ public:
     static bool previewCoreGeometry(const CalcInput &input, CoreResult &core, QString &error);
     // 复用基础电量公式；不运行几何/损耗/温升，不代表全链可算。
     static bool previewElectrical(const CalcInput &input, ElectricalResult &electrical, QString &error);
+    // Original circle/long-round geometry + independent winding chain only.
+    // Fixed 50Hz/75C; does not certify core weight, total loss or temperature.
+    static ShapeBranchPreview previewShapeBranch(const CalcInput &input);
+    static ShapeBranchPreview previewSegmentWinding(const CalcInput &input);
 
     // 电磁计算全链路：CalcInput（默认即 SB20-M-630-10）→ CalcResult
     bool calcElectromagnetic(const CalcInput &input, CalcResult &result) override;

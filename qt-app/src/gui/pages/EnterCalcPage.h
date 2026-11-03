@@ -24,6 +24,8 @@ class RibbonButton;
 class SidebarPanel;
 class SchemeTableWidget;
 class PrintTableWidget;
+class SchemeCalculationSheet;
+class QHBoxLayout;
 class EmResultPanel;
 class GridOptimizer;
 
@@ -50,6 +52,7 @@ private slots:
     void onTabChanged(int index);
     // 执行电磁计算全链路并填充结果面板/打印表/方案表
     void onRunEmCalc();
+    void onCandidateComparison();
     // 侧边栏方案按钮（0=推荐 1=保存我的 2=方案库 3=上一次）
     void onSchemeButtonClicked(int index);
     // ---- 异步寻优（开始运行/暂停/停止 按钮驱动 GridOptimizer）----
@@ -103,7 +106,7 @@ private slots:
     // 校验选中方案后跳转输出打印 Tab
     void onConfirmScheme();
     // 行内「选择」按钮点击：弹出方案参数弹窗（可修改重算），
-    // 确认后点亮该行按钮并停留在方案选择 Tab
+    // 确认后提交该行方案并进入输出打印 Tab
     void onSchemeSelected(int row);
     // ---- 方案库存储 ----
     // 批量保存当前方案表全部方案（设计变量 JSON 文件）
@@ -142,6 +145,8 @@ private:
     void setupOptimizeTab();
     void setupSchemeTab();
     void setupPrintTab();
+    void updatePrintSheet(const TransformerParams &params, const CalcInput &input, const CalcResult &result);
+    void saveSchemes(const CalcInput *editedInput, int editedIndex, QWidget *dialogParent);
     // 竖排"程序选择"导航按钮（点击返回主界面），三个 Tab 各自持有
     QPushButton *createNavButton(QWidget *parent);
     void buildOptimizeRibbon();
@@ -185,7 +190,9 @@ private:
     bool m_optRunning = false;            // 寻优运行中标志
     bool m_discardOptimizationResults = false; // 输入已更换，忽略旧寻优线程的后续信号
     SchemeTableWidget *m_schemeTable;
-    PrintTableWidget *m_printTable;
+    PrintTableWidget *m_printTable; // 数据导出兼容表，不作为打印版面
+    SchemeCalculationSheet *m_printSheet = nullptr;
+    QHBoxLayout *m_printLayout = nullptr;
     EmResultPanel *m_emResultPanel = nullptr;
     QLabel *m_statusBar = nullptr;
     // 方案选择 Ribbon 控件（与图片布局一一对应）

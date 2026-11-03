@@ -149,8 +149,8 @@ struct OptimizationSettings {
                 * fineNeighborhoodUpperBound() : 0);
     }
     QString validationError(const CalcInput &base) const {
-        if (combinationBudget < 1000 || combinationBudget > 1000000)
-            return QStringLiteral("总处理预算须为1000至1000000。");
+        if (combinationBudget < 1000 || combinationBudget > 10000000)
+            return QStringLiteral("总处理预算须为1000至10000000。");
         if (enhancedCoverage && (centerLimit < 3 || centerLimit > 12))
             return QStringLiteral("增强细搜中心数须为3至12。");
         if (enhancedCoverage && expandCoverage && (maxExpansionRounds < 1 || maxExpansionRounds > 5))

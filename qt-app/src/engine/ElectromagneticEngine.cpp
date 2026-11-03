@@ -1,4 +1,4 @@
-#include "ElectromagneticEngine.h"
+﻿#include "ElectromagneticEngine.h"
 
 #include <QtMath>
 #include <QCoreApplication>
@@ -10,6 +10,7 @@
 #include "HvEndInsulationNotes.h"
 #include "CalculationSheetDescriptions.h"
 #include "ConnectionBarChordReference.h"
+#include "CoreLaminationPreview.h"
 
 // ============================================================================
 // 工具函数：Excel 语义复现
@@ -79,7 +80,7 @@ void captureConnectionBarReference(const CalcInput &input, CalcResult &result)
     const QString key = QStringLiteral("AK12");
     const QString thickness = input.lvConnectionBarThicknessText.trimmed();
     const QString width = input.lvConnectionBarWidthText.trimmed();
-    const QString scope = QStringLiteral("原单截面参考=AG12厚×AJ12宽−5mm²。固定扣减5的工艺依据待确认；未参与损耗、温升、整机合格、寻优筛选或成本。不是载流能力/制造安全结论。");
+    const QString scope = (input.designAreaMode==1.0?QStringLiteral("当前内连接排尺寸同时参与辅助设计截面；以下厚×宽−5仅为独立参考，不作为该设计截面。\n"):QString())+QStringLiteral("原单截面参考=AG12厚×AJ12宽−5mm²。固定扣减5的工艺依据待确认；未参与损耗、温升、整机合格、寻优筛选或成本。不是载流能力/制造安全结论。");
     const auto unavailable = [&](const QString &status, const QString &reason) {
         result.calculationSheetTexts.insert(key, status);
         result.calculationSheetNotes.insert(key, reason + QLatin1Char('\n') + scope);
@@ -344,6 +345,12 @@ void calcElectrical(EmCtx &c)
 void calcCoreGeometry(EmCtx &c)
 {
     const CalcInput &in = *c.in;
+    const auto areaError=in.designAreaInputError();if(!areaError.isEmpty()){c.fail(areaError);return;}
+    const auto widthError=in.coreWidthOffsetError();
+    if(!widthError.isEmpty()){c.fail(widthError);return;}
+    if(c.out->sheetDetailsSnapshotAvailable)
+        for(int i=15;i<20;++i)
+            rememberSheetValue(*c.out,qPrintable(QStringLiteral("CoreReservedWidthOffset%1").arg(i+1)),in.coreWidthOffsets_mm[i],4);
     const double D = in.coreDiameter_mm;          // H12
     const double Ls = in.coreStraight_mm;         // K12
     const double ang = in.ellipseAngle_deg;       // M12
@@ -366,29 +373,43 @@ void calcCoreGeometry(EmCtx &c)
         return;
     }
     // 计算单 G17..S17 的列偏移（B..L 列，G17 无偏移）
-    static const double kColOffset[11] = {0, 5, 15, 25, 45, 60, 90, 130, 120, 110, 100};
     // 轭片基数（F19..I19，M..P 列偏移 90/80/60/0）
     QVector<double> yokeBase;
-    db.coreYokeBase(c.minorAxis_mm, yokeBase);
-    const double yokeBaseOff[4] = {90, 80, 60, 0};
+    if(!db.coreYokeBase(c.minorAxis_mm,yokeBase)||yokeBase.size()<4){
+        c.fail(QStringLiteral("叠积表缺少当前尺寸的补充片基数，不能沿用旧片宽。"));return;
+    }
+    const auto setWidth=[&](int index,double base){
+        const double width=base+in.coreWidthOffsets_mm[index];
+        if(!std::isfinite(base)||!std::isfinite(width)||width<0.0){
+            c.fail(QStringLiteral("第%1级查表基数加片宽修正后为负或无效。").arg(index+1));return false;
+        }
+        c.lamWidth[index]=width;
+        if(c.out->sheetDetailsSnapshotAvailable){
+            rememberSheetValue(*c.out,qPrintable(QStringLiteral("CoreWidthBase%1").arg(index+1)),base,4);
+            rememberSheetValue(*c.out,qPrintable(QStringLiteral("CoreWidthOffset%1").arg(index+1)),in.coreWidthOffsets_mm[index],4);
+            rememberSheetValue(*c.out,qPrintable(QStringLiteral("CoreFinalWidth%1").arg(index+1)),width,4);
+        }
+        return true;
+    };
 
     for (int i = 0; i < 11; ++i) {
-        c.lamWidth[i] = widths[i] + kColOffset[i];
+        if(!setWidth(i,widths[i]))return;
     }
     for (int i = 0; i < 4 && i + 11 < 16; ++i) {
-        const double base = (yokeBase.size() > i ? yokeBase[i] : 0.0) + yokeBaseOff[i];
-        c.lamWidth[11 + i] = base;
+        if(!setWidth(11+i,yokeBase[i]))return;
     }
     c.lamWidth[15] = 0.0;
 
     // 叠厚递推（G18..S18）：小圆弧段用大圆半径，超出交接高切换小圆+直线段
     double acc = 0.0;
     for (int i = 0; i < 11; ++i) {
+        // M18:S18 explicitly return zero for zero width; earlier columns do not.
+        if(i>=6 && c.lamWidth[i]==0.0){c.stack[i]=0.0;continue;}
         const double halfW = c.lamWidth[i] / 2.0;
         const double t = std::sqrt(c.majorR_mm * c.majorR_mm
                                    - (halfW + c.yokeFlat_mm) * (halfW + c.yokeFlat_mm));
         double cand;
-        if (t <= c.junctionH_mm) {
+        if (i == 0 || t <= c.junctionH_mm) {
             cand = t;
         } else {
             cand = std::sqrt((D / 2.0) * (D / 2.0) - halfW * halfW) + Ls / 2.0;
@@ -477,6 +498,54 @@ void calcCoreGeometry(EmCtx &c)
     }
     c.coreArea_cm2 = sumCol * in.stackFactor / 100.0;
     c.yokeArea_cm2 = sumYoke * in.stackFactor / 100.0;
+    // 原表F14可选择线圈型式D39，不能与重量表D23或实际I24混用。
+    if(in.designAreaMode==1.0){
+        double widths[16]={0},stacks[15]={0},cumulative[16]={0};
+        double accumulated=0;
+        for(int i=0;i<15;++i){
+            widths[i+1]=c.lamWidth[i];
+            double stack=i<11?c.stack[i]:0.0;
+            if(i>=11&&widths[i+1]>0){
+                const double half=widths[i+1]/2;
+                const double arc=std::sqrt(c.majorR_mm*c.majorR_mm-std::pow(half+c.yokeFlat_mm,2));
+                const double candidate=arc<=c.junctionH_mm?arc:std::sqrt(D*D/4-half*half)+Ls/2;
+                stack=excelRound(candidate-accumulated,0);
+            }
+            if(!std::isfinite(stack)||stack<0){c.fail(QStringLiteral("辅助设计截面补片几何无解或叠厚为负；请核对尺寸与片宽。"));return;}
+            stacks[i]=stack;accumulated+=stack;cumulative[i+1]=accumulated;
+        }
+        const double t=in.lvConnectionBarThicknessText.toDouble(),w=in.lvConnectionBarWidthText.toDouble();
+        const double radicand=std::pow(D/2+in.phaseGapBase_mm,2)-w*w/4;
+        if(!std::isfinite(radicand)||radicand<0){c.fail(QStringLiteral("辅助设计截面弦高根号无解；请核对内连接排宽度。"));return;}
+        const double chord=excelRound(std::sqrt(radicand)-t-4+Ls/2,0);
+        int matched=-1;for(int i=0;i<16;++i)if(cumulative[i]<=chord)matched=i;
+        if(matched<0){c.fail(QStringLiteral("辅助设计截面弦高无有效累计叠厚匹配。"));return;}
+        const double pieceWidth=widths[std::min(matched+1,15)],pieceStack=chord-cumulative[matched];
+        double sum=0;
+        for(int i=0;i<16;++i){
+            const double width=i<15?widths[i+1]:pieceWidth,stack=i<15?stacks[i]:pieceStack;
+            // 保持Excel逐次除法，不能改写成/(接缝数×片厚)再CEIL，避免整数边界多进一片。
+            const double ratio=stack/in.seamCount/in.steelThickness_mm;
+            double sheets=i<3?std::ceil(ratio):excelRound(ratio,0);
+            if(i<15&&(i<2||(i==2?cumulative[4]:cumulative[i+1])<=chord))sheets*=2;
+            const double totalStack=2*in.steelThickness_mm*in.seamCount*sheets;
+            sum+=width*totalStack;
+            if(c.out->sheetDetailsSnapshotAvailable){
+                const auto save=[&](const char *key,double value){rememberSheetValue(*c.out,qPrintable(QString::fromLatin1(key)+QString::number(i+1)),value,4);};
+                save("AuxDesignWidth",width);save("AuxDesignStack",stack);save("AuxDesignCount",sheets);save("AuxDesignTotalStack",totalStack);
+            }
+        }
+        const double auxiliaryArea=excelRound(sum/2*in.stackFactor/100,2);
+        if(!std::isfinite(auxiliaryArea)||auxiliaryArea<=0){c.fail(QStringLiteral("辅助表设计截面必须为有限正值。"));return;}
+        if(c.out->sheetDetailsSnapshotAvailable){
+            rememberSheetValue(*c.out,"GeometricCoreArea",c.coreArea_cm2,4);
+            rememberSheetValue(*c.out,"AuxiliaryCoreArea",auxiliaryArea,2);
+            rememberSheetValue(*c.out,"AN14",chord,0);rememberSheetValue(*c.out,"K19",pieceWidth,2);rememberSheetValue(*c.out,"K20",pieceStack,2);
+            for(const char *key:{"AN14","K19","K20"})c.out->calculationSheetNotes.insert(QString::fromLatin1(key),QStringLiteral("当前辅助表设计截面分支按内连接排尺寸、几何累计叠厚与原LOOKUP求得；参与F14→F16→J16→R16，不重复改写重量表，不代替制造安全校核。"));
+        }
+        c.coreArea_cm2=auxiliaryArea;
+    }
+    if(c.out->sheetDetailsSnapshotAvailable){rememberSheetValue(*c.out,"DesignAreaMode",in.designAreaMode,0);c.out->calculationSheetNotes.insert(QStringLiteral("F14"),in.designAreaMode==1.0?QStringLiteral("设计截面取线圈型式辅助表D39，片数进位及内排弦高按原表动态求解；重量及实际截面仍取各自原链。"):QStringLiteral("设计截面取原默认几何叠厚；未替换为辅助表片数截面。"));}
     c.out->core.coreArea_cm2 = c.coreArea_cm2;
     c.out->core.yokeArea_cm2 = c.yokeArea_cm2;
     c.out->core.majorRadius_mm = c.majorR_mm;
@@ -501,12 +570,25 @@ void calcCoreGeometry(EmCtx &c)
 void calcWindingLayout(EmCtx &c)
 {
     const CalcInput &in = *c.in;
+    const auto processError=in.coreWeightProcessInputError();
+    if (!processError.isEmpty()) { c.fail(processError); return; }
+    const auto electricalError=in.electricalProcessInputError();if(!electricalError.isEmpty()){c.fail(electricalError);return;}
     const double et = c.out->core.turnVoltage_V;  // AC4
 
     // 高压匝数（V8/Y8/AA8）
-    c.hvTurnsMax = excelRound(c.vPhaseMax_V / et, 0);
     c.hvTurnsRated = excelRound(c.vPhaseRated_V / et, 0);
     c.hvTurnsMin = excelRound(c.vPhaseMin_V / et, 0);
+    const double baseMaxTurns=excelRound(c.vPhaseMax_V / et,0);
+    const double adjustedMaxTurns=baseMaxTurns+in.hvMaxTurnsAdjust;
+    if(!std::isfinite(adjustedMaxTurns)||adjustedMaxTurns<=0
+            ||adjustedMaxTurns>std::numeric_limits<int>::max()||adjustedMaxTurns<c.hvTurnsRated){
+        c.fail(QStringLiteral("修正后高压最大匝数必须为有效正整数，且不能小于额定匝数。"));return;
+    }
+    c.hvTurnsMax=static_cast<int>(adjustedMaxTurns);
+    if(c.out->sheetDetailsSnapshotAvailable){
+        rememberSheetValue(*c.out,"HVMaxTurnsBase",baseMaxTurns,0);
+        rememberSheetValue(*c.out,"HVMaxTurnsAdjust",in.hvMaxTurnsAdjust,0);
+    }
     c.out->winding.hvTurnsMax = c.hvTurnsMax;
     c.out->winding.hvTurnsRated = c.hvTurnsRated;
     c.out->winding.hvTurnsMin = c.hvTurnsMin;
@@ -541,6 +623,12 @@ void calcWindingLayout(EmCtx &c)
         : (hvDuct[4] == 0.0) ? excelInt(w12 / 5.0)
         : excelInt(w12 / 6.0);
     c.ductLayerIdx[4] = (hvDuct[4] == 0.0) ? 0 : excelInt(w12 / 8.0);
+    if(in.hvDuctLayerRule==1.0){
+        c.ductLayerIdx[0]=hvDuct[0]==0?w12:((hvDuct[1]==0||hvDuct[2]==0)?excelInt(w12/3.0):excelInt(w12/4.0));
+        c.ductLayerIdx[1]=hvDuct[1]==0?0:(hvDuct[2]==0?excelInt(w12/3.0):excelInt(w12/4.0));
+        c.ductLayerIdx[2]=hvDuct[2]==0?0:excelInt(w12/4.0);
+        c.ductLayerIdx[3]=c.ductLayerIdx[4]=0;
+    }
 
     // 圆线按原表O/P/Q列查表，首版只接受表内规格。扁线沿用原有增厚。
     WireSpec roundSpec;
@@ -589,7 +677,7 @@ void calcWindingLayout(EmCtx &c)
     // 层间绝缘张数（X42/X41）与高压辐向（W24..W28）
     c.x42Sheets = excelCeiling(
         2.0 * c.segTurnsPerLayer * et
-            / (in.hvCoilFormIdx * 4900.0 * in.hvLayerInsul_mm), 1.0);
+            / (in.hvCoilFormIdx * in.hvLayerInsulCalcFactor * in.hvLayerInsul_mm), 1.0);
     c.x41Sheets = (c.x42Sheets < 5.0)
                       ? c.x42Sheets
                       : (std::fmod(c.x42Sheets, 2.0) == 1.0
@@ -629,7 +717,8 @@ void calcWindingLayout(EmCtx &c)
         c.hvAxialPerWire_mm * (c.segTurnsPerLayer + 1), 2);       // AA24
     const double aa25 = (in.hvStackCount > 1) ? c.hvInsThick_mm : 0.0;
     const double aa26 = aa24 + aa25;                              // AA26
-    c.hvAxial_mm = excelRound(aa26 * 1.01 / 5.0, 0) * 5.0 + 1.0;  // AA28
+    c.hvAxial_mm = excelRound(aa26 * 1.01 / 5.0, 0) * 5.0 + in.hvAxialAllowance_mm; // AA28
+    if(!std::isfinite(c.hvAxial_mm)||c.hvAxial_mm<=0){c.fail(QStringLiteral("高压轴向附加量导致绕组高度无效。"));return;}
     c.lvAxialOuter_mm = in.lvFoilWidth_mm + 2.0 * in.lvEndInsul_mm; // AA33/J14
     c.hvSegmentGap_mm = (in.hvCoilFormIdx == 1) ? 0.0 : (kV > 24.0 ? 40.0 : 35.0);
     const double aa29 = c.hvSegmentGap_mm;
@@ -664,7 +753,10 @@ void calcWindingLayout(EmCtx &c)
         ? 0 : excelInt(turns / 6.0);
     // 平均匝长几何（AB36/AB39/AK33/AK34/AK36/AK39）
     // P12/S12 为角度分数（144/180、36/180）：Excel 弧长 = π×半径×角度/180
-    const double P12 = c.majorAngle_deg / 180.0;
+    const bool elliptical = in.coreShape == StructureConfig::Ellipse;
+    // Non-ellipse AB36/AK33/AK36 use a complete semicircle, not the
+    // ellipse's P12. AC47 is deliberately NOT changed by this branch.
+    const double P12 = elliptical ? c.majorAngle_deg / 180.0 : 1.0;
     const double S12 = c.minorAngle_deg / 180.0;
     const double B28 = in.phaseGapBase_mm;
     const double B29 = c.halfMinor_mm + B28;   // B29
@@ -685,25 +777,25 @@ void calcWindingLayout(EmCtx &c)
         M_PI * (in.coreDiameter_mm / 2.0 + B28 + c.lvRadial_mm + sumLvDuctH
                 + c.mainDuct_mm
                 + (c.hvRadial_mm + sumHvDuctH) / 2.0) * P12, 2);
-    c.ab39Long_mm = excelRound(
+    c.ab39Long_mm = elliptical ? excelRound(
         M_PI * (c.majorR_mm + B28 + c.lvRadial_mm
                 + in.lvDuctWidthSide[0] + in.lvDuctWidthSide[1] + in.lvDuctWidthSide[2]
                 + c.mainDuct_mm
                 + (c.hvRadial_mm + in.hvDuctWidthSide[0] + in.hvDuctWidthSide[1]
-                   + in.hvDuctWidthSide[2]) / 2.0) * S12, 2);
+                   + in.hvDuctWidthSide[2]) / 2.0) * S12, 2) : excelRound(in.coreStraight_mm, 2);
     // 低压平均宽/长（半值链）
     c.ak33Wide_mm = excelRound(
         M_PI * ((in.coreDiameter_mm / 2.0 + B28) + (c.lvRadial_mm + sumLvDuctH) / 2.0)
             * P12, 2);
-    c.ak34Long_mm = excelRound(
-        M_PI * ((c.majorR_mm + B28) + (c.lvRadial_mm + sumLvDuctW) / 2.0) * S12, 2);
+    c.ak34Long_mm = elliptical ? excelRound(
+        M_PI * ((c.majorR_mm + B28) + (c.lvRadial_mm + sumLvDuctW) / 2.0) * S12, 2) : in.coreStraight_mm;
     // 主空道平均宽/长
     c.ak36Wide_mm = excelRound(
         M_PI * (in.coreDiameter_mm / 2.0 + B28 + c.lvRadial_mm + sumLvDuctH
                 + c.mainDuct_mm / 2.0) * P12, 2);
-    c.ak39Long_mm = excelRound(
+    c.ak39Long_mm = elliptical ? excelRound(
         M_PI * (c.majorR_mm + B28 + c.lvRadial_mm + sumLvDuctW
-                + c.mainDuct_mm / 2.0) * S12, 2);
+                + c.mainDuct_mm / 2.0) * S12, 2) : in.coreStraight_mm;
 
     c.hvMeanTurn_m = 2.0 * (c.ab36Wide_mm + c.ab39Long_mm) / 1000.0;  // X17
     c.lvMeanTurn_m = 2.0 * (c.ak33Wide_mm + c.ak34Long_mm) / 1000.0;  // AH17
@@ -793,9 +885,33 @@ void calcWindingLayout(EmCtx &c)
 // ============================================================================
 // 4. 窗高/中心距/油箱几何（计算单行 23..30/36..49）
 // ============================================================================
+void calcDuctEquivalent(EmCtx &c)
+{
+    const CalcInput &in = *c.in;
+    // 油道等效宽（M29..M38，阻抗用）
+    for (int i = 0; i < 5; ++i) {
+        // 原计算单第4/5级交换宽、长权重：M32/M33及M37/M38。
+        // 不交换输入字段，不重排油道，停用0与两位小数ROUND规则不变。
+        const double lvWidthWeight = i < 3 ? c.ak34Long_mm : c.ak33Wide_mm;
+        const double lvHeightWeight = i < 3 ? c.ak33Wide_mm : c.ak34Long_mm;
+        const double hvWidthWeight = i < 3 ? c.ab39Long_mm : c.ab36Wide_mm;
+        const double hvHeightWeight = i < 3 ? c.ab36Wide_mm : c.ab39Long_mm;
+        c.m29_33[i] = excelRound(
+            (in.lvDuctWidthSide[i] * lvWidthWeight
+             + in.lvDuctHeightSide[i] * lvHeightWeight)
+                / (lvWidthWeight + lvHeightWeight), 2);
+        c.m34_38[i] = excelRound(
+            (in.hvDuctWidthSide[i] * hvWidthWeight
+             + in.hvDuctHeightSide[i] * hvHeightWeight)
+                / (hvWidthWeight + hvHeightWeight), 2);
+    }
+
+}
+
 void calcTankGeometry(EmCtx &c)
 {
     const CalcInput &in = *c.in;
+    const auto tankError=in.tankProcessInputError();if(!tankError.isEmpty()){c.fail(tankError);return;}
     const double B28 = in.phaseGapBase_mm;
 
     // 窗高 J14 = AA33
@@ -818,7 +934,7 @@ void calcTankGeometry(EmCtx &c)
     // 中心距 B49（椭圆形走第二分支）
     const double gap = (in.hvRated_kV < 12.0) ? 7.0
                        : (in.hvRated_kV < 24.0) ? 14.0 : 19.0;
-    c.centerDist_mm = excelCeiling((c.bChainFull_mm + gap) / 5.0, 1.0) * 5.0 + 5.0;
+    c.centerDist_mm = excelCeiling((c.bChainFull_mm + gap) / 5.0, 1.0) * 5.0 + in.centerDistanceAllowance_mm;
 
     // 油箱宽 F25 = D51 + D52 + F24（侧净空）
     const double d51 = excelRound(
@@ -839,26 +955,11 @@ void calcTankGeometry(EmCtx &c)
 
     // 波纹参数（S44..S49）
     c.waveThick_mm = (in.capacity_kVA >= 1000.0) ? 1.5 : 1.2;
-    c.waveLongSides = excelInt((c.tankLength_mm - 90.0) / in.wavePitch_mm) + 1;
+    c.waveLongSides = excelInt((c.tankLength_mm - 90.0) / in.wavePitch_mm) + 1 + in.waveLongCountAdjust;
     c.waveShortSides = excelInt((c.tankWidth_mm - 90.0) / in.wavePitch_mm) + 1;
+    if(!std::isfinite(c.waveLongSides)||c.waveLongSides<=0){c.fail(QStringLiteral("修正后长边波纹片数必须大于0。"));return;}
 
-    // 油道等效宽（M29..M38，阻抗用）
-    for (int i = 0; i < 5; ++i) {
-        // 原计算单第4/5级交换宽、长权重：M32/M33及M37/M38。
-        // 不交换输入字段，不重排油道，停用0与两位小数ROUND规则不变。
-        const double lvWidthWeight = i < 3 ? c.ak34Long_mm : c.ak33Wide_mm;
-        const double lvHeightWeight = i < 3 ? c.ak33Wide_mm : c.ak34Long_mm;
-        const double hvWidthWeight = i < 3 ? c.ab39Long_mm : c.ab36Wide_mm;
-        const double hvHeightWeight = i < 3 ? c.ab36Wide_mm : c.ab39Long_mm;
-        c.m29_33[i] = excelRound(
-            (in.lvDuctWidthSide[i] * lvWidthWeight
-             + in.lvDuctHeightSide[i] * lvHeightWeight)
-                / (lvWidthWeight + lvHeightWeight), 2);
-        c.m34_38[i] = excelRound(
-            (in.hvDuctWidthSide[i] * hvWidthWeight
-             + in.hvDuctHeightSide[i] * hvHeightWeight)
-                / (hvWidthWeight + hvHeightWeight), 2);
-    }
+    calcDuctEquivalent(c);
 
     c.out->mass.windowHeight_mm = c.windowHeight_mm;
     c.out->mass.centerDistance_mm = c.centerDist_mm;
@@ -901,6 +1002,20 @@ void calcTankGeometry(EmCtx &c)
 void calcCoreWeights(EmCtx &c)
 {
     const CalcInput &in = *c.in;
+    const auto unitLossError=in.coreUnitLossInputError();if(!unitLossError.isEmpty()){c.fail(unitLossError);return;}
+    const QString adjustmentError=in.coreSheetCountAdjustmentError();
+    if (!adjustmentError.isEmpty()) { c.fail(adjustmentError); return; }
+    // Preserve reserve inputs in the displayed snapshot without inventing geometry.
+    if (c.out->sheetDetailsSnapshotAvailable) {
+        rememberSheetValue(*c.out,"CoreWeightWindow",c.windowHeight_mm,4);
+        rememberSheetValue(*c.out,"CoreWeightCenter",c.centerDist_mm,4);
+        rememberSheetValue(*c.out,"CoreCenterAllowance",in.centerDistanceAllowance_mm,4);
+        rememberSheetValue(*c.out,"HVLayerCalcFactor",in.hvLayerInsulCalcFactor,4);
+        for(int i=16;i<20;++i) {
+            rememberSheetValue(*c.out,qPrintable(QStringLiteral("CoreReservedSheetAdjust%1").arg(i+1)),in.coreSheetCountAdjust[i],0);
+            rememberSheetValue(*c.out,qPrintable(QStringLiteral("CoreReservedYokeStep%1").arg(i+1)),in.yokeSteps_mm[i],4);
+        }
+    }
     const double O2 = c.windowHeight_mm;   // 窗高
     const double R2 = c.centerDist_mm;     // 中心距
     const double J2 = in.steelThickness_mm;
@@ -920,19 +1035,23 @@ void calcCoreWeights(EmCtx &c)
             continue;
         }
         // 片数 L（Sheet1 L 列）：叠厚/接缝数/片厚，偶数化；首级 ROUNDUP
-        double sheets;
-        if (i == 0) {
-            sheets = std::ceil(D / U2 / J2 / 2.0) * 2.0;
-        } else if (i == 11) {
-            sheets = excelRound(2.0 * D / U2 / J2 / 2.0, 0) * 2.0 + 2.0;   // 宽90片 +2
-        } else if (i == 12) {
-            sheets = excelRound(2.0 * D / U2 / J2 / 2.0, 0) * 2.0 - 1.0;   // 宽80片 -1
-        } else if (i == 13) {
-            sheets = excelRound(2.0 * D / U2 / J2 / 2.0, 0) * 2.0;         // 宽60片
-        } else {
-            sheets = excelRound(2.0 * D / U2 / J2 / 2.0, 0) * 2.0;
+        const double baseSheets = i == 0
+            ? std::ceil(D / U2 / J2 / 2.0) * 2.0
+            : excelRound(2.0 * D / U2 / J2 / 2.0, 0) * 2.0;
+        const double sheets = baseSheets + in.coreSheetCountAdjust[i];
+        // A zero-thickness geometric stage may legitimately have zero sheets.
+        // Do not turn inactive stages into errors when diameter selects another table row.
+        if (!std::isfinite(sheets) || sheets < 0.0 || (sheets == 0.0 && D > 0.0)) {
+            c.fail(QStringLiteral("第%1级修正后片数无效；有叠厚的级次必须大于0，无叠厚级次允许0。").arg(i+1));
+            return;
         }
         const double G = 2.0 * J2 * U2 * sheets;    // G = J2×H（H = 2×U2×L）
+        if (c.out->sheetDetailsSnapshotAvailable) {
+            rememberSheetValue(*c.out,qPrintable(QStringLiteral("CoreSheetBase%1").arg(i+1)),baseSheets,0);
+            rememberSheetValue(*c.out,qPrintable(QStringLiteral("CoreSheetAdjust%1").arg(i+1)),in.coreSheetCountAdjust[i],0);
+            rememberSheetValue(*c.out,qPrintable(QStringLiteral("CoreSheetCount%1").arg(i+1)),sheets,0);
+            rememberSheetValue(*c.out,qPrintable(QStringLiteral("CoreActualStack%1").arg(i+1)),G,4);
+        }
         const double F = O2 + 2.0 * (c.yokeStep[i] + C);   // 片长（A、C柱）
         const double J = O2 + 2.0 * c.yokeStep[i] + B;     // 片长（心柱1）
         const double K = J2 * sheets;
@@ -948,6 +1067,12 @@ void calcCoreWeights(EmCtx &c)
                                          * O2c / 1e6 * W2 * 7.65, 2);
         const double Yw = excelRound(((V - C) * C - B * B / 4.0)
                                          * G / 1e6 * W2 * 7.65, 2);
+        if (c.out->sheetDetailsSnapshotAvailable) {
+            const auto remember=[&](const char *key,double value){rememberSheetValue(*c.out,qPrintable(QString::fromLatin1(key)+QString::number(i+1)),value,4);};
+            remember("CoreYokeWidth",C); remember("CoreYokeStep",c.yokeStep[i]);
+            remember("CoreOuterLegWeight",Iw); remember("CoreMiddleLegWeight",Mw+Qw+Uw);
+            remember("CoreYokeWeight",Yw);
+        }
         sumI += Iw;
         sumM += Mw;
         sumQ += Qw;
@@ -983,6 +1108,7 @@ void calcCoreWeights(EmCtx &c)
     for (const auto &lookup : {qMakePair(QStringLiteral("心柱单位铁损 I26"), bCore),
                                qMakePair(QStringLiteral("铁轭单位铁损 O26"), bYoke),
                                qMakePair(QStringLiteral("磁化容量 J16"), bDesign)}) {
+        if(in.unitIronLossMode==1.0&&lookup.first!=QStringLiteral("磁化容量 J16"))continue; // 手工I26/O26不依赖铁损曲线，磁化容量仍需曲线。
         const QString error = db.steelCurveLookupError(in.steelGrade, lookup.second);
         if (!error.isEmpty()) {
             c.fail(lookup.first + QStringLiteral("：") + error);
@@ -990,7 +1116,8 @@ void calcCoreWeights(EmCtx &c)
         }
     }
     double wCore = 0.0, wYoke = 0.0, vaKg = 0.0;
-    if (!db.steelLossPerKgInterp(in.steelGrade, bCore, wCore)
+    if(in.unitIronLossMode==1.0){wCore=in.manualCoreLossPerKg_W;wYoke=in.manualYokeLossPerKg_W;}
+    else if (!db.steelLossPerKgInterp(in.steelGrade, bCore, wCore)
         || !db.steelLossPerKgInterp(in.steelGrade, bYoke, wYoke)) {
         c.fail(QStringLiteral("硅钢曲线中未找到牌号 %1 的损耗数据").arg(in.steelGrade));
         return;
@@ -1004,6 +1131,11 @@ void calcCoreWeights(EmCtx &c)
     c.out->core.coreLegsLoss_W = in.coreLossCraftCoef * wCore * sumLegs;
     c.out->core.yokesLoss_W = in.yokeLossCraftCoef * wYoke * sumY;
     c.out->core.noLoadLoss_W = excelRound(c.out->core.coreLegsLoss_W + c.out->core.yokesLoss_W, 0);
+    if(c.out->sheetDetailsSnapshotAvailable){
+        rememberSheetValue(*c.out,"UnitIronLossMode",in.unitIronLossMode,0);
+        rememberSheetValue(*c.out,"I26",wCore,6);rememberSheetValue(*c.out,"O26",wYoke,6);
+        c.out->calculationSheetNotes.insert(QStringLiteral("M10"),in.unitIronLossMode==1.0?QStringLiteral("手工I26/O26分别乘心柱/铁轭重量与工艺系数，合计后取整；未修改硅钢曲线，未自动切换牌号。"):QStringLiteral("I26/O26按当前牌号及实际磁密曲线取值，再按分项重量与工艺系数计算。"));
+    }
 
     // 磁化容量插值（J16，用设计磁密 F16）与空载电流（R16）
     if (!db.steelMagnetizationPerKgInterp(in.steelGrade, bDesign, vaKg)) {
@@ -1058,7 +1190,13 @@ void calcWindingLosses(EmCtx &c)
     c.out->winding.hvBareWireWeight_kg = w21;
     c.out->winding.hvWireWeight_kg = z21;
     c.out->winding.lvWireWeight_kg = ah21;
-    c.out->winding.wireWeightTotal_kg = z21 + ah21;   // C10
+    c.out->winding.wireWeightTotal_kg = (in.activePartHvWeightMode==1.0?w21:z21) + ah21; // C10
+    if(c.out->sheetDetailsSnapshotAvailable){
+        rememberSheetValue(*c.out,"ActivePartHvWeightMode",in.activePartHvWeightMode,0);
+        c.out->calculationSheetNotes.insert(QStringLiteral("C10"),in.activePartHvWeightMode==1.0
+            ?QStringLiteral("器身导线合重按W21高压裸线重＋AH21低压重；材料计价及器身排油仍使用Z21高压绝缘重。")
+            :QStringLiteral("器身导线合重按Z21高压绝缘重＋AH21低压重。"));
+    }
 }
 
 // ============================================================================
@@ -1180,7 +1318,13 @@ void calcImpedance(EmCtx &c)
 
     c.out->impedance.resistanceDrop_pct = q34;
     c.out->impedance.reactanceDrop_pct = p43;
-    c.out->impedance.impedance_pct = q35;
+    c.out->impedance.combinedImpedance_pct = q35;
+    c.out->impedance.impedance_pct = in.impedanceOutputMode==1.0?excelRound(q35/q32*in.impedanceCalibrationFactor,2):q35;
+    if(!std::isfinite(c.out->impedance.impedance_pct)||c.out->impedance.impedance_pct<0){c.fail(QStringLiteral("最终阻抗校正结果无效。"));return;}
+    if(c.out->sheetDetailsSnapshotAvailable){
+        rememberSheetValue(*c.out,"Q35",q35,2);rememberSheetValue(*c.out,"R10",c.out->impedance.impedance_pct,2);
+        c.out->calculationSheetNotes.insert(QStringLiteral("R10"),in.impedanceOutputMode==1.0?QStringLiteral("按ROUND(Q35/Kx×校正系数,2)输出；Q35保留合成值。"):QStringLiteral("直接输出合成阻抗Q35。"));
+    }
 }
 
 // ============================================================================
@@ -1189,6 +1333,7 @@ void calcImpedance(EmCtx &c)
 void calcThermal(EmCtx &c)
 {
     const CalcInput &in = *c.in;
+    const auto thermalError=in.thermalProcessInputError();if(!thermalError.isEmpty()){c.fail(thermalError);return;}
     // 先校验分母与幂函数输入；不钳位、不替换原计算单公式。
     const auto requirePositiveArea = [&c](double value, const QString &name) {
         if (std::isfinite(value) && value > 0.0) return true;
@@ -1235,7 +1380,8 @@ void calcThermal(EmCtx &c)
         (c.out->winding.loadLoss_W + c.out->core.noLoadLoss_W) / o48, 0);
     if (!requireNonnegative(i49, QStringLiteral("油箱单位面积热负荷 I49"))) return;
     const double n49 = excelRound(0.262 * std::pow(i49, 0.8), 1);
-    const double n51 = excelRound(1.2 * n49 + 6.0, 1);
+    if (!requireNonnegative(in.oilTopCorrection_K, QStringLiteral("油顶层温升修正项 L51"))) return;
+    const double n51 = excelRound(1.2 * n49 + in.oilTopCorrection_K, 1);
 
     // 绕组散热面积（AC47 高压 / AK47 低压）
     const double P12 = c.majorAngle_deg / 180.0;   // 角度分数 144/180
@@ -1266,7 +1412,8 @@ void calcThermal(EmCtx &c)
     const double sumHvDuctW = in.hvDuctWidthSide[0] + in.hvDuctWidthSide[1]
                               + in.hvDuctWidthSide[2] + in.hvDuctWidthSide[3]
                               + in.hvDuctWidthSide[4];
-    const double perimHv = excelRound(
+    const double perimHv = in.thermalFormulaMode==1.0 ? excelRound(
+        M_PI*(B29+c.lvRadial_mm+sumLvDuctH+c.mainDuct_mm+c.hvRadial_mm+sumHvDuctH)+c.ab39Long_mm,1) : excelRound(
         M_PI * (B29 + c.lvRadial_mm + sumLvDuctH + c.mainDuct_mm + c.hvRadial_mm
                 + sumHvDuctH) * P12
             + M_PI * (c.majorR_mm + B28 + c.lvRadial_mm + sumLvDuctW
@@ -1297,18 +1444,28 @@ void calcThermal(EmCtx &c)
         }
         return s;
     }();
+    const double perimLv = in.thermalFormulaMode==1.0 ? excelRound(
+        M_PI*(B29+c.lvRadial_mm+in.lvDuctHeightSide[0]+in.lvDuctHeightSide[1])+c.ak34Long_mm,1) : c.ak36Wide_mm+c.ak39Long_mm;
     const double ak47 = excelRound(
         6.0 * in.lvFoilWidth_mm
             * (ductTermLv * 1.7
                + (c.mainDuct_mm < 4.0 ? 0.0
-                                      : (c.ak36Wide_mm + c.ak39Long_mm) * 0.85)) / 1e6, 2);
+                                      : perimLv * 0.85)) / 1e6, 2);
     if (!requirePositiveArea(ak47, QStringLiteral("低压绕组散热面积 AK47"))) return;
 
     // 热负荷与绕组温升（AB48/AC49/AC52 → Y53/Y54；AK48/AK49/AK50 → AK51/AK52）
     const double ab48 = excelRound(
         (c.out->winding.hvCopperLoss_W + c.out->winding.hvExtraLoss_W) / ac47, 1);
+    // 老三档表AQ41/AS41：先将附加百分数取两位，再将附加瓦数取整。
+    // 与AJ41负载附加项独立；不能把此项重复加回负载损耗。
+    const double thermalExtraPct = in.lvThermalExtraMode==1.0 ? excelRound(
+        (in.lvCopperFoil?8.0:2.9)*std::pow(in.lvFoilThick_mm,1.2)*in.lvTurns*in.lvFoilWidth_mm/10000.0,2) : 0.0;
+    const double thermalExtra = in.lvThermalExtraMode==1.0 ? excelRound(
+        thermalExtraPct*c.out->winding.lvCopperLoss_W/100.0,0) : in.lvExtraLoss_W;
+    if(!requireNonnegative(thermalExtra,QStringLiteral("低压热附加损耗")))return;
+    c.out->thermal.lvThermalExtraLoss_W=thermalExtra;
     const double ak48 = excelRound(
-        (c.out->winding.lvCopperLoss_W + in.lvExtraLoss_W) / ak47, 2);
+        (c.out->winding.lvCopperLoss_W + thermalExtra) / ak47, 2);
     if (!requireNonnegative(ab48, QStringLiteral("高压绕组热负荷 AB48"))
             || !requireNonnegative(ak48, QStringLiteral("低压绕组热负荷 AK48"))) return;
     const double ac49 = excelRound(0.065 * std::pow(ab48, 0.8), 1);
@@ -1343,7 +1500,7 @@ void calcThermal(EmCtx &c)
     }
     const double ak50 = excelRound(
         0.002 * in.lvLayerInsulCount * in.lvLayerInsul_mm
-            * (in.lvTurns - 2.0 * (lvDuctCount * 2.0 + 1.0)) * ak48, 1);
+            * (in.lvTurns - 2.0 * (lvDuctCount * 2.0 + (in.thermalFormulaMode==1.0?1.5:1.0))) * ak48, 1);
 
     const double y53 = ac49 + ac51 + std::max(ac52, 0.0);
     const double y54 = y53 + n49;
@@ -1400,10 +1557,15 @@ void calcThermal(EmCtx &c)
         rememberSheetValue(*c.out, "HvSurfaceOuterPerimeter", perimHv, 1);
         rememberSheetValue(*c.out, "HvSurfaceDuctTerm", ductTermHv);
         rememberSheetValue(*c.out, "LvSurfaceDuctTerm", ductTermLv);
+        rememberSheetValue(*c.out,"ThermalFormulaMode",in.thermalFormulaMode,0);
+        rememberSheetValue(*c.out,"LvThermalExtraMode",in.lvThermalExtraMode,0);
+        rememberSheetValue(*c.out,"LvThermalExtraPct",thermalExtraPct,2);
+        rememberSheetValue(*c.out,"LvThermalExtraLoss",thermalExtra,0);
+        rememberSheetValue(*c.out,"LvSurfaceOuterPerimeter",perimLv,1);
         rememberSheetValue(*c.out, "I49", i49, 0);
         rememberSheetValue(*c.out, "S50", ks, 3);
-        rememberSheetValue(*c.out, "L51", 6.0, 0);
-        c.out->calculationSheetNotes.insert(QStringLiteral("L51"), QStringLiteral("当前油顶层温升公式固定修正项：N51=ROUND(1.2×N49+6,1)。此处为只读常数显示。"));
+        rememberSheetValue(*c.out, "L51", in.oilTopCorrection_K, 2);
+        c.out->calculationSheetNotes.insert(QStringLiteral("L51"), QStringLiteral("油顶层温升修正项：N51=ROUND(1.2×N49+L51,1)。"));
     }
 }
 
@@ -1421,12 +1583,14 @@ void calcMassCost(EmCtx &c)
         ? ((H1 <= 315.0) ? 6.0 : (H1 <= 1000.0 ? 8.0 : 10.0))
         : ((H1 <= 200.0) ? 8.0 : (H1 <= 1000.0 ? 10.0 : 12.0));
     const double c12 = c12raw - 2.0;
-    const double q22 = 75.0;   // 箱沿高 Q22（波纹油箱）
-    const double c14 = (kV <= 12.0) ? ((H1 <= 1000.0) ? 4.0 : 6.0)
-                                    : ((H1 <= 630.0) ? 4.0 : 6.0);
-    const double c15 = (kV <= 12.0)
+    const double q22 = H1<630.0?75.0:in.tankRimHighCapacity_mm;
+    const double c14 = in.tankWallThicknessOverride_mm>0?in.tankWallThicknessOverride_mm:
+        ((kV <= 12.0) ? ((H1 <= 1000.0) ? 4.0 : 6.0) : ((H1 <= 630.0) ? 4.0 : 6.0));
+    const double c15base = (kV <= 12.0)
         ? ((H1 <= 315.0) ? 4.0 : (H1 <= 1000.0 ? 6.0 : 8.0))
         : ((H1 <= 200.0) ? 4.0 : (H1 <= 1000.0 ? 6.0 : 10.0));
+    const double c15=c15base+in.tankBottomThicknessAdjust_mm;
+    if(!std::isfinite(c15)||c15<=0){c.fail(QStringLiteral("修正后箱底厚度必须大于0。"));return;}
 
     const double H26 = c.tankLength_mm;
     const double F25 = c.tankWidth_mm;
@@ -1442,6 +1606,7 @@ void calcMassCost(EmCtx &c)
     const double coef13 = (H1 < 630.0) ? 5.699 : (H1 < 1000.0 ? 9.878 : 12.142);
     const double d13 = excelRound(2.0 * (H26 + F25 + 2.0 * q22) / 1000.0 * coef13, 0);
     const double q26 = J27 - S46 - q22;   // Q26 油箱顶空
+    if(q26<0){c.fail(QStringLiteral("波纹高与箱沿高超过油箱高度，请核对油箱工艺参数。"));return;}
     const double d14 = (S49 > 0)
         ? excelRound(2.0 * (H26 + F25) * (q26 + 15.0) * c14 * 7.85 / 1e6, 0)
         : excelRound(2.0 * (H26 + F25) * J27 * c14 * 7.85 / 1e6, 0);
@@ -1458,7 +1623,7 @@ void calcMassCost(EmCtx &c)
                              * S46 * c.waveThick_mm * 7.85 / 1e6, 0);
     }
     const double tankWeight = excelRound(
-        (d12 + d13 + d14 + d15) * d16 + d17, 0);   // C19
+        (d12 + d13 + d14 + d15) * d16 + d17 + in.conservatorWeight_kg, 0);   // C19
 
     // 油重（C20..C24）
     const double c20 = excelRound(H26 * F25 * J27 * 0.9 / 1e6, 0);
@@ -1494,6 +1659,7 @@ void calcMassCost(EmCtx &c)
     rememberSheetValue(*c.out, "D15", d15, 0);
     rememberSheetValue(*c.out, "D16", d16);
     rememberSheetValue(*c.out, "D17", d17, 0);
+    rememberSheetValue(*c.out, "D18", in.conservatorWeight_kg, 2);
     rememberSheetValue(*c.out, "Q26", q26);
     rememberSheetValue(*c.out, "C20", c20, 0);
     rememberSheetValue(*c.out, "C21", c21, 0);
@@ -1508,14 +1674,15 @@ void calcMassCost(EmCtx &c)
     c.out->cost.useCustomSteelPrice = in.useCustomSteelPrice;
     c.out->cost.steelPricePerKg = in.useCustomSteelPrice ? in.steelPricePerKg : 17.0;
     c.out->cost.steelPriceGrade = in.steelGrade;
-    c.out->cost.steelCost = excelRound(steelW * 1.05, 0) * c.out->cost.steelPricePerKg;
+    // Match cost-sheet PrecisionAsDisplayed: integer-yuan line amounts, then sum.
+    c.out->cost.steelCost = excelRound(excelRound(steelW * 1.05, 0) * c.out->cost.steelPricePerKg, 0);
     const double hvPrice = in.hvCopperWire ? cuPrice + 3.3
         : alPrice + (in.hvBareWidth_mm == in.hvBareThick_mm ? 6.0 : 8.5);
     const double lvPrice = in.lvCopperFoil ? cuPrice * 1.05 + 6.5 : alPrice + 6.0;
-    c.out->cost.hvWireCost = excelRound(hvW * 1.05, 0) * hvPrice;
-    c.out->cost.lvWireCost = excelRound(lvW * 1.08, 0) * lvPrice;
-    c.out->cost.oilCost = excelRound(oilWeight * 1.1, 0) * prices.oil;
-    c.out->cost.tankCost = (excelRound(tankWeight * 1.05, 0) + 200.0) * prices.tank;
+    c.out->cost.hvWireCost = excelRound(excelRound(hvW * 1.05, 0) * hvPrice, 0);
+    c.out->cost.lvWireCost = excelRound(excelRound(lvW * 1.08, 0) * lvPrice, 0);
+    c.out->cost.oilCost = excelRound(excelRound(oilWeight * 1.1, 0) * prices.oil, 0);
+    c.out->cost.tankCost = excelRound((excelRound(tankWeight * 1.05, 0) + 200.0) * prices.tank, 0);
     c.out->cost.materialCost = c.out->cost.steelCost + c.out->cost.hvWireCost
                                + c.out->cost.lvWireCost + c.out->cost.oilCost
                                + c.out->cost.tankCost;
@@ -1570,6 +1737,290 @@ void calcOilExpansionReference(EmCtx &c)
 // ============================================================================
 // 对外接口
 // ============================================================================
+ShapeBranchPreview ElectromagneticEngine::previewSegmentWinding(const CalcInput &input)
+{
+    ShapeBranchPreview preview;
+    if (input.hvCoilFormIdx != 2 || input.coreShape != StructureConfig::Ellipse
+        || input.yokeShape != StructureConfig::TYoke) {
+        preview.error = QStringLiteral("分段绕组联动目前仅覆盖椭圆心柱和T形轭。"); return preview;
+    }
+    for (double value : {input.coreDiameter_mm, input.stackFactor, input.hvLayerInsul_mm,
+                         input.lvFoilThick_mm, input.lvFoilWidth_mm}) {
+        if (!std::isfinite(value) || value <= 0) {
+            preview.error = QStringLiteral("铁芯尺寸、叠片系数、绝缘及箔材尺寸必须大于零。"); return preview;
+        }
+    }
+    if (!std::isfinite(input.ellipseAngle_deg) || input.ellipseAngle_deg <= 0 || input.ellipseAngle_deg >= 90
+        || !std::isfinite(input.coreStraight_mm) || input.coreStraight_mm < 0
+        || input.hvTurnsPerLayer < 2 || input.hvTurnsPerLayer > 10000 || input.lvLayerInsulCount < 0) {
+        preview.error = QStringLiteral("绕组层数或铁芯几何参数无效。"); return preview;
+    }
+    for (double value : {input.phaseGapBase_mm, input.mainDuctWidth_mm, input.mainDuctInsul_mm,
+                         input.lvLayerInsul_mm, input.lvEndInsul_mm}) {
+        if (!std::isfinite(value) || value < 0) {
+            preview.error = QStringLiteral("间距及绝缘参数必须为非负数。"); return preview;
+        }
+    }
+    const QString inputError = input.highVoltageWireError().isEmpty() ? input.oilDuctInputError() : input.highVoltageWireError();
+    if (!inputError.isEmpty()) { preview.error = inputError; return preview; }
+    ElectricalResult electrical;
+    if (!previewElectrical(input, electrical, preview.error)) return preview;
+    const double turnVoltage = excelRound(electrical.lvPhase_V / input.lvTurns, 4);
+    const double maxTurns = excelRound(electrical.hvPhaseMax_V / turnVoltage, 0);
+    if (input.hvTapMax_pct < 0.0 || input.hvTapMin_pct > 0.0 || !std::isfinite(turnVoltage)
+        || turnVoltage <= 0 || !std::isfinite(maxTurns) || maxTurns < 1
+        || maxTurns > std::numeric_limits<int>::max() - 1.0) {
+        preview.error = QStringLiteral("匝电压或分接匝数超出有效范围。"); return preview;
+    }
+    auto &db = DesignDatabase::instance();
+    if (!db.isLoaded() && !db.load()) { preview.error = db.lastError(); return preview; }
+    CalcResult partial; partial.sheetDetailsSnapshotAvailable = true;
+    EmCtx ctx; ctx.in = &input; ctx.out = &partial;
+    calcElectrical(ctx); calcCoreGeometry(ctx);
+    if (!ctx.failed) calcWindingLayout(ctx);
+    if (ctx.failed) { preview.error = ctx.error; return preview; }
+    bool impedanceAvailable = false;
+    QString impedanceNote;
+    if (input.hvDuctHeightSide[1] == 0 || !input.oilDuctLayoutNote().isEmpty()) {
+        impedanceNote = QStringLiteral("油道停用或布局待核对，暂不显示阻抗和负载损耗。");
+    } else if (!std::isfinite(input.strayLossFactor) || input.strayLossFactor < 0
+               || !std::isfinite(input.lvExtraLoss_W) || input.lvExtraLoss_W < 0) {
+        impedanceNote = QStringLiteral("损耗参数无效，暂不显示阻抗和负载损耗。");
+    } else {
+        calcDuctEquivalent(ctx);
+        calcWindingLosses(ctx);
+        calcImpedance(ctx);
+        impedanceAvailable = std::isfinite(partial.impedance.impedance_pct)
+            && std::isfinite(partial.impedance.reactanceDrop_pct)
+            && std::isfinite(partial.impedance.resistanceDrop_pct)
+            && std::isfinite(partial.winding.loadLoss_W)
+            && partial.impedance.impedance_pct >= 0 && partial.winding.loadLoss_W >= 0;
+        if (!impedanceAvailable)
+            impedanceNote = QStringLiteral("阻抗计算结果无效，请检查输入。");
+    }
+    const auto windingDetails = partial.calculationSheetDetails;
+    bool thermalAvailable = false;
+    QString thermalNote;
+    CalcInput normalized = input;
+    normalized.steelThickness_mm = CalcInput::thicknessFromSteelGrade(input.steelGrade);
+    bool validThermalInputs = normalized.steelThickness_mm > 0 && input.seamCount > 0
+        && input.waveDepth_mm > 0 && input.waveHeight_mm > 0 && input.wavePitch_mm > 0
+        && std::isfinite(input.coreLossCraftCoef) && input.coreLossCraftCoef > 0
+        && std::isfinite(input.yokeLossCraftCoef) && input.yokeLossCraftCoef > 0;
+    for (double value : {input.tankBottomOil_mm, input.tankSideClear_mm, input.tankEndClear_mm,
+                         input.tankFoot_mm, input.oilTopCorrection_K})
+        validThermalInputs = validThermalInputs && std::isfinite(value) && value >= 0;
+    if (impedanceAvailable && validThermalInputs) {
+        ctx.in = &normalized;
+        calcTankGeometry(ctx);
+        calcCoreWeights(ctx);
+        if (!ctx.failed) calcThermal(ctx);
+        thermalAvailable = !ctx.failed && std::isfinite(partial.core.noLoadLoss_W)
+            && std::isfinite(partial.thermal.oilTopRise_K) && std::isfinite(partial.thermal.hvWindingRise_K)
+            && std::isfinite(partial.thermal.lvWindingRise_K);
+        if (!thermalAvailable) thermalNote = QStringLiteral("空载损耗或温升待核对：") + ctx.error;
+    } else {
+        thermalNote = QStringLiteral("油道、铁损或油箱输入待核对，暂不显示空载损耗和温升。");
+    }
+    bool massAvailable = false;
+    bool costAvailable = false;
+    QString costNote;
+    if (thermalAvailable) {
+        calcMassCost(ctx);
+        const auto &mass = partial.mass;
+        massAvailable = std::isfinite(partial.core.coreWeight_kg) && partial.core.coreWeight_kg > 0
+            && std::isfinite(partial.winding.wireWeightTotal_kg) && partial.winding.wireWeightTotal_kg >= 0
+            && std::isfinite(mass.activePartWeight_kg) && mass.activePartWeight_kg > 0
+            && std::isfinite(mass.tankWeight_kg) && mass.tankWeight_kg > 0
+            && std::isfinite(mass.oilWeight_kg) && mass.oilWeight_kg >= 0
+            && std::isfinite(mass.totalWeight_kg) && mass.totalWeight_kg > 0
+            && std::isfinite(mass.tankWidth_mm) && mass.tankWidth_mm > 0
+            && std::isfinite(mass.tankLength_mm) && mass.tankLength_mm > 0
+            && std::isfinite(mass.tankHeight_mm) && mass.tankHeight_mm > 0;
+        const QString priceError = input.steelPriceError().isEmpty()
+            ? input.materialPrices.validationError() : input.steelPriceError();
+        costAvailable = massAvailable && priceError.isEmpty()
+            && std::isfinite(partial.cost.materialCost) && partial.cost.materialCost >= 0;
+        if (!priceError.isEmpty()) costNote = QStringLiteral("材料价格待核对：") + priceError;
+        else if (!costAvailable) costNote = QStringLiteral("重量或材料成本待核对。");
+    }
+    const auto &w = partial.winding;
+    for (auto it = windingDetails.cbegin(); it != windingDetails.cend(); ++it) {
+        if (!std::isfinite(it->first)) {
+            preview.error = QStringLiteral("分段绕组联动产生无效数值，请检查参数。"); return preview;
+        }
+    }
+    preview.values = windingDetails;
+    const auto add = [&preview](const char *name, double value, int digits=2) {
+        if (std::isfinite(value)) preview.values.insert(QLatin1String(name), {value, digits});
+    };
+    add("W28",w.hvRadial_mm); add("AA28",w.hvAxial_mm); add("AA29",w.hvSegmentGap_mm);
+    add("AA30",w.hvTotalAxial_mm); add("AC30",w.hvInnerAxial_mm);
+    add("Y9",w.layerCount,0); add("Y10",w.layerCount,0);
+    add("V8",w.hvTurnsMax,0); add("Y8",w.hvTurnsRated,0); add("AA8",w.hvTurnsMin,0);
+    add("X14",w.hvInsWidth_mm,3); add("Z14",w.hvInsThick_mm,3);
+    add("U15",w.hvWireSection_mm2,3); add("AA15",w.hvEffectiveSection_mm2,3);
+    add("AH15",w.lvWireSection_mm2,3); add("X16",w.hvCurrentDensity,3); add("AH16",w.lvCurrentDensity,3);
+    add("AK23",w.lvRadial_mm); add("AK43",w.mainDuct_mm);
+    if (impedanceAvailable) {
+        const auto &z = partial.impedance;
+        add("Q30",z.axialDifference_mm); add("Q32",z.kx); add("Q33",z.hx_mm);
+        add("P43",z.reactanceDrop_pct); add("Q34",z.resistanceDrop_pct);
+        add("Q35",z.combinedImpedance_pct); add("R10",z.impedance_pct); add("L10",w.loadLoss_W,0);
+    }
+    if (massAvailable) {
+        const auto &m = partial.mass;
+        add("C9", partial.core.coreWeight_kg, 0); add("N14", partial.core.coreWeight_kg, 0);
+        add("C10", w.wireWeightTotal_kg, 0); add("Z21", w.hvWireWeight_kg, 0);
+        add("AH21", w.lvWireWeight_kg, 0); add("C11", m.activePartWeight_kg, 0);
+        add("C19", m.tankWeight_kg, 0); add("C24", m.oilWeight_kg, 0); add("C25", m.totalWeight_kg, 0);
+        add("L14", m.centerDistance_mm); add("B49", m.centerDistance_mm);
+        add("J14", m.windowHeight_mm); add("F25", m.tankWidth_mm, 0); add("N24", m.tankWidth_mm, 0);
+        add("H26", m.tankLength_mm, 0); add("L26", m.tankLength_mm, 0);
+        add("J27", m.tankHeight_mm, 0); add("O24", m.tankHeight_mm, 0);
+        for (const char *key : {"C20", "C21", "C22", "F23", "H23", "H24", "J24", "J25", "Q22", "Q25", "Q26", "S23"}) {
+            const auto it = partial.calculationSheetDetails.constFind(QLatin1String(key));
+            if (it != partial.calculationSheetDetails.cend() && std::isfinite(it->first))
+                preview.values.insert(QLatin1String(key), it.value());
+        }
+    }
+    if (costAvailable) {
+        add("materialCostPreview", partial.cost.materialCost, 2);
+        costNote = QStringLiteral("五项材料成本预览：%1 元（不含附件及其他材料）。")
+            .arg(partial.cost.materialCost, 0, 'f', 2);
+    }
+    if (thermalAvailable) {
+        add("M10", partial.core.noLoadLoss_W, 0); add("O16", partial.core.noLoadLoss_W, 0);
+        add("N49", partial.thermal.oilRise_K, 1); add("N51", partial.thermal.oilTopRise_K, 1);
+        add("Y54", partial.thermal.hvWindingRise_K, 1); add("AK52", partial.thermal.lvWindingRise_K, 1);
+        thermalNote = QStringLiteral("空载损耗采用程序硅钢曲线插值；与计算单手填铁损可能不同。 ");
+    }
+    preview.windingAvailable = true;
+    preview.note = QStringLiteral("分段式部分联动，不代表整机计算或合格判定。") + impedanceNote + thermalNote + costNote;
+    return preview;
+}
+
+ShapeBranchPreview ElectromagneticEngine::previewShapeBranch(const CalcInput &input)
+{
+    ShapeBranchPreview preview;
+    if ((input.coreShape != StructureConfig::Circle && input.coreShape != StructureConfig::LongRound)
+            || (input.yokeShape != StructureConfig::TYoke && input.yokeShape != StructureConfig::SameAsCore)) {
+        preview.error = QStringLiteral("本批部分联动仅接入圆形/长圆形及已识别的铁轭选型。");
+        return preview;
+    }
+    auto &db = DesignDatabase::instance();
+    if (!db.isLoaded() && !db.load()) {
+        preview.error = QStringLiteral("基础数据加载失败：") + db.lastError();
+        return preview;
+    }
+    const auto geometry = CoreLaminationPreview::calculate(input.coreShape,
+        input.coreDiameter_mm, input.coreStraight_mm, db.coreRows());
+    if (!geometry.available) { preview.error = geometry.error; return preview; }
+    const char *widths[] = {"G17","H17","I17","J17","K17","L17","M17","N17","O17","Q17","S17","F19","G19","H19","I19"};
+    const char *stacks[] = {"G18","H18","I18","J18","K18","L18","M18","N18","O18","Q18","S18","F20","G20","H20","I20"};
+    for (int i = 0; i < 15; ++i) {
+        preview.values.insert(QLatin1String(widths[i]), {geometry.stages[i].width_mm, 0});
+        preview.values.insert(QLatin1String(stacks[i]), {geometry.stages[i].stack_mm, 0});
+    }
+    for (const char *key : {"L20", "M20", "O20", "R20", "P12", "S12"})
+        preview.texts.insert(QLatin1String(key), QStringLiteral("不适用"));
+    if (input.coreShape == StructureConfig::LongRound) {
+        preview.values.insert(QStringLiteral("F17"), {geometry.centralWidth_mm, 2});
+        preview.values.insert(QStringLiteral("F18"), {geometry.centralFullThickness_mm, 2});
+    } else {
+        preview.texts.insert(QStringLiteral("F17"), QStringLiteral("圆形"));
+        preview.texts.insert(QStringLiteral("F18"), QStringLiteral("不适用"));
+    }
+    preview.geometryAvailable = true;
+    preview.values.insert(QStringLiteral("B27"), {input.coreDiameter_mm / 2.0, 2});
+    preview.note = QStringLiteral("片宽/叠厚来自原单非椭圆公式，项目查表档%1mm；F20:I20是几何半叠厚，不是Sheet1手工工艺值。")
+        .arg(geometry.matchedReference_mm);
+    // The source does not clear K12 when Circle is selected. Require the user to
+    // confirm zero explicitly; never silently remove their straight-length input.
+    if (input.coreShape == StructureConfig::Circle && input.coreStraight_mm != 0.0) {
+        preview.error = QStringLiteral("圆形绕组预览需手工确认K12直线段为0；当前值保留，未套用椭圆匝长。");
+        return preview;
+    }
+    for (double v : {input.coreStraight_mm, input.phaseGapBase_mm, input.mainDuctWidth_mm,
+                     input.mainDuctInsul_mm, input.lvLayerInsul_mm, input.lvEndInsul_mm}) {
+        if (!std::isfinite(v) || v < 0.0) {
+            preview.error = QStringLiteral("绕组几何及绝缘输入须为非负有效数值。");
+            return preview;
+        }
+    }
+    for (double v : {input.lvFoilThick_mm, input.lvFoilWidth_mm, input.hvLayerInsul_mm}) {
+        if (!std::isfinite(v) || v <= 0.0) {
+            preview.error = QStringLiteral("箔材厚宽、高压层间绝缘须为正数。");
+            return preview;
+        }
+    }
+    preview.values.insert(QStringLiteral("B29"), {input.coreDiameter_mm / 2.0 + input.phaseGapBase_mm, 2});
+    if (input.hvCoilFormIdx != 1 || input.hvTurnsPerLayer < 2
+            || input.hvTurnsPerLayer > std::numeric_limits<int>::max() / 2 || input.lvLayerInsulCount < 0) {
+        preview.error = QStringLiteral("绕组部分联动仅支持有效总层数的多层圆筒式及非负绝缘层数。");
+        return preview;
+    }
+    const QString inputError = input.highVoltageWireError().isEmpty()
+        ? input.oilDuctInputError() : input.highVoltageWireError();
+    if (!inputError.isEmpty()) { preview.error = inputError; return preview; }
+    ElectricalResult e;
+    if (!previewElectrical(input, e, preview.error)) return preview;
+    const double et = excelRound(e.lvPhase_V / input.lvTurns, 4);
+    const double maxTurns = excelRound(e.hvPhaseMax_V / et, 0);
+    if (input.hvTapMax_pct < 0.0 || input.hvTapMin_pct > 0.0 || !std::isfinite(et) || et <= 0.0
+            || !std::isfinite(maxTurns) || maxTurns > std::numeric_limits<int>::max() - 1.0 || maxTurns < 1.0) {
+        preview.error = QStringLiteral("匝电压或分接匝数超出有效范围。");
+        return preview;
+    }
+    CalcResult partial; // valid remains false, never eligible for confirmation/export.
+    partial.sheetDetailsSnapshotAvailable = true;
+    EmCtx ctx;
+    ctx.in = &input;
+    ctx.out = &partial;
+    calcElectrical(ctx);
+    calcWindingLayout(ctx);
+    if (ctx.failed || ctx.segLayers[0] < 0 || ctx.segLayers[1] < 0 || ctx.ac30_mm <= 0.0) {
+        preview.error = ctx.failed ? ctx.error : QStringLiteral("绕组层分配或有效轴向高度无效。");
+        return preview;
+    }
+    calcWindingLosses(ctx); // I²R and conductor weight do not use core weight or AC47.
+    auto numbers = partial.calculationSheetDetails;
+    const auto add = [&numbers](const char *addresses, double value, int decimals = 2) {
+        for (const auto &key : QString::fromLatin1(addresses).split(QLatin1Char(' ')))
+            numbers.insert(key, {value, decimals});
+    };
+    const auto &w = partial.winding;
+    add("AC4", partial.core.turnVoltage_V, 4);
+    add("V5", e.hvLineMax_V, 0); add("Y5", e.hvLineRated_V, 0); add("AA5", e.hvLineMin_V, 0);
+    add("V6", e.hvPhaseMax_V, 0); add("Y6", e.hvPhaseRated_V, 0); add("AA6", e.hvPhaseMin_V, 0);
+    add("W7", e.hvLineCurrent_A); add("Z7", e.hvPhaseCurrent_A);
+    add("AH5", e.lvLine_V, 0); add("AH6", e.lvPhase_V, 0); add("AG7", e.lvPhaseCurrent_A);
+    add("V8", w.hvTurnsMax, 0); add("Y8", w.hvTurnsRated, 0); add("AA8", w.hvTurnsMin, 0);
+    add("Y9 Y10", w.layerCount, 0); add("AC9", w.hvCoilFormIdx, 0);
+    add("X14 W22", w.hvInsWidth_mm, 3); add("Z14", w.hvInsThick_mm, 3);
+    add("U15", w.hvWireSection_mm2, 3); add("AA15", w.hvEffectiveSection_mm2, 3);
+    add("AH15", w.lvWireSection_mm2, 3); add("X16", w.hvCurrentDensity, 3); add("AH16", w.lvCurrentDensity, 3);
+    add("X17", w.hvMeanTurn_m, 4); add("AH17", w.lvMeanTurn_m, 4);
+    add("W18", w.hvWireLenMax_m, 1); add("Z18", w.hvWireLenRated_m, 1); add("AH18", w.lvWireLen_m, 1);
+    add("X19", w.hvResistance_ohm, 6); add("AH19", w.lvResistance_ohm, 6);
+    add("Y20", w.hvCopperLoss_W, 0); add("AH20", w.lvCopperLoss_W, 0);
+    add("W21", w.hvBareWireWeight_kg, 0); add("Z21", w.hvWireWeight_kg, 0); add("AH21", w.lvWireWeight_kg, 0);
+    add("C10", w.wireWeightTotal_kg, 0); add("AK23 B30", w.lvRadial_mm, 1); add("W28 B39", w.hvRadial_mm, 1);
+    add("AA28", w.hvAxial_mm); add("AA29", w.hvSegmentGap_mm); add("AA30", w.hvTotalAxial_mm);
+    add("AC30", w.hvInnerAxial_mm); add("AA31 AA32", w.hvEndInsul_mm); add("AC32", w.hvEndInsulReference_mm, 0);
+    add("AA33 J14 J25", w.lvAxial_mm); add("AK43 B37", w.mainDuct_mm);
+    for (auto it = numbers.cbegin(); it != numbers.cend(); ++it) {
+        if (!std::isfinite(it->first)) {
+            preview.error = QStringLiteral("绕组联动产生非有限数值；本次不沿用旧绕组结果。");
+            return preview;
+        }
+    }
+    for (auto it = numbers.cbegin(); it != numbers.cend(); ++it) preview.values.insert(it.key(), it.value());
+    preview.texts.insert(partial.calculationSheetTexts);
+    preview.windingAvailable = true;
+    return preview;
+}
+
 bool ElectromagneticEngine::previewElectrical(const CalcInput &input, ElectricalResult &electrical, QString &error)
 {
     electrical = ElectricalResult();
@@ -1617,7 +2068,8 @@ LvTurnsRecommendation ElectromagneticEngine::recommendLvTurns(const CalcInput &i
 bool ElectromagneticEngine::previewCoreGeometry(const CalcInput &input, CoreResult &core, QString &error)
 {
     core = CoreResult();
-    error.clear();
+    error = input.coreSelectionError();
+    if (!error.isEmpty()) return false;
     if (!std::isfinite(input.coreDiameter_mm) || input.coreDiameter_mm <= 0.0
             || !std::isfinite(input.coreStraight_mm) || input.coreStraight_mm < 0.0
             || !std::isfinite(input.ellipseAngle_deg) || input.ellipseAngle_deg <= 0.0 || input.ellipseAngle_deg >= 90.0
@@ -1659,15 +2111,21 @@ bool ElectromagneticEngine::calcElectromagnetic(const CalcInput &input, CalcResu
 {
     result = CalcResult();
     result.sheetDetailsSnapshotAvailable = captureSheetDetails;
+    const QString coreError = input.coreSelectionError();
+    if (!coreError.isEmpty()) {
+        result.error = coreError;
+        return false;
+    }
     const QString craftError = input.craftConstraints.rejectionReason(input.mainDuctWidth_mm);
     if (!craftError.isEmpty()) {
         result.error = craftError; // Saved schemes recalculate with the same manufacturing snapshot.
         return false;
     }
-    if (input.hvCoilFormIdx != 1) {
-        result.error = HvCoilFormNotes::unavailableReason();
-        return false;
+    if (input.hvCoilFormIdx != 1 && input.hvCoilFormIdx != 2) {
+        result.error = QStringLiteral("高压线圈型式无效。"); return false;
     }
+    const QString segmentError = input.segmentedCoilScopeError();
+    if (!segmentError.isEmpty()) { result.error = segmentError; return false; }
     result.winding.recordedLeadLoss_W = input.leadLoss_W; // 只记录快照，不参与数值计算。
     result.testVoltage = testVoltageHints(input.hvRated_kV, input.lvRated_kV);
     const QString ductError = input.oilDuctInputError();
@@ -1789,9 +2247,10 @@ PrintOutputData ElectromagneticEngine::calculate(const TransformerParams &params
                                                  const StructureConfig &config)
 {
     Q_UNUSED(params);
-    Q_UNUSED(config);
     // 旧打印接口：以默认设计变量（SB20-M-630-10）执行电磁计算并输出关键结果
     CalcInput input;
+    input.coreShape = config.coreShape;
+    input.yokeShape = config.yokeShape;
     CalcResult result;
     calcElectromagnetic(input, result);
     return buildPrintOutput(input, result);
@@ -1822,6 +2281,11 @@ PrintOutputData ElectromagneticEngine::buildPrintOutput(const CalcInput &input,
         row.rightUnit = ru;
         data.rows.append(row);
     };
+    const int coilForm = result.winding.hvCoilFormIdx;
+    const QString coilFormText = coilForm == 1 ? QStringLiteral("圆筒式")
+        : coilForm == 2 ? QStringLiteral("分段式") : QStringLiteral("待核对");
+    addRow(QStringLiteral("高压线圈型式"), coilFormText, QString(),
+           QStringLiteral("高压段间距"), QString::number(result.winding.hvSegmentGap_mm, 'f', 2), QStringLiteral("mm"));
     addRow(QStringLiteral("高压试验电压（参考）"), result.testVoltage.highVoltage, QStringLiteral("kV"),
            QStringLiteral("低压试验电压（参考）"), result.testVoltage.lowVoltage, QStringLiteral("kV"));
     addRow(QStringLiteral("企业主油道校核"), input.craftConstraints.enabled ? QStringLiteral("已启用") : QStringLiteral("未校核"), QString(),

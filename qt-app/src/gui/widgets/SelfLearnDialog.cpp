@@ -3,6 +3,8 @@
 #include "SchemePickDialog.h"
 #include "ElectromagneticEngine.h"
 #include "CalcResult.h"
+#include "LearningWorkspace.h"
+#include <QTabWidget>
 #include <functional>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
@@ -59,16 +61,20 @@ QVector<MetricDef> metricDefs()
 SelfLearnDialog::SelfLearnDialog(QWidget *parent)
     : QDialog(parent)
 {
-    setWindowTitle(QStringLiteral("AI 自学习 - 设计值与实测值对比"));
+    setWindowTitle(QStringLiteral("AI 自学习 - 实测对比与学习样本"));
     setModal(true);
-    resize(560, 420);
+    resize(1100, 820);
     setupUi();
     refreshCompare();   // 初始未选方案时显示提示状态
 }
 
 void SelfLearnDialog::setupUi()
 {
-    auto *layout = new QVBoxLayout(this);
+    auto *root = new QVBoxLayout(this);
+    auto *tabs = new QTabWidget(this);
+    root->addWidget(tabs);
+    auto *comparePage = new QWidget(tabs);
+    auto *layout = new QVBoxLayout(comparePage);
     layout->setContentsMargins(12, 12, 12, 12);
     layout->setSpacing(8);
 
@@ -111,11 +117,22 @@ void SelfLearnDialog::setupUi()
     layout->addWidget(m_table, 1);
 
     auto *hint = new QLabel(
-        QStringLiteral("偏差 = (实测-设计)/设计×100%；|偏差| > 10% 标红（损耗/阻抗/温升通用工程容差）。"
-                       "修正系数自动调整需积累多组对比数据后开放"), this);
+        QStringLiteral("偏差 = (实测-设计)/设计×100%；10%仅为本页对比提示阈值，不代表产品合格标准或DNN验证标准。"
+                       "本页历史数据不自动进入学习样本库。"), this);
     hint->setWordWrap(true);
     hint->setStyleSheet("color: #607368; font-size: 11px;");
     layout->addWidget(hint);
+    tabs->addTab(comparePage, QStringLiteral("原有实测对比"));
+    m_learning = new LearningWorkspace(SelfLearning::datasetPath(), tabs);
+    tabs->addTab(m_learning, QStringLiteral("学习样本"));
+    tabs->addTab(m_learning->preparationPage(), QStringLiteral("数据准备"));
+    tabs->addTab(m_learning->trainingPage(), QStringLiteral("训练与模型"));
+    connect(m_learning, &LearningWorkspace::chooseScheme, this, &SelfLearnDialog::onPickScheme);
+}
+
+void SelfLearnDialog::reject()
+{
+    if (!m_learning || m_learning->confirmDiscard()) QDialog::reject();
 }
 
 void SelfLearnDialog::onPickScheme()
@@ -135,6 +152,7 @@ void SelfLearnDialog::onPickScheme()
     if (dlg.exec() == QDialog::Accepted && dlg.hasSelection()) {
         m_entry = dlg.selectedEntry();
         m_hasScheme = true;
+        m_learning->setScheme(m_entry.input, m_entry.name);
         refreshCompare();
     }
 }

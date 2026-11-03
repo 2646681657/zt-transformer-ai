@@ -1,4 +1,4 @@
-#ifndef PERFORMANCECRITERIA_H
+﻿#ifndef PERFORMANCECRITERIA_H
 #define PERFORMANCECRITERIA_H
 #include "TransformerParams.h"
 #include <QRegularExpression>
@@ -51,6 +51,11 @@ inline void restore(const TransformerParams &saved, TransformerParams &target)
     int count;
     const auto *list = fields(count);
     for (int i = 0; i < count; ++i) target.*(list[i].member) = saved.*(list[i].member);
+    target.hasNonstandardAn3 = saved.hasNonstandardAn3;
+    target.nonstandardAn3_pct = saved.nonstandardAn3_pct;
+    target.hasSavedCustomNoLoadCurrent = saved.hasSavedCustomNoLoadCurrent;
+    target.savedCustomNoLoadCurrent_pct = saved.savedCustomNoLoadCurrent_pct;
+    target.noLoadCurrentSource = saved.noLoadCurrentSource;
     target.standardMode = saved.standardMode;
     target.lossStandardsManual = saved.lossStandardsManual;
     target.lossStandardsKey = saved.lossStandardsKey;

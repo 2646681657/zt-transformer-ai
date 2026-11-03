@@ -9,10 +9,13 @@
 #include <QMessageBox>
 
 AiAnalysisDialog::AiAnalysisDialog(const QString &title, const QString &taskDesc,
-                                   const QString &dataText, QWidget *parent)
+                                   const QString &dataText, QWidget *parent,
+                                   int maxTokens, int requestTimeoutSec)
     : QDialog(parent)
     , m_taskDesc(taskDesc)
     , m_dataText(dataText)
+    , m_maxTokens(maxTokens > 0 ? maxTokens : 1024)
+    , m_requestTimeoutSec(requestTimeoutSec)
 {
     setWindowTitle(title);
     setModal(true);
@@ -60,16 +63,22 @@ AiAnalysisDialog::AiAnalysisDialog(const QString &title, const QString &taskDesc
 
 void AiAnalysisDialog::onSubmit()
 {
-    const LlmConfig cfg = LlmConfig::load();
+    LlmConfig cfg = LlmConfig::load();
     if (!cfg.enabled) {
         QMessageBox::warning(this, QStringLiteral("AI 未启用"),
             QStringLiteral("请先在「程序工具 → 系统设置 → AI 配置」中启用 AI 功能并配置密钥"));
         return;
     }
 
+    if (m_requestTimeoutSec > cfg.timeoutSec) {
+        cfg.timeoutSec = m_requestTimeoutSec;
+    }
+
     m_submitBtn->setEnabled(false);
     m_submitBtn->setText(QStringLiteral("分析中…"));
-    m_statusLabel->setText(QStringLiteral("正在请求大模型，请稍候…"));
+    m_statusLabel->setText(m_requestTimeoutSec > 0
+        ? QStringLiteral("正在等待大模型响应（连续无数据 %1 秒后超时）…").arg(cfg.timeoutSec)
+        : QStringLiteral("正在请求大模型，请稍候…"));
 
     QVector<LlmMessage> msgs;
     msgs.append({QStringLiteral("system"), QStringLiteral(
@@ -80,7 +89,7 @@ void AiAnalysisDialog::onSubmit()
     m_client = new CloudLlmClient(cfg, this);
     connect(m_client, &LlmClient::finished, this, &AiAnalysisDialog::onLlmFinished);
     connect(m_client, &LlmClient::failed, this, &AiAnalysisDialog::onLlmFailed);
-    m_client->chat(msgs, 1024);
+    m_client->chat(msgs, m_maxTokens);
 }
 
 void AiAnalysisDialog::onLlmFinished(const QString &reply)

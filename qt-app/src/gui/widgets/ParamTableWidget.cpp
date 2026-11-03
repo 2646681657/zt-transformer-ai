@@ -5,6 +5,7 @@
 #include "ElectromagneticEngine.h"
 #include "TestVoltageHints.h"
 #include "HvCoilFormNotes.h"
+#include "CoreLaminationPreview.h"
 #include <QHeaderView>
 #include <QFont>
 #include <QLineEdit>
@@ -17,6 +18,8 @@
 #include <QSignalBlocker>
 #include <QMessageBox>
 #include <QTimer>
+#include <QToolButton>
+#include <QVBoxLayout>
 #include <cmath>
 
 namespace {
@@ -60,6 +63,21 @@ ParamTableWidget::ParamTableWidget(QWidget *parent)
     connect(this, &QTableWidget::itemChanged, this, [this](QTableWidgetItem *changed) {
         if (m_loading)
             return;
+        const auto currentRef = m_inputRefs.constFind(QStringLiteral("noLoadCurrentStd"));
+        if (!m_updatingNonstandardAn3
+                && currentRef != m_inputRefs.cend() && changed->row() == currentRef->first && changed->column() == currentRef->second) {
+            bool valid = false;
+            const double current = changed->text().toDouble(&valid);
+            m_baseParams.noLoadCurrentSource=TransformerParams::NoLoadCurrentSource::Manual;
+            if(m_currentSourceCombo){const QSignalBlocker blocker(m_currentSourceCombo);m_currentSourceCombo->setCurrentIndex(1);}
+            m_baseParams.hasNonstandardAn3 = false;
+            if (valid && std::isfinite(current) && current >= 0.0) {
+                m_baseParams.hasSavedCustomNoLoadCurrent = true;
+                m_baseParams.savedCustomNoLoadCurrent_pct = current;
+            }
+            applyModelLinkage();
+            emit nonstandardAn3StateChanged();
+        }
         for (const QString &key : {QStringLiteral("connectionGroup"), QStringLiteral("frequency"),
                                   QStringLiteral("noLoadLossStd"), QStringLiteral("loadLossStd"),
                                   QStringLiteral("totalLossStd")}) {
@@ -69,11 +87,7 @@ ParamTableWidget::ParamTableWidget(QWidget *parent)
             if (key.endsWith(QStringLiteral("LossStd"))) {
                 m_lossStandardsManual = true;
                 m_lastLinkageKey = standardKey();
-                m_standardMode = TransformerParams::StandardMode::Custom;
-                if (m_standardModeCombo) {
-                    const QSignalBlocker blocker(m_standardModeCombo);
-                    m_standardModeCombo->setCurrentIndex(1);
-                }
+                // 手工损耗覆盖不改变原单国标/非标标识。
             }
             applyModelLinkage();
             break;
@@ -180,6 +194,23 @@ void ParamTableWidget::addInputRow(int row, const QString &name, const QString &
     bindInput(optKey, row, 4);
 }
 
+bool ParamTableWidget::setNonstandardAn3(double value)
+{
+    if (m_standardMode != TransformerParams::StandardMode::Custom || m_baseParams.hasManualNoLoadCurrent() || !std::isfinite(value) || value <= 0.34) return false;
+    const auto ref = m_inputRefs.constFind(QStringLiteral("noLoadCurrentStd"));
+    if (ref == m_inputRefs.cend() || !item(ref->first, ref->second)) return false;
+    const double converted = QString::number(value - 0.34, 'g', 12).toDouble();
+    m_baseParams.hasNonstandardAn3 = true;
+    m_baseParams.nonstandardAn3_pct = value;
+    m_baseParams.hasSavedCustomNoLoadCurrent = true;
+    m_baseParams.savedCustomNoLoadCurrent_pct = converted;
+    m_updatingNonstandardAn3 = true;
+    item(ref->first, ref->second)->setText(QString::number(converted, 'g', 12));
+    m_updatingNonstandardAn3 = false;
+    applyModelLinkage();emit nonstandardAn3StateChanged();
+    return true;
+}
+
 TransformerParams ParamTableWidget::getParams() const
 {
     TransformerParams params = m_baseParams;
@@ -265,6 +296,11 @@ TransformerParams ParamTableWidget::paramsForInput(const TransformerParams &base
         params.standardMode = TransformerParams::StandardMode::Unconfirmed;
         params.lossStandardsManual = true;
         params.lossStandardsKey.clear();
+        // Missing provenance must not borrow raw inputs/caches from the last scheme.
+        params.hasNonstandardAn3 = false;
+        params.nonstandardAn3_pct = 0.0;
+        params.hasSavedCustomNoLoadCurrent = false;
+        params.savedCustomNoLoadCurrent_pct = 0.0;
     }
     params.capacity_kVA = input.capacity_kVA;
     params.hvRatedVoltage_kV = input.hvRated_kV;
@@ -285,10 +321,117 @@ TransformerParams ParamTableWidget::paramsForInput(const TransformerParams &base
     return params;
 }
 
+bool ParamTableWidget::collectShapePreviewInput(CalcInput &input, QString &error, bool validateLossInputs) const
+{
+    error.clear();
+    const auto config = calculationConfig();
+    if (config.category != StructureConfig::OilImmersed || config.windingProcess != StructureConfig::FoilWound
+            || config.coreType != StructureConfig::StackedSilicon || config.windingForm != StructureConfig::Dual
+            || (config.hvCoilStructure != StructureConfig::MultiLayerCylinder
+                && !(validateLossInputs && config.hvCoilStructure == StructureConfig::TwoSegCylinder))) {
+        error = QStringLiteral("本批绕组部分联动仅用于油浸箔绕、叠铁芯、双绕组、多层圆筒式。");
+        return false;
+    }
+    const auto params = getParams();
+    if (params.frequency_Hz != 50 || params.calcRefTemp_C != 75.0) {
+        error = QStringLiteral("本批绕组部分联动固定50Hz、75℃，不套用其他频率或折算温度。");
+        return false;
+    }
+    static const QRegularExpression modelPattern(QStringLiteral(
+        "^[A-Za-z0-9]+-M-([0-9]+(?:\\.[0-9]+)?)/([0-9]+(?:\\.[0-9]+)?)-([0-9]+(?:\\.[0-9]+)?)$"),
+        QRegularExpression::CaseInsensitiveOption);
+    const auto model = modelPattern.match(m_productModelEdit ? m_productModelEdit->text().trimmed() : QString());
+    if (!model.hasMatch()) { error = QStringLiteral("型号输入未完整，部分联动不使用旧额定值。"); return false; }
+    QStringList keys = {"coreDiameter", "coreStraight", "phaseGapBase", "hvBareWidth", "hvBareThick",
+        "hvTurnsPerLayer", "hvLayerInsul", "hvParallelCount", "hvStackCount", "lvTurns", "lvFoilThick",
+        "lvFoilWidth", "lvLayerInsulCount", "lvLayerInsul_mm", "lvEndInsul", "mainDuctWidth", "mainDuctInsul",
+        "frequency", "calcRefTemp", "centerDistanceAllowance", "hvLayerInsulCalcFactor", "hvMaxTurnsAdjust", "activePartHvWeightMode", "hvAxialAllowance", "hvDuctLayerRule", "impedanceOutputMode", "impedanceCalibrationFactor",
+        "tankRimHighCapacity", "tankWallThicknessOverride", "tankBottomThicknessAdjust", "conservatorWeight", "waveLongCountAdjust"};
+    if (validateLossInputs) keys << QStringLiteral("strayLossFactor") << QStringLiteral("lvExtraLoss")
+        << QStringLiteral("stackFactor") << QStringLiteral("ellipseAngle") << QStringLiteral("seamCount")
+        << QStringLiteral("coreLossCraftCoef") << QStringLiteral("yokeLossCraftCoef")
+        << QStringLiteral("thermalFormulaMode") << QStringLiteral("lvThermalExtraMode")
+        << QStringLiteral("designAreaMode")
+        << QStringLiteral("unitIronLossMode") << QStringLiteral("manualCoreLossPerKg") << QStringLiteral("manualYokeLossPerKg")
+        << QStringLiteral("yokePiece1Stack") << QStringLiteral("yokePiece2Stack") << QStringLiteral("yokePiece3Stack")
+        << QStringLiteral("yokeWidenTo") << QStringLiteral("yokeWidenStages")
+        << QStringLiteral("tankBottomOil") << QStringLiteral("tankSideClear") << QStringLiteral("tankEndClear")
+        << QStringLiteral("tankFoot") << QStringLiteral("waveDepth") << QStringLiteral("waveHeight")
+        << QStringLiteral("wavePitch") << QStringLiteral("oilTopCorrection");
+    if (validateLossInputs)
+        for (int i=0;i<20;++i) keys << QStringLiteral("coreSheetAdjust_%1").arg(i);
+    for(int i=0;i<20;++i)keys << QStringLiteral("coreWidthOffset_%1").arg(i);
+    if (!m_roundWireActive) keys << QStringLiteral("hvWireInsulAdd");
+    for (int i = 0; i < 5; ++i)
+        for (const char *prefix : {"hvDuctW_", "hvDuctH_", "lvDuctW_", "lvDuctH_"})
+            keys << QString::fromLatin1(prefix) + QString::number(i);
+    const QStringList integerKeys = {"hvTurnsPerLayer", "hvParallelCount", "hvStackCount", "lvTurns",
+                                     "lvLayerInsulCount", "frequency", "seamCount", "yokeWidenStages",
+                                     "waveDepth", "waveHeight", "wavePitch"};
+    for (const auto &key : keys) {
+        const auto it = m_inputRefs.constFind(key);
+        if (it == m_inputRefs.cend()) continue; // unexposed advanced input retains its saved value
+        const auto *source = item(it->first, it->second);
+        bool ok = false;
+        const QString text = source ? source->text().trimmed() : QString();
+        const double value = text.toDouble(&ok);
+        if (ok && (integerKeys.contains(key) || key.startsWith(QStringLiteral("coreSheetAdjust_")))) text.toInt(&ok);
+        if (!ok || !std::isfinite(value)) {
+            const auto *label = item(it->first, it->second == 2 ? 1 : 3);
+            error = QStringLiteral("%1输入未完整或无效；不沿用旧值。")
+                .arg(label ? label->text() : key);
+            return false;
+        }
+    }
+    for (auto *spin : {static_cast<QAbstractSpinBox *>(m_tapPlusSpin),
+                        static_cast<QAbstractSpinBox *>(m_tapMinusSpin),
+                        static_cast<QAbstractSpinBox *>(m_tapStepSpin)}) {
+        if (spin && !spin->hasAcceptableInput()) { error = QStringLiteral("调压输入未完整。"); return false; }
+    }
+    if (!connectionCalculationError().isEmpty()) { error = connectionCalculationError(); return false; }
+    if (m_roundWireActive) {
+        WireSpec spec;
+        if (!m_roundWireSpecCombo || !m_roundWireSpecCombo->currentData().isValid()
+                || !DesignDatabase::instance().roundWireSpec(m_roundWireSpecCombo->currentData().toDouble(), spec)) {
+            error = QStringLiteral("请选择有效圆线表内规格；部分联动不沿用旧规格。");
+            return false;
+        }
+    } else {
+        const auto w = m_inputRefs.value(QStringLiteral("hvBareWidth"));
+        const auto t = m_inputRefs.value(QStringLiteral("hvBareThick"));
+        if (item(w.first, w.second)->text().toDouble() == item(t.first, t.second)->text().toDouble()) {
+            error = QStringLiteral("宽厚相等时需明确选择圆线表规格，不能按扁线预览。");
+            return false;
+        }
+    }
+    CalcInput candidate = input;
+    saveToInput(candidate);
+    candidate.capacity_kVA = model.captured(1).toDouble();
+    candidate.hvRated_kV = model.captured(2).toDouble();
+    candidate.lvRated_kV = model.captured(3).toDouble();
+    const auto widthError=candidate.coreWidthOffsetError();
+    if(!widthError.isEmpty()){error=widthError;return false;}
+    const auto processError=candidate.coreWeightProcessInputError();
+    if(!processError.isEmpty()){error=processError;return false;}
+    const auto areaError=candidate.designAreaInputError();if(!areaError.isEmpty()){error=areaError;return false;}
+    const auto thermalError=candidate.thermalProcessInputError();if(!thermalError.isEmpty()){error=thermalError;return false;}
+    const auto unitLossError=candidate.coreUnitLossInputError();if(!unitLossError.isEmpty()){error=unitLossError;return false;}
+    const auto electricalError=candidate.electricalProcessInputError();if(!electricalError.isEmpty()){error=electricalError;return false;}
+    const auto tankError=candidate.tankProcessInputError();if(!tankError.isEmpty()){error=tankError;return false;}
+    input = candidate;
+    return true;
+}
+
 bool ParamTableWidget::collectForCalculation(TransformerParams &params, CalcInput &input, QString &error,
                                             bool interactive)
 {
     error.clear();
+    const auto currentParams=getParams();
+    if(!currentParams.hasManualNoLoadCurrent()){
+        double ignored=0;
+        if(m_standardMode==TransformerParams::StandardMode::Custom&&!currentParams.hasNonstandardAn3){error=QStringLiteral("空载电流选择自动联动时，非标模式必须输入有效AN3；也可切换为手工固定。");return false;}
+        if(m_standardMode==TransformerParams::StandardMode::BuiltIn&&(!standardUnavailableReason().isEmpty()||!ModelStdTable::originalNoLoadCurrent(m_modelCapacity_kVA,ignored))){error=QStringLiteral("空载电流自动来源未匹配，请核对规格或选择手工固定。");return false;}
+    }
     if (m_standardMode == TransformerParams::StandardMode::Unconfirmed) {
         error = QStringLiteral("此方案未保存完整指标来源。请在设计输入页选择内置标准或非标，并核对性能指标后再计算。");
         return false;
@@ -338,7 +481,7 @@ bool ParamTableWidget::collectForCalculation(TransformerParams &params, CalcInpu
             return false;
         }
     }
-    const QStringList textKeys = {"connectionGroup", "environmentGrade", "efficiencyCalcMethod",
+    const QStringList textKeys = {"noLoadCurrentSource", "connectionGroup", "environmentGrade", "efficiencyCalcMethod",
         "lvConnectionBarThickness", "lvConnectionBarWidth", "legacyUnitLossRecord", "legacyCraftCoefRecord"}; // 可选记录不阻断整机。
     const QStringList integerKeys = {"frequency", "seamCount", "lvTurns", "hvTurnsPerLayer", "hvParallelCount",
         "hvStackCount", "lvLayerInsulCount", "yokeWidenStages", "waveDepth", "waveHeight", "wavePitch"};
@@ -349,13 +492,13 @@ bool ParamTableWidget::collectForCalculation(TransformerParams &params, CalcInpu
         bool ok = false;
         const QString value = cell ? cell->text().trimmed() : QString();
         const double number = value.toDouble(&ok);
-        if (ok && integerKeys.contains(it.key()))
+        if (ok && (integerKeys.contains(it.key()) || it.key().startsWith(QStringLiteral("coreSheetAdjust_"))))
             value.toInt(&ok);
         if (!ok || !std::isfinite(number)) {
             const auto *label = item(it->first, it->second == 2 ? 1 : 3);
             error = QStringLiteral("“%1”请输入有效%2，不能留空或输入非数字。")
                 .arg(label && !label->text().isEmpty() ? label->text() : it.key(),
-                     integerKeys.contains(it.key()) ? QStringLiteral("整数") : QStringLiteral("数值"));
+                     (integerKeys.contains(it.key()) || it.key().startsWith(QStringLiteral("coreSheetAdjust_"))) ? QStringLiteral("整数") : QStringLiteral("数值"));
             return false;
         }
     }
@@ -374,6 +517,17 @@ bool ParamTableWidget::collectForCalculation(TransformerParams &params, CalcInpu
     collectedInput.capacity_kVA = collectedParams.capacity_kVA;
     collectedInput.hvRated_kV = collectedParams.hvRatedVoltage_kV;
     collectedInput.lvRated_kV = collectedParams.lvRatedVoltage_kV;
+    const QString coreAdjustmentError=collectedInput.coreSheetCountAdjustmentError();
+    if (!coreAdjustmentError.isEmpty()) { error=coreAdjustmentError; return false; }
+    const auto coreWidthError=collectedInput.coreWidthOffsetError();
+    if(!coreWidthError.isEmpty()){error=coreWidthError;return false;}
+    const auto processError=collectedInput.coreWeightProcessInputError();
+    if(!processError.isEmpty()){error=processError;return false;}
+    const auto areaError=collectedInput.designAreaInputError();if(!areaError.isEmpty()){error=areaError;return false;}
+    const auto thermalError=collectedInput.thermalProcessInputError();if(!thermalError.isEmpty()){error=thermalError;return false;}
+    const auto unitLossError=collectedInput.coreUnitLossInputError();if(!unitLossError.isEmpty()){error=unitLossError;return false;}
+    const auto electricalError=collectedInput.electricalProcessInputError();if(!electricalError.isEmpty()){error=electricalError;return false;}
+    const auto tankError=collectedInput.tankProcessInputError();if(!tankError.isEmpty()){error=tankError;return false;}
     const QString ductError = collectedInput.oilDuctInputError();
     if (!ductError.isEmpty()) {
         error = ductError;
@@ -391,7 +545,7 @@ bool ParamTableWidget::collectForCalculation(TransformerParams &params, CalcInpu
     }
     const QString scopeError = calculationScopeError(m_config, collectedParams, collectedInput);
     if (!scopeError.isEmpty()) {
-        error = scopeError + QStringLiteral("。请使用油浸式、低压箔绕、叠铁芯、椭圆形、双绕组、多层圆筒式，50Hz/75℃配置。");
+        error = scopeError + QStringLiteral("。请核对油浸式、低压箔绕、叠铁芯、椭圆形、双绕组及线圈型式，并使用50Hz/75℃配置。");
         return false;
     }
     const QString unavailable = m_standardMode == TransformerParams::StandardMode::BuiltIn
@@ -566,11 +720,11 @@ void ParamTableWidget::refreshStandardSelectorTip()
         && model.captured(3).toDouble() == m_modelHvRated_kV
         && model.captured(4).toDouble() == m_modelLvRated_kV;
     const QString modeName = m_standardMode == TransformerParams::StandardMode::BuiltIn
-        ? QStringLiteral("内置表") : m_standardMode == TransformerParams::StandardMode::Custom
+        ? QStringLiteral("国标") : m_standardMode == TransformerParams::StandardMode::Custom
         ? QStringLiteral("非标") : QStringLiteral("待确认");
     const QString status = modelReady ? m_standardStatus
         : QStringLiteral("产品型号未完整提交；当前模式为%1。旧匹配状态无效，请补全型号并按回车提交低压电压后核对；当前保留的指标不代表已匹配此规格。").arg(modeName);
-    const QString tip = QStringLiteral("指标来源模式：内置表仅自动匹配已有损耗标准，不代表完整国标认证；非标保留手工指标。\n") + status;
+    const QString tip = QStringLiteral("指标来源模式：国标使用内置表自动匹配损耗及原单空载电流口径，不代表完整国标认证；非标使用手工指标。\n") + status;
     if (m_standardModeRow >= 0) item(m_standardModeRow, 2)->setToolTip(tip);
     if (m_standardModeCombo) m_standardModeCombo->setToolTip(tip);
 }
@@ -600,14 +754,20 @@ void ParamTableWidget::applyModelLinkage()
     };
     const QString key = standardKey();
     const QString unavailable = standardUnavailableReason();
+    const auto currentRef = m_inputRefs.value(QStringLiteral("noLoadCurrentStd"), {-1, -1});
+    if (auto *current = item(currentRef.first, currentRef.second)) {
+        const QSignalBlocker blocker(this);
+        current->setFlags(!m_baseParams.hasManualNoLoadCurrent()
+            ? current->flags() & ~Qt::ItemIsEditable : current->flags() | Qt::ItemIsEditable);
+    }
     if (m_standardMode == TransformerParams::StandardMode::Unconfirmed) {
         m_standardStatus = QStringLiteral("指标来源待确认：旧方案或指标数据缺失；保留当前值，请选择模式并逐项核对，不能视为该方案原指标。");
     } else if (m_standardMode == TransformerParams::StandardMode::Custom) {
         m_standardStatus = QStringLiteral("非标：使用手工性能指标；更改型号、容量和接法不自动覆盖指标，不代表已满足合同要求。");
     } else if (!unavailable.isEmpty()) {
-        m_standardStatus = unavailable + QStringLiteral("；需手工核对：保留原损耗值，未自动匹配当前规格。");
+        m_standardStatus = unavailable + QStringLiteral("；需手工核对：保留当前指标（含空载电流），未自动匹配当前规格。");
     } else {
-        if (key != m_lastLinkageKey)
+        if (!m_lastLinkageKey.isEmpty() && key != m_lastLinkageKey)
             m_lossStandardsManual = false;
         if (!m_lossStandardsManual) {
             const auto *e = ModelStdTable::lookup(series, cap);
@@ -617,12 +777,24 @@ void ParamTableWidget::applyModelLinkage()
             setCell(QStringLiteral("noLoadLossStd"), QString::number(e->noLoad_W));
             setCell(QStringLiteral("loadLossStd"), QString::number(loadW));
             setCell(QStringLiteral("totalLossStd"), QString::number(e->noLoad_W + loadW));
+
         }
         m_lastLinkageKey = key;
-        m_standardStatus = QStringLiteral("%1/%2kVA：%3；阻抗、空载电流标准保留手工值。")
+        m_standardStatus = QStringLiteral("%1/%2kVA：%3；阻抗保留手工值。")
             .arg(series).arg(cap)
             .arg(m_lossStandardsManual ? QStringLiteral("使用手工损耗标准") : QStringLiteral("已匹配内置10kV损耗表"));
     }
+    // 空载电流来源独立于标准模式与损耗覆盖标志。
+    if(!m_baseParams.hasManualNoLoadCurrent()){
+        const QSignalBlocker blocker(this);double current=0;
+        if(m_standardMode==TransformerParams::StandardMode::BuiltIn&&unavailable.isEmpty()&&ModelStdTable::originalNoLoadCurrent(cap,current))setCell(QStringLiteral("noLoadCurrentStd"),PerformanceCriteria::valueText(current));
+        else if(m_standardMode==TransformerParams::StandardMode::Custom&&m_baseParams.hasNonstandardAn3)setCell(QStringLiteral("noLoadCurrentStd"),PerformanceCriteria::valueText(QString::number(m_baseParams.nonstandardAn3_pct-0.34,'g',12).toDouble()));
+        else if(m_standardMode==TransformerParams::StandardMode::Custom)setCell(QStringLiteral("noLoadCurrentStd"),QString());
+    }
+    const QString currentStatus=m_baseParams.hasManualNoLoadCurrent()?QStringLiteral("空载电流手工固定，切换标准不覆盖"):
+        m_standardMode==TransformerParams::StandardMode::Custom?(m_baseParams.hasNonstandardAn3?QStringLiteral("空载电流按原单AN3减0.34自动换算"):QStringLiteral("空载电流自动来源待填AN3，不能确认")):QStringLiteral("空载电流按原单查表减0.34自动取值");
+    m_standardStatus+=QStringLiteral("；")+currentStatus+QStringLiteral("；原单规则不代表完整官方标准核验。");
+    if(m_currentSourceRow>=0){item(m_currentSourceRow,5)->setText(currentStatus);item(m_currentSourceRow,5)->setToolTip(m_standardStatus);}
     for (const QString &lossKey : {QStringLiteral("noLoadLossStd"), QStringLiteral("loadLossStd"), QStringLiteral("totalLossStd")}) {
         const auto ref = m_inputRefs.value(lossKey);
         const QSignalBlocker blocker(this);
@@ -636,7 +808,7 @@ void ParamTableWidget::applyModelLinkage()
     if (m_standardModeRow >= 0) {
         const QSignalBlocker blocker(this);
         item(m_standardModeRow, 5)->setText(m_standardMode == TransformerParams::StandardMode::BuiltIn
-            ? QStringLiteral("仅损耗表自动；其余指标手工") : m_standardMode == TransformerParams::StandardMode::Custom
+            ? (unavailable.isEmpty() ? (m_lossStandardsManual?QStringLiteral("损耗手工覆盖；空载电流按独立来源"):QStringLiteral("损耗查表；空载电流按独立来源")) : QStringLiteral("指标未匹配，需手工核对")) : m_standardMode == TransformerParams::StandardMode::Custom
             ? QStringLiteral("全部指标手工；规格切换不覆盖") : QStringLiteral("旧方案来源缺失，请核对"));
         item(m_standardModeRow, 5)->setToolTip(m_standardStatus);
     }
@@ -651,8 +823,130 @@ void ParamTableWidget::applyModelLinkage()
 void ParamTableWidget::scheduleDesignCore()
 {
     if (m_loading || !m_designConnectionUi || m_designCoreRow < 0) return;
+    updateLaminationPreview(); // Independent, cheap geometry; never waits for a valid full design.
     showDesignCore(nullptr, QStringLiteral("正在更新当前输入；旧预览已失效"));
     m_corePreviewTimer->start();
+}
+
+void ParamTableWidget::addLaminationPreview(int &row)
+{
+    const int headerRow = row++;
+    addParamRow(headerRow, QString(), QString());
+    const int bodyRow = row++;
+    addParamRow(bodyRow, QString(), QString());
+    for (int r : {headerRow, bodyRow}) {
+        for (int col = 0; col < columnCount(); ++col)
+            item(r, col)->setFlags(item(r, col)->flags() & ~Qt::ItemIsEditable);
+        setSpan(r, 1, 1, 5);
+    }
+    auto *toggle = new QToolButton(this);
+    toggle->setText(QStringLiteral("圆形/长圆形几何叠积预览（只读，不参与整机计算）"));
+    toggle->setCheckable(true);
+    toggle->setChecked(m_laminationExpanded);
+    toggle->setArrowType(m_laminationExpanded ? Qt::DownArrow : Qt::RightArrow);
+    toggle->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+    toggle->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+    toggle->setStyleSheet(QStringLiteral("QToolButton { text-align:left; color:#24362B; background:#DCEEDF; border:0; padding:4px; font-weight:bold; }"));
+    toggle->setToolTip(QStringLiteral("跟随上方心柱选型，默认收起；只显示原单几何片宽及半叠厚，不开放完整计算、保存或寻优。"));
+    setCellWidget(headerRow, 1, toggle);
+    auto *body = new QWidget(this);
+    auto *layout = new QVBoxLayout(body);
+    layout->setContentsMargins(6, 4, 6, 4);
+    layout->setSpacing(4);
+    m_laminationStatus = new QLabel(body);
+    m_laminationStatus->setTextFormat(Qt::PlainText);
+    m_laminationStatus->setWordWrap(true);
+    m_laminationStatus->setFixedHeight(72);
+    layout->addWidget(m_laminationStatus);
+    m_laminationTable = new QTableWidget(15, 5, body);
+    m_laminationTable->setHorizontalHeaderLabels({QStringLiteral("原单位置"), QStringLiteral("片宽(mm)"),
+        QStringLiteral("几何半叠厚(mm)"), QStringLiteral("圆弧累计(mm)"), QStringLiteral("用途说明")});
+    m_laminationTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    m_laminationTable->setAlternatingRowColors(true);
+    m_laminationTable->verticalHeader()->hide();
+    m_laminationTable->verticalHeader()->setDefaultSectionSize(24);
+    m_laminationTable->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
+    m_laminationTable->setStyleSheet(QStringLiteral("QTableWidget { background:#FFFFFF; alternate-background-color:#F2F7F3; gridline-color:#D3DDD6; color:#24362B; } QHeaderView::section { background:#DCEEDF; color:#24362B; padding:3px; border:1px solid #D3DDD6; }"));
+    const QStringList mainColumns = {"G", "H", "I", "J", "K", "L", "M", "N", "O", "Q", "S"};
+    const QStringList supplements = {"F", "G", "H", "I"};
+    for (int i = 0; i < 15; ++i) {
+        const QString location = i < 11 ? mainColumns[i] + QStringLiteral("17/18")
+                                       : supplements[i - 11] + QStringLiteral("19/20");
+        for (int col = 0; col < 5; ++col) {
+            auto *cell = new QTableWidgetItem(col == 0 ? location : col == 4
+                ? (i < 11 ? QStringLiteral("主叠积几何") : QStringLiteral("补充片几何，非手工实际值")) : QStringLiteral("—"));
+            cell->setFlags(cell->flags() & ~Qt::ItemIsEditable);
+            cell->setTextAlignment(col >= 1 && col <= 3 ? Qt::AlignRight | Qt::AlignVCenter : Qt::AlignLeft | Qt::AlignVCenter);
+            cell->setToolTip(QStringLiteral("几何半叠厚逐级取整；累计仅含圆弧部分，不含长圆中心矩形，不是Sheet1片数取整后的实际叠厚。"));
+            m_laminationTable->setItem(i, col, cell);
+        }
+    }
+    layout->addWidget(m_laminationTable, 1);
+    setCellWidget(bodyRow, 1, body);
+    setRowHeight(bodyRow, 374);
+    setRowHidden(bodyRow, !m_laminationExpanded);
+    connect(toggle, &QToolButton::toggled, this, [this, toggle, bodyRow](bool expanded) {
+        m_laminationExpanded = expanded;
+        toggle->setArrowType(expanded ? Qt::DownArrow : Qt::RightArrow);
+        setRowHidden(bodyRow, !expanded);
+    });
+}
+
+void ParamTableWidget::updateLaminationPreview()
+{
+    if (m_loading || !m_designConnectionUi || !m_laminationTable || !m_laminationStatus) return;
+    QString error;
+    double diameter = 0.0, straight = 0.0;
+    const auto readNumber = [this, &error](const QString &key, double &value) {
+        const auto ref = m_inputRefs.value(key, {-1, -1});
+        const auto *cell = item(ref.first, ref.second);
+        bool ok = false;
+        value = cell ? cell->text().toDouble(&ok) : 0.0;
+        if (!ok || !std::isfinite(value)) error = QStringLiteral("几何输入未完整填写，请核对直径H12和长圆形直线段K12；不沿用旧值。");
+    };
+    if (m_config.coreType != StructureConfig::StackedSilicon)
+        error = QStringLiteral("本区仅用于叠铁芯几何预览；其他铁芯结构未接入。" );
+    else if (m_config.coreShape != StructureConfig::Circle && m_config.coreShape != StructureConfig::LongRound)
+        error = QStringLiteral("本区仅预览圆形/长圆形；椭圆沿用上方已有结果，半椭圆/类椭圆未接入。" );
+    else {
+        readNumber(QStringLiteral("coreDiameter"), diameter);
+        if (m_config.coreShape == StructureConfig::LongRound) readNumber(QStringLiteral("coreStraight"), straight);
+    }
+    auto &db = DesignDatabase::instance();
+    CoreLaminationPreview::Result result;
+    if (error.isEmpty() && !db.isLoaded() && !db.load())
+        error = QStringLiteral("项目叠积数据加载失败：") + db.lastError();
+    if (error.isEmpty()) {
+        QVector<double> offsets;
+        for(int i=0;i<20;++i){
+            double value=m_recommendationBaseInput.coreWidthOffsets_mm[i];
+            const auto key=QStringLiteral("coreWidthOffset_%1").arg(i);
+            if(m_inputRefs.contains(key))readNumber(key,value);
+            offsets.append(value);
+        }
+        if(error.isEmpty())result = CoreLaminationPreview::calculate(m_config.coreShape, diameter, straight, db.coreRows(),offsets);
+        if(error.isEmpty())error = result.error;
+    }
+    const bool available = error.isEmpty() && result.available;
+    const QSignalBlocker blocker(m_laminationTable);
+    for (int i = 0; i < 15; ++i)
+        for (int col = 1; col <= 3; ++col) {
+            const double value = !available ? 0.0 : col == 1 ? result.stages[i].width_mm
+                : col == 2 ? result.stages[i].stack_mm : result.stages[i].arcCumulative_mm;
+            m_laminationTable->item(i, col)->setText(available ? QString::number(value, 'g', 15) : QStringLiteral("—"));
+        }
+    QString status = error;
+    if (available) {
+        const QString rectangle = m_config.coreShape == StructureConfig::LongRound
+            ? QStringLiteral("中心矩形：宽%1mm、全厚%2mm（B20/D20），与圆弧部分分开显示。")
+                .arg(result.centralWidth_mm).arg(result.centralFullThickness_mm)
+            : QStringLiteral("圆形本预览不使用K12；原直线段输入保留，不静默改为0。");
+        status = QStringLiteral("%1几何预览：H12=%2mm，项目查表档%3mm（阶梯取档，外链未重算）。\n%4\n仅几何半叠厚；非实际截面、磁密或重量，整机计算/保存/寻优仍未开放。")
+            .arg(m_config.coreShape == StructureConfig::Circle ? QStringLiteral("圆形") : QStringLiteral("长圆形"))
+            .arg(diameter).arg(result.matchedReference_mm).arg(rectangle);
+    }
+    m_laminationStatus->setText(status);
+    m_laminationStatus->setToolTip(status);
 }
 
 void ParamTableWidget::showDesignCore(const CalcResult *result, const QString &reason)
@@ -989,6 +1283,28 @@ void ParamTableWidget::updateWireForm()
 // 根据当前结构配置动态生成参数表：不同铁芯/绕组组合显示不同的参数行和分段；
 // 四/五/六节为可编辑设计变量，与 CalcInput 双向同步（saveToInput 读回）；
 // proMode=true 时追加七~十节高级参数（专业模式）
+void ParamTableWidget::setCalculationConfig(const StructureConfig &config)
+{
+    const bool coreChanged = m_config.coreShape != config.coreShape || m_config.yokeShape != config.yokeShape;
+    m_config = config;
+    applyModelLinkage();
+    updateHvCoilHints();
+    if (coreChanged) {
+        updateYokePiece1();
+        updateLvTurnsRecommendation();
+        scheduleDesignCore();
+        updateLaminationPreview();
+    }
+}
+
+void ParamTableWidget::setCoreSelection(StructureConfig::CoreShape core, StructureConfig::YokeShape yoke)
+{
+    auto config = m_config;
+    config.coreShape = core;
+    config.yokeShape = yoke;
+    setCalculationConfig(config);
+}
+
 void ParamTableWidget::loadParamsForConfig(const TransformerParams &params, const StructureConfig &config,
                                            const CalcInput &input, bool proMode, bool designConnectionUi,
                                            bool sheetSelectionUi)
@@ -1011,6 +1327,8 @@ void ParamTableWidget::loadParamsForConfig(const TransformerParams &params, cons
     m_loading = true;
     m_corePreviewTimer->stop();
     m_designCoreRow = -1;
+    m_laminationStatus = nullptr;
+    m_laminationTable = nullptr;
     m_designConnectionUi = designConnectionUi;
     m_designConnectionCombo = nullptr;
     m_designConnectionRow = -1;
@@ -1021,11 +1339,17 @@ void ParamTableWidget::loadParamsForConfig(const TransformerParams &params, cons
     m_recommendationRow = -1;
     m_testVoltageRow = -1;
     m_baseParams = params;
+    m_baseParams.noLoadCurrentSource=params.hasManualNoLoadCurrent()?TransformerParams::NoLoadCurrentSource::Manual:TransformerParams::NoLoadCurrentSource::Automatic;
     m_config = config;
+    // The design page's ribbon is editable and authoritative there. A saved
+    // candidate elsewhere must retain its own shape, not the current page's.
+    if (!designConnectionUi) {
+        m_config.coreShape = input.coreShape;
+        m_config.yokeShape = input.yokeShape;
+    }
     m_lossStandardsManual = params.lossStandardsManual;
     m_standardMode = params.standardMode;
-    if (m_standardMode == TransformerParams::StandardMode::BuiltIn && m_lossStandardsManual)
-        m_standardMode = TransformerParams::StandardMode::Custom;
+    m_currentSourceCombo=nullptr;m_currentSourceRow=-1;
     m_standardModeCombo = nullptr;
     m_standardModeRow = -1;
     m_lastLinkageKey = params.lossStandardsKey;
@@ -1047,6 +1371,7 @@ void ParamTableWidget::loadParamsForConfig(const TransformerParams &params, cons
         m_flatWireInsulation = input.resolvedInsulationType();
         if (m_flatWireInsulation == QLatin1String("Custom")) m_customWireInsulAdd_mm = input.hvWireInsulAdd_mm;
     }
+    clearSpans();
     setRowCount(0);
     m_inputRefs.clear();
     int row = 0;
@@ -1223,13 +1548,13 @@ void ParamTableWidget::loadParamsForConfig(const TransformerParams &params, cons
         item(m_standardModeRow, 2)->setFlags(item(m_standardModeRow, 2)->flags() & ~Qt::ItemIsEditable);
         m_standardModeCombo = new QComboBox(this);
         auto *modeCombo = m_standardModeCombo;
-        modeCombo->addItem(QStringLiteral("内置标准（损耗表）"), int(TransformerParams::StandardMode::BuiltIn));
+        modeCombo->addItem(QStringLiteral("国标（内置表）"), int(TransformerParams::StandardMode::BuiltIn));
         modeCombo->addItem(QStringLiteral("非标（手工指标）"), int(TransformerParams::StandardMode::Custom));
         modeCombo->addItem(QStringLiteral("来源待确认"), int(TransformerParams::StandardMode::Unconfirmed));
         for (int i = 0; i < modeCombo->count(); ++i)
             modeCombo->setItemData(i, modeCombo->itemText(i), Qt::ToolTipRole);
         if (sheetSelectionUi && !m_designConnectionUi) {
-            modeCombo->setItemText(0, QStringLiteral("内置表"));
+            modeCombo->setItemText(0, QStringLiteral("国标"));
             modeCombo->setItemText(1, QStringLiteral("非标"));
             modeCombo->setItemText(2, QStringLiteral("待确认"));
         }
@@ -1241,19 +1566,34 @@ void ParamTableWidget::loadParamsForConfig(const TransformerParams &params, cons
             const auto next = TransformerParams::StandardMode(modeCombo->itemData(index).toInt());
             if (next == TransformerParams::StandardMode::BuiltIn) {
                 const QString unavailable = standardUnavailableReason();
-                if (!unavailable.isEmpty() || QMessageBox::question(this, QStringLiteral("切回内置损耗标准"),
-                    QStringLiteral("将按当前型号、容量和接法替换空载、负载及总损耗指标；其余指标和允许偏差保持手工值。是否继续？"),
+                if (previous == TransformerParams::StandardMode::Custom) {
+                    const auto old = getParams();
+                    if (std::isfinite(old.noLoadCurrentStd_pct) && old.noLoadCurrentStd_pct >= 0.0) {
+                        m_baseParams.hasSavedCustomNoLoadCurrent = true;
+                        m_baseParams.savedCustomNoLoadCurrent_pct = old.noLoadCurrentStd_pct;
+                    }
+                }
+                if (!unavailable.isEmpty() || QMessageBox::question(this, QStringLiteral("切回国标"),
+                    QStringLiteral("将按当前型号、容量和接法替换损耗指标；空载电流仅在“原单自动联动”时重新取值，“手工固定”时保留。阻抗和允许偏差保持手工值。是否继续？"),
                     QMessageBox::Yes | QMessageBox::No, QMessageBox::No) != QMessageBox::Yes) {
-                    if (!unavailable.isEmpty()) QMessageBox::warning(this, QStringLiteral("内置表不适用"), unavailable);
+                    if (!unavailable.isEmpty()) QMessageBox::warning(this, QStringLiteral("国标内置表不适用"), unavailable);
                     const QSignalBlocker blocker(modeCombo);
                     modeCombo->setCurrentIndex(int(previous));
                     return;
                 }
             }
             m_standardMode = next;
+            if (next == TransformerParams::StandardMode::Custom && !m_baseParams.hasManualNoLoadCurrent() && m_baseParams.hasSavedCustomNoLoadCurrent) {
+                const auto ref = m_inputRefs.value(QStringLiteral("noLoadCurrentStd"), {-1, -1});
+                if (auto *current = item(ref.first, ref.second)) {
+                    const QSignalBlocker blocker(this);
+                    current->setText(QString::number(m_baseParams.savedCustomNoLoadCurrent_pct, 'g', 12));
+                }
+            }
             m_lossStandardsManual = (next != TransformerParams::StandardMode::BuiltIn);
             m_lastLinkageKey = standardKey();
             applyModelLinkage();
+            emit nonstandardAn3StateChanged();
         });
     }
     addInputRow(row++, "空载损耗标准值(W)", PerformanceCriteria::valueText(params.noLoadLossStd_W),
@@ -1274,6 +1614,16 @@ void ParamTableWidget::loadParamsForConfig(const TransformerParams &params, cons
                 "", PerformanceCriteria::valueText(params.noLoadCurrentMaxDev_pct),
                 "noLoadCurrentStd", "noLoadCurrentMaxDev");
 
+    addInputRow(row++,QStringLiteral("空载电流取值"),m_baseParams.hasManualNoLoadCurrent()?QStringLiteral("manual"):QStringLiteral("automatic"),{},{},"noLoadCurrentSource",{});
+    m_currentSourceRow=row-1;m_currentSourceCombo=new QComboBox(this);m_currentSourceCombo->setObjectName(QStringLiteral("noLoadCurrentSource"));
+    m_currentSourceCombo->addItem(QStringLiteral("原单自动联动"),0);m_currentSourceCombo->addItem(QStringLiteral("手工固定"),1);
+    m_currentSourceCombo->setCurrentIndex(m_baseParams.hasManualNoLoadCurrent()?1:0);setCellWidget(m_currentSourceRow,2,m_currentSourceCombo);
+    m_currentSourceCombo->setToolTip(QStringLiteral("与国标/非标独立。自动沿用原单查表或AN3换算，不代表官方通用规定；手工保留O9，不因标准切换而覆盖。修改标准只影响偏差和校核，不改设计电流。"));
+    connect(m_currentSourceCombo,&QComboBox::currentIndexChanged,this,[this](int index){if(m_loading||index<0)return;
+        m_baseParams.noLoadCurrentSource=index==1?TransformerParams::NoLoadCurrentSource::Manual:TransformerParams::NoLoadCurrentSource::Automatic;
+        {const QSignalBlocker blocker(this);item(m_currentSourceRow,2)->setText(index==1?QStringLiteral("manual"):QStringLiteral("automatic"));}
+        applyModelLinkage();emit nonstandardAn3StateChanged();
+    });
     // 三 温升限值：油顶层限值参与所有方案校核，不应随铁芯类型隐藏。
     addSectionRow(row++, QStringLiteral("三 温升限值"));
     addParamRow(row++, "油顶层温升限值(K)", PerformanceCriteria::valueText(params.oilTopTempRise_K));
@@ -1351,8 +1701,8 @@ void ParamTableWidget::loadParamsForConfig(const TransformerParams &params, cons
     for (int col : {2,4,5}) item(row-1, col)->setToolTip(legacyCoreNote);
     addInputRow(row++, "接缝数", QString::number(input.seamCount), {}, {}, "seamCount", {});
 
-    addInputRow(row++, "宽90补充片叠厚模式", QString(),
-                "实际叠厚(mm)", QString::number(input.yokePiece1Stack_mm, 'g', 15), {}, "yokePiece1Stack");
+    addInputRow(row++, "补充片1叠厚模式(F20)", QString(),
+                "几何半叠厚(mm)", QString::number(input.yokePiece1Stack_mm, 'g', 15), {}, "yokePiece1Stack");
     item(row - 1, 2)->setFlags(item(row - 1, 2)->flags() & ~Qt::ItemIsEditable);
     m_yokePiece1ModeCombo = new QComboBox(this);
     m_yokePiece1ModeCombo->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
@@ -1377,6 +1727,7 @@ void ParamTableWidget::loadParamsForConfig(const TransformerParams &params, cons
                     QStringLiteral("空载损耗(W)"), QStringLiteral("不可用"));
         for (int r = m_designCoreRow; r < m_designCoreRow + 3; ++r)
             for (int col : {2, 4}) item(r, col)->setFlags(item(r, col)->flags() & ~Qt::ItemIsEditable);
+        addLaminationPreview(row);
     }
 
     // 五 绕组参数（设计变量，初值取自 CalcInput）
@@ -1405,8 +1756,8 @@ void ParamTableWidget::loadParamsForConfig(const TransformerParams &params, cons
     addInputRow(row++, QStringLiteral("低压内连接排厚(mm)"), input.lvConnectionBarThicknessText,
                 QStringLiteral("低压内连接排宽(mm)"), input.lvConnectionBarWidthText,
                 QStringLiteral("lvConnectionBarThickness"), QStringLiteral("lvConnectionBarWidth"));
-    const QString connectionBarNote = QStringLiteral("可选工艺记录；空白为未录入，不套用示例尺寸。截面参考=厚×宽−5mm²，固定扣减5的工艺依据待确认。未参与损耗、温升、整机合格或寻优筛选；无效记录仅使参考不可用。");
-    item(row-1, 5)->setText(QStringLiteral("可选记录，未参与计算"));
+    const QString connectionBarNote = QStringLiteral("默认仅作工艺记录；选择辅助表设计截面时，必须填写有效内连接排厚宽，参与设计截面、磁密和空载电流。厚×宽−5仍仅为独立参考；默认厚6mm、宽50mm，取自原计算单，可修改。");
+    item(row-1, 5)->setText(QStringLiteral("默认仅记录；辅助表设计截面时参与计算"));
     for (int col : {2,4,5}) item(row-1, col)->setToolTip(connectionBarNote);
     addParamRow(row, QStringLiteral("高压导线形状"), QString(), QStringLiteral("圆线裸直径(mm)"), QString());
     m_wireFormCombo = new QComboBox(this);
@@ -1511,7 +1862,7 @@ void ParamTableWidget::updateHvCoilHints()
     }
     if (auto *note = item(ref->first, 5)) {
         note->setText(m_config.hvCoilStructure == StructureConfig::TwoSegCylinder
-            ? QStringLiteral("分段：两段串联、两段算一层；暂不开放计算")
+            ? QStringLiteral("分段：两段串联；五组油道均启用时可计算")
             : QStringLiteral("W12总层数；Y9自动计算；分段工艺口径见悬停提示"));
     }
 }
@@ -1519,6 +1870,8 @@ void ParamTableWidget::updateHvCoilHints()
 // 从表格设计变量节读回 CalcInput：空值/非法值保持原字段不变
 void ParamTableWidget::saveToInput(CalcInput &input) const
 {
+    input.coreShape = m_config.coreShape;
+    input.yokeShape = m_config.yokeShape;
     input.hasPerformanceCriteria = true;
     input.performanceCriteria = getParams();
     if (m_hvMaterialCombo && m_lvMaterialCombo) {
@@ -1620,8 +1973,13 @@ void ParamTableWidget::saveToInput(CalcInput &input) const
     setDouble("yokePiece3Stack", input.yokePiece3Stack_mm);
     setDouble("yokeWidenTo", input.yokeWidenTo_mm);
     setInt("yokeWidenStages", input.yokeWidenStages);
-    for (int i = 0; i < 16; ++i) {
+    for (int i = 0; i < 20; ++i) {
+        if(i>=16) input.yokeSteps_mm[i]=m_recommendationBaseInput.yokeSteps_mm[i];
         setDouble(QStringLiteral("yokeStep_%1").arg(i), input.yokeSteps_mm[i]);
+        input.coreSheetCountAdjust[i]=m_recommendationBaseInput.coreSheetCountAdjust[i];
+        setDouble(QStringLiteral("coreSheetAdjust_%1").arg(i), input.coreSheetCountAdjust[i]);
+        input.coreWidthOffsets_mm[i]=m_recommendationBaseInput.coreWidthOffsets_mm[i];
+        setDouble(QStringLiteral("coreWidthOffset_%1").arg(i),input.coreWidthOffsets_mm[i]);
     }
 
     // 八 绕组工艺（油道与绝缘细节）
@@ -1640,6 +1998,7 @@ void ParamTableWidget::saveToInput(CalcInput &input) const
     setDouble("lvExtraLoss", input.lvExtraLoss_W);
 
     // 十 油箱与结构
+    setDouble("oilTopCorrection", input.oilTopCorrection_K);
     setDouble("tankBottomOil", input.tankBottomOil_mm);
     setDouble("tankSideClear", input.tankSideClear_mm);
     setDouble("tankEndClear", input.tankEndClear_mm);
@@ -1648,6 +2007,33 @@ void ParamTableWidget::saveToInput(CalcInput &input) const
     setInt("waveHeight", input.waveHeight_mm);
     setInt("wavePitch", input.wavePitch_mm);
     setDouble("phaseGapBase", input.phaseGapBase_mm);
+    input.centerDistanceAllowance_mm=m_recommendationBaseInput.centerDistanceAllowance_mm;
+    input.hvLayerInsulCalcFactor=m_recommendationBaseInput.hvLayerInsulCalcFactor;
+    input.hvMaxTurnsAdjust=m_recommendationBaseInput.hvMaxTurnsAdjust;
+    input.activePartHvWeightMode=m_recommendationBaseInput.activePartHvWeightMode;
+    setDouble("activePartHvWeightMode",input.activePartHvWeightMode);
+    input.thermalFormulaMode=m_recommendationBaseInput.thermalFormulaMode;input.lvThermalExtraMode=m_recommendationBaseInput.lvThermalExtraMode;
+    setDouble("thermalFormulaMode",input.thermalFormulaMode);setDouble("lvThermalExtraMode",input.lvThermalExtraMode);
+    input.designAreaMode=m_recommendationBaseInput.designAreaMode;setDouble("designAreaMode",input.designAreaMode);
+    input.unitIronLossMode=m_recommendationBaseInput.unitIronLossMode;
+    input.manualCoreLossPerKg_W=m_recommendationBaseInput.manualCoreLossPerKg_W;
+    input.manualYokeLossPerKg_W=m_recommendationBaseInput.manualYokeLossPerKg_W;
+    setDouble("unitIronLossMode",input.unitIronLossMode);setDouble("manualCoreLossPerKg",input.manualCoreLossPerKg_W);setDouble("manualYokeLossPerKg",input.manualYokeLossPerKg_W);
+    input.hvAxialAllowance_mm=m_recommendationBaseInput.hvAxialAllowance_mm;
+    input.hvDuctLayerRule=m_recommendationBaseInput.hvDuctLayerRule;setDouble("hvDuctLayerRule",input.hvDuctLayerRule);
+    input.impedanceOutputMode=m_recommendationBaseInput.impedanceOutputMode;
+    input.impedanceCalibrationFactor=m_recommendationBaseInput.impedanceCalibrationFactor;
+    setDouble("hvAxialAllowance",input.hvAxialAllowance_mm);setDouble("impedanceOutputMode",input.impedanceOutputMode);setDouble("impedanceCalibrationFactor",input.impedanceCalibrationFactor);
+    setDouble("hvMaxTurnsAdjust",input.hvMaxTurnsAdjust);
+    setDouble("centerDistanceAllowance",input.centerDistanceAllowance_mm);
+    setDouble("hvLayerInsulCalcFactor",input.hvLayerInsulCalcFactor);
+    input.tankRimHighCapacity_mm=m_recommendationBaseInput.tankRimHighCapacity_mm;
+    input.tankWallThicknessOverride_mm=m_recommendationBaseInput.tankWallThicknessOverride_mm;
+    input.tankBottomThicknessAdjust_mm=m_recommendationBaseInput.tankBottomThicknessAdjust_mm;
+    input.conservatorWeight_kg=m_recommendationBaseInput.conservatorWeight_kg;
+    input.waveLongCountAdjust=m_recommendationBaseInput.waveLongCountAdjust;
+    setDouble("tankRimHighCapacity",input.tankRimHighCapacity_mm);setDouble("tankWallThicknessOverride",input.tankWallThicknessOverride_mm);
+    setDouble("tankBottomThicknessAdjust",input.tankBottomThicknessAdjust_mm);setDouble("conservatorWeight",input.conservatorWeight_kg);setDouble("waveLongCountAdjust",input.waveLongCountAdjust);
 }
 
 // 专业模式追加的高级参数节（七~十）：铁芯工艺 / 绕组油道 / 损耗系数 / 油箱结构，
@@ -1656,22 +2042,64 @@ void ParamTableWidget::addProModeSections(int &row, const CalcInput &input)
 {
     // 七 铁芯工艺
     addSectionRow(row++, QStringLiteral("七 铁芯工艺（高级）"), {}, {}, true);
+    addInputRow(row++,QStringLiteral("设计截面来源"),QString::number(input.designAreaMode),{},{},"designAreaMode",{});
+    const int areaRow=row-1;auto *areaMode=new QComboBox(this);areaMode->setObjectName(QStringLiteral("designAreaMode"));
+    areaMode->addItem(QStringLiteral("几何叠厚"),0);areaMode->addItem(QStringLiteral("辅助表片数"),1);areaMode->setCurrentIndex(input.designAreaMode==0?0:(input.designAreaMode==1?1:-1));setCellWidget(areaRow,2,areaMode);
+    const QString areaNote=QStringLiteral("按原表F14来源选择；辅助表片数按内连接排厚宽、弦高和片数进位动态求解，改变设计磁密及空载电流，不直接替换重量表实际截面。辅助模式必须填写有效内连接排厚宽。默认保留几何叠厚。");
+    areaMode->setToolTip(areaNote);item(areaRow,5)->setToolTip(areaNote);item(areaRow,5)->setText(QStringLiteral("辅助表需内连接排尺寸；重量与实际截面独立"));
+    connect(areaMode,&QComboBox::currentIndexChanged,this,[this,areaMode,areaRow](int index){if(index>=0){item(areaRow,2)->setText(QString::number(areaMode->currentData().toInt()));scheduleDesignCore();}});
+    addInputRow(row++,QStringLiteral("单位铁损来源"),QString::number(input.unitIronLossMode),QStringLiteral("心柱铁损(W/kg)"),QString::number(input.manualCoreLossPerKg_W,'g',15),"unitIronLossMode","manualCoreLossPerKg");
+    const int lossModeRow=row-1;
+    item(lossModeRow,5)->setText(QStringLiteral("曲线自动取值；手工模式须填两项正数"));
+    addInputRow(row++,QStringLiteral("铁轭铁损(W/kg)"),QString::number(input.manualYokeLossPerKg_W,'g',15),{},{},"manualYokeLossPerKg",{});
+    const int yokeLossRow=row-1;
+    item(yokeLossRow,5)->setText(QStringLiteral("仅手工模式参与；原单旧记录栏仍只记录"));
+    auto *lossMode=new QComboBox(this);lossMode->setObjectName(QStringLiteral("unitIronLossMode"));
+    lossMode->addItem(QStringLiteral("曲线查表"),0);lossMode->addItem(QStringLiteral("手工指定"),1);
+    const QString unitLossNote=QStringLiteral("曲线模式下手工栏仅保留，不参与计算。手工模式用于按原表指定单位铁损复算；磁密或材料变化时须重新确认数值，或切回曲线模式联动。此值不是DNN实测数据。");
+    lossMode->setToolTip(unitLossNote);item(lossModeRow,4)->setToolTip(unitLossNote);item(yokeLossRow,2)->setToolTip(unitLossNote);
+    lossMode->setCurrentIndex(input.unitIronLossMode==0?0:(input.unitIronLossMode==1?1:-1));setCellWidget(lossModeRow,2,lossMode);
+    const auto updateLossMode=[this,lossMode,lossModeRow,yokeLossRow](int index){
+        if(index>=0)item(lossModeRow,2)->setText(QString::number(lossMode->currentData().toInt()));
+        scheduleDesignCore();
+    };
+    connect(lossMode,&QComboBox::currentIndexChanged,this,updateLossMode);updateLossMode(lossMode->currentIndex());
     addInputRow(row++, "轭片放大片宽(mm)", QString::number(input.yokeWidenTo_mm),
                 "", "", "yokeWidenTo", {});
-    addInputRow(row++, "T形轭片叠厚-宽80(mm)", QString::number(input.yokePiece2Stack_mm),
+    addInputRow(row++, "补充片2手工半叠厚(mm)", QString::number(input.yokePiece2Stack_mm),
                 "轭片放大级数", QString::number(input.yokeWidenStages),
                 "yokePiece2Stack", "yokeWidenStages");
-    addInputRow(row++, "T形轭片叠厚-宽60(mm)", QString::number(input.yokePiece3Stack_mm),
+    addInputRow(row++, "补充片3手工半叠厚(mm)", QString::number(input.yokePiece3Stack_mm),
                 "", "",
                 "yokePiece3Stack", {});
-    for (int i = 0; i < 16; ++i) {
+    for (int i = 0; i < 20; ++i) {
         addInputRow(row++, QStringLiteral("轭阶梯 %1 外伸半宽(mm)").arg(i + 1),
                     QString::number(input.yokeSteps_mm[i]),
-                    (i == 0 ? QStringLiteral("(-1=自动按(C5-Ci)/2)") : QString()),
-                    QString(),
-                    QStringLiteral("yokeStep_%1").arg(i), {});
+                    QStringLiteral("第%1级片数修正(片)").arg(i+1),
+                    QString::number(input.coreSheetCountAdjust[i], 'g', 15),
+                    QStringLiteral("yokeStep_%1").arg(i), QStringLiteral("coreSheetAdjust_%1").arg(i));
+        const QString note=i<16
+            ? QStringLiteral("Sheet1 L%1：在按当前叠厚、接缝数及片厚取整的基础片数上加此整数；0为不修正。轭阶梯-1表示自动。实际采用值见补充参数的计算说明页。").arg(i+5)
+            : QStringLiteral("第%1级为备用工艺参数：可编辑并随方案保存，当前没有对应片宽、叠厚几何数据，不参与计算；不对应原计算单单元格。").arg(i+1);
+        item(row-1,4)->setToolTip(note);
+        item(row-1,2)->setToolTip(note);
+        item(row-1,5)->setText(i<16 ? QStringLiteral("L%1：基础片数 + 修正；轭阶梯-1=自动").arg(i+5)
+                                                   : QStringLiteral("备用：仅保存，未参与计算"));
+        item(row-1,5)->setToolTip(note);
     }
 
+    addSectionRow(row++,QStringLiteral("片宽查表修正(mm)"),{}, {},true);
+    const QStringList widthAddresses={"G17","H17","I17","J17","K17","L17","M17","N17","O17","Q17","S17","F19","G19","H19","I19"};
+    for(int i=0;i<20;i+=2){
+        addInputRow(row++,QStringLiteral("第%1级片宽修正(mm)").arg(i+1),QString::number(input.coreWidthOffsets_mm[i],'g',15),
+                    QStringLiteral("第%1级片宽修正(mm)").arg(i+2),QString::number(input.coreWidthOffsets_mm[i+1],'g',15),
+                    QStringLiteral("coreWidthOffset_%1").arg(i),QStringLiteral("coreWidthOffset_%1").arg(i+1));
+        const auto address=[&](int j){return j<15 ? widthAddresses[j] : QStringLiteral("备用");};
+        const auto note=QStringLiteral("%1 / %2：实际片宽=当前尺寸查表基数+本修正；不是固定片宽。无几何级次仅保存备用。").arg(address(i),address(i+1));
+        item(row-1,5)->setText(QStringLiteral("%1/%2：查表基数＋修正(mm)").arg(address(i),address(i+1)));
+        item(row-1,5)->setToolTip(note);
+        item(row-1,2)->setToolTip(note);item(row-1,4)->setToolTip(note);
+    }
     // 八 绕组工艺（油道与绝缘细节）
     addSectionRow(row++, QStringLiteral("八 绕组工艺（高级）"), {}, {}, true);
     addInputRow(row++, QStringLiteral("油道宽/高含义"), QStringLiteral("相间侧/端部侧"),
@@ -1680,6 +2108,20 @@ void ParamTableWidget::addProModeSections(int &row, const CalcInput &input)
         item(row - 1, col)->setFlags(item(row - 1, col)->flags() & ~Qt::ItemIsEditable);
     item(row - 1, 5)->setText(QStringLiteral("两侧独立，尺寸非负；异常布局需核对"));
     item(row - 1, 5)->setToolTip(QStringLiteral("原表按相间侧和端部侧分别判0；可单侧停用，不自动配对、重排或改变公式。单侧启用或端部不连续布局仅提示需人工核对。"));
+    addInputRow(row++,QStringLiteral("层绝缘计算系数"),QString::number(input.hvLayerInsulCalcFactor,'g',15),
+                QStringLiteral("最大匝数修正(匝)"),QString::number(input.hvMaxTurnsAdjust,'g',15),
+                QStringLiteral("hvLayerInsulCalcFactor"),QStringLiteral("hvMaxTurnsAdjust"));
+    const QString factorNote=QStringLiteral("高压层间绝缘张数公式的分母系数；原表分别为4900、5250、5300，需按所用计算单确认，非自动标准选择。影响绝缘张数、绕组辐向及中心距。");
+    item(row-1,5)->setText(QStringLiteral("绝缘系数与最大匝数修正按原表配置"));
+    item(row-1,5)->setToolTip(factorNote);item(row-1,2)->setToolTip(factorNote);
+    const QString turnNote=QStringLiteral("高压V8按最大相电压/匝电压取整后，再加此整数修正。默认0；原表明确减1匝时填-1。联动导线长度、重量和相关损耗；不改变额定/最小匝数，也不自动判定制造合格。");
+    item(row-1,3)->setToolTip(turnNote);item(row-1,4)->setToolTip(turnNote);
+    addInputRow(row++,QStringLiteral("高压油道层序"),QString::number(input.hvDuctLayerRule),QStringLiteral("高压轴向附加(mm)"),QString::number(input.hvAxialAllowance_mm),"hvDuctLayerRule","hvAxialAllowance");
+    item(row-1,5)->setText(QStringLiteral("三档/五档按原表；高度取整后再加附加量"));
+    const int ductRuleRow=row-1;auto *ductRule=new QComboBox(this);ductRule->setObjectName(QStringLiteral("hvDuctLayerRule"));
+    ductRule->addItem(QStringLiteral("五档规则"),0);ductRule->addItem(QStringLiteral("三档规则"),1);
+    ductRule->setCurrentIndex(input.hvDuctLayerRule==0?0:(input.hvDuctLayerRule==1?1:-1));setCellWidget(ductRuleRow,2,ductRule);
+    connect(ductRule,&QComboBox::currentIndexChanged,this,[this,ductRule,ductRuleRow](int index){if(index>=0){item(ductRuleRow,2)->setText(QString::number(ductRule->currentData().toInt()));scheduleDesignCore();}});
     addInputRow(row++, "低压层间绝缘层数", QString::number(input.lvLayerInsulCount),
                 "", "", "lvLayerInsulCount", {});
     addInputRow(row++, "低压层间绝缘厚(mm)", QString::number(input.lvLayerInsul_mm),
@@ -1715,14 +2157,52 @@ void ParamTableWidget::addProModeSections(int &row, const CalcInput &input)
     addInputRow(row++, "低压附加损耗(W)", QString::number(input.lvExtraLoss_W),
                 "", "",
                 "lvExtraLoss", {});
-    const QString lvExtraLossNote = QStringLiteral("扁线计入负载损耗及低压热负荷AK48；圆线按计算单L10不计入负载损耗，但仍进入低压热负荷。不同于仅记录的引线损耗；原表AJ45/AS45口径仍待核对。");
+    const QString lvExtraLossNote = QStringLiteral("扁线计入负载损耗，圆线不计入负载损耗；温升选择“跟随损耗附加”时使用此值，选择“按箔材公式”时单独计算热附加项，不重复加入负载损耗。");
     item(row - 1, 1)->setToolTip(lvExtraLossNote);
     item(row - 1, 2)->setToolTip(lvExtraLossNote);
-    item(row - 1, 5)->setText(QStringLiteral("扁线计入损耗及温升；圆线仅低压温升；原表口径待核对"));
+    item(row - 1, 5)->setText(QStringLiteral("扁线计入负载损耗；温升取值见低压热附加来源"));
     item(row - 1, 5)->setToolTip(lvExtraLossNote);
 
+    addInputRow(row++,QStringLiteral("温升公式版本"),QString::number(input.thermalFormulaMode),QStringLiteral("低压热附加来源"),QString::number(input.lvThermalExtraMode),"thermalFormulaMode","lvThermalExtraMode");
+    const int thermalRow=row-1;
+    const QString thermalNote=QStringLiteral("五档保留原默认公式；三档使用原表散热周长及低压层间末项1.5，第四、五档须为0。热附加可跟随低压附加损耗或按箔材公式计算；箔材公式只影响温升，不重复计入负载损耗。");
+    item(thermalRow,5)->setText(QStringLiteral("按原表选择；热附加与负载损耗分别计算"));item(thermalRow,5)->setToolTip(thermalNote);
+    const auto addThermalCombo=[this,thermalRow,thermalNote](const char *key,int column,double value,const QString &zero,const QString &one){
+        auto *combo=new QComboBox(this);combo->setObjectName(QString::fromLatin1(key));combo->addItem(zero,0);combo->addItem(one,1);
+        combo->setCurrentIndex(value==0?0:(value==1?1:-1));combo->setToolTip(thermalNote);setCellWidget(thermalRow,column,combo);
+        connect(combo,&QComboBox::currentIndexChanged,this,[this,combo,thermalRow,column](int index){if(index>=0){item(thermalRow,column)->setText(QString::number(combo->currentData().toInt()));scheduleDesignCore();}});
+    };
+    addThermalCombo("thermalFormulaMode",2,input.thermalFormulaMode,QStringLiteral("五档原表"),QStringLiteral("三档原表"));
+    addThermalCombo("lvThermalExtraMode",4,input.lvThermalExtraMode,QStringLiteral("跟随损耗附加"),QStringLiteral("按箔材公式"));
     // 十 油箱与结构
+    addInputRow(row++,QStringLiteral("阻抗输出口径"),QString::number(input.impedanceOutputMode),QStringLiteral("阻抗校正系数"),QString::number(input.impedanceCalibrationFactor),"impedanceOutputMode","impedanceCalibrationFactor");
+    item(row-1,5)->setText(QStringLiteral("直接Q35或Q35÷Kx×系数；按原表选择"));
+    const int impedanceRow=row-1;auto *impedanceMode=new QComboBox(this);impedanceMode->setObjectName(QStringLiteral("impedanceOutputMode"));
+    impedanceMode->addItem(QStringLiteral("直接合成值"),0);impedanceMode->addItem(QStringLiteral("按Kx和系数修正"),1);
+    impedanceMode->setCurrentIndex(input.impedanceOutputMode==0?0:(input.impedanceOutputMode==1?1:-1));setCellWidget(impedanceRow,2,impedanceMode);
+    connect(impedanceMode,&QComboBox::currentIndexChanged,this,[this,impedanceMode,impedanceRow](int index){if(index>=0){item(impedanceRow,2)->setText(QString::number(impedanceMode->currentData().toInt()));scheduleDesignCore();}});
     addSectionRow(row++, QStringLiteral("十 油箱与结构（高级）"), {}, {}, true);
+    addInputRow(row++,QStringLiteral("中心距附加量(mm)"),QString::number(input.centerDistanceAllowance_mm,'g',15),
+                {},{},QStringLiteral("centerDistanceAllowance"),{});
+    const QString centerNote=QStringLiteral("绕组尺寸链及电压间隙按5mm向上进位后再加的量；原表分别为5、1、4mm。不是相间距基础，也不是固定中心距。改变后联动铁轭重量和油箱尺寸。");
+    item(row-1,5)->setText(QStringLiteral("中心距进位后附加；不同于相间距基础"));
+    item(row-1,5)->setToolTip(centerNote);item(row-1,2)->setToolTip(centerNote);
+    addInputRow(row++,QStringLiteral("630档箱沿高(mm)"),QString::number(input.tankRimHighCapacity_mm),QStringLiteral("箱壁指定厚(mm)"),QString::number(input.tankWallThicknessOverride_mm),"tankRimHighCapacity","tankWallThicknessOverride");
+    item(row-1,5)->setText(QStringLiteral("容量≥630使用此箱沿高；箱壁0为自动"));
+    addInputRow(row++,QStringLiteral("箱底厚度修正(mm)"),QString::number(input.tankBottomThicknessAdjust_mm),QStringLiteral("储油柜重(kg)"),QString::number(input.conservatorWeight_kg),"tankBottomThicknessAdjust","conservatorWeight");
+    item(row-1,5)->setText(QStringLiteral("箱底自动值加修正；D18手工重计入C19"));
+    item(row-1,4)->setToolTip(QStringLiteral("仅原表D18手工重量；不是自动选型，不含C23储油柜充油重量。"));
+    addInputRow(row++,QStringLiteral("长边波纹数修正"),QString::number(input.waveLongCountAdjust),QStringLiteral("器身高压线重口径"),QString::number(input.activePartHvWeightMode),"waveLongCountAdjust","activePartHvWeightMode");
+    item(row-1,5)->setText(QStringLiteral("片数修正与器身线重口径均按原表配置"));
+    const int weightModeRow=row-1;
+    auto *weightMode=new QComboBox(this);weightMode->setObjectName(QStringLiteral("activePartHvWeightMode"));
+    weightMode->addItem(QStringLiteral("绝缘导线重"),0);weightMode->addItem(QStringLiteral("裸导线重"),1);
+    weightMode->setCurrentIndex(input.activePartHvWeightMode==0.0?0:(input.activePartHvWeightMode==1.0?1:-1));
+    weightMode->setToolTip(QStringLiteral("仅决定C10、器身重C11及总重C25使用高压裸线重还是绝缘重；材料计价、器身排油和损耗公式不变。"));
+    setCellWidget(weightModeRow,4,weightMode);
+    connect(weightMode,&QComboBox::currentIndexChanged,this,[this,weightMode,weightModeRow](int index){if(index>=0){item(weightModeRow,4)->setText(QString::number(weightMode->currentData().toInt()));scheduleDesignCore();}});
+    addInputRow(row++, QStringLiteral("油顶层温升修正项(K)"), QString::number(input.oilTopCorrection_K),
+                QString(), QString(), QStringLiteral("oilTopCorrection"), {});
     addInputRow(row++, "箱底油空(mm)", QString::number(input.tankBottomOil_mm),
                 "垫脚高(mm)", QString::number(input.tankFoot_mm),
                 "tankBottomOil", "tankFoot");

@@ -1,6 +1,7 @@
 #include "GridOptimizer.h"
 #include "ElectromagneticEngine.h"
 #include "SchemeConstraints.h"
+#include "CalculationApplicability.h"
 #include "GridSearchSpace.h"
 #include "SearchCenterPool.h"
 #include "SearchCoveragePlanner.h"
@@ -522,11 +523,18 @@ GridOptimizer::~GridOptimizer()
     }
 }
 
-void GridOptimizer::start(const TransformerParams &params, const StructureConfig &,
+void GridOptimizer::start(const TransformerParams &params, const StructureConfig &config,
                           const CalcInput &baseInput, const OptimizationSettings &settings)
 {
     if (m_thread && m_thread->isRunning()) {
         return;   // 已在寻优中，不重复启动
+    }
+    const QString scopeError = calculationScopeError(config, params, baseInput);
+    if (!scopeError.isEmpty()) {
+        OptimizationRunSummary summary; summary.error = scopeError;
+        QMetaObject::invokeMethod(this, [this, summary]() { emit finished(false, OptimizeCandidate{}, summary); },
+                                  Qt::QueuedConnection);
+        return;
     }
     m_worker = new Worker(params, baseInput, settings);
     QThread *thread = new QThread();

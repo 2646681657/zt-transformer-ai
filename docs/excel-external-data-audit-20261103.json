@@ -1,0 +1,56 @@
+[
+  {
+    "sheet": "Sheet1",
+    "checked": 2281,
+    "same": 2281,
+    "different": 0,
+    "outside": 0,
+    "examples": []
+  },
+  {
+    "sheet": "Sheet2",
+    "checked": 0,
+    "same": 0,
+    "different": 0,
+    "outside": 0,
+    "examples": []
+  },
+  {
+    "sheet": "Sheet3",
+    "checked": 0,
+    "same": 0,
+    "different": 0,
+    "outside": 0,
+    "examples": []
+  },
+  {
+    "sheet": "绝缘距离及价格",
+    "checked": 0,
+    "same": 0,
+    "different": 0,
+    "outside": 0,
+    "examples": []
+  },
+  {
+    "sheet": "常用材料单位重",
+    "checked": 0,
+    "same": 0,
+    "different": 0,
+    "outside": 0,
+    "examples": []
+  },
+  {
+    "sheet": "能效与硅钢性能",
+    "checked": 1135,
+    "same": 1134,
+    "different": 1,
+    "outside": 0,
+    "examples": [
+      {
+        "cell": "P54",
+        "cached": "125",
+        "local": 1.608
+      }
+    ]
+  }
+]

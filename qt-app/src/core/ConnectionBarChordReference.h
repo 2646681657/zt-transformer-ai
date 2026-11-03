@@ -1,4 +1,4 @@
-#ifndef CONNECTIONBARCHORDREFERENCE_H
+﻿#ifndef CONNECTIONBARCHORDREFERENCE_H
 #define CONNECTIONBARCHORDREFERENCE_H
 
 #include "CalcInput.h"
@@ -11,6 +11,7 @@ namespace ConnectionBarChordReference {
 inline void capture(const CalcInput &in, CalcResult &r)
 {
     if (!r.valid || !r.sheetDetailsSnapshotAvailable) return;
+    if(in.designAreaMode==1.0)return; // 引擎已按辅助几何链计算并捕获，不能再以重量表叠厚覆盖。
     for (const char *a : {"AN14", "K19", "K20"}) {
         const QString key = QString::fromLatin1(a);
         r.calculationSheetDetails.remove(key);
@@ -70,7 +71,18 @@ inline void capture(const CalcInput &in, CalcResult &r)
     double cumulative[16] = {0.0};
     for (int i = 0; i < 15; ++i) {
         const double pieceWidth = r.core.widths_mm[i];
-        const double stack = r.core.stacks_mm[i];
+        double stack = r.core.stacks_mm[i];
+        // 辅助表F20:I20是几何递推，不是重量表D17/D18的手工半叠厚。
+        if(i>=11){
+            stack=0;
+            if(pieceWidth>0){
+                const double half=pieceWidth/2;
+                const double arc=std::sqrt(r.core.majorRadius_mm*r.core.majorRadius_mm-std::pow(half+r.core.yokeFlat_mm,2));
+                const double candidate=arc<=r.core.junctionHeight_mm?arc:std::sqrt(std::pow(in.coreDiameter_mm/2,2)-half*half)+in.coreStraight_mm/2;
+                if(!std::isfinite(arc)||!std::isfinite(candidate)){lookupUnavailable(QStringLiteral("辅助补片几何无解，不能用重量表叠厚代替。"));return;}
+                stack=std::round(candidate-cumulative[i]);
+            }
+        }
         if (!std::isfinite(pieceWidth) || !std::isfinite(stack) || pieceWidth < 0.0 || stack < 0.0) {
             lookupUnavailable(QStringLiteral("片宽/几何叠厚非有限或为负，累计表不满足原LOOKUP升序前提；不排序、不钳位。"));
             return;

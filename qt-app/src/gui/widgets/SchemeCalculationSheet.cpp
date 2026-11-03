@@ -1,8 +1,12 @@
 #include "SchemeCalculationSheet.h"
 #include "ParamTableWidget.h"
+#include "PerformanceCriteria.h"
 #include "EmResultPanel.h"
 #include "CalculationSheetTemplate.h"
 #include "CalculationSheetDescriptions.h"
+#include "TankDimensionsPanel.h"
+#include "HvCoilFormNotes.h"
+#include "ElectromagneticEngine.h"
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonArray>
@@ -19,12 +23,76 @@
 #include <QSignalBlocker>
 #include <QEvent>
 #include <QStyledItemDelegate>
+#include <QCommonStyle>
 #include <QPersistentModelIndex>
 #include <QToolButton>
+#include <QPushButton>
+#include <QDialog>
+#include <QDialogButtonBox>
+#include <QTabWidget>
+#include <QTextBrowser>
+#include <QTimer>
 #include <algorithm>
+#include <array>
+#include <QFile>
+#include <QProcess>
+#include <QTemporaryDir>
+#include <QSaveFile>
+#include "SchemeStore.h"
+#include <QPrinter>
+#include <QPainter>
+#include <QLayout>
 
 namespace {
 enum Zone { Basic, Performance, Thermal, Core, High, Low, Duct, Tank, Reference, ZoneCount };
+// Source T-column blocks are bounded by explicit Excel borders, not gridlines.
+// Preserve each caption's source row even when the region is one large cell.
+class WorksheetLabelBlock final : public QWidget {
+public:
+    WorksheetLabelBlock(QTableWidget *table, int first, int count, int column=19)
+        : QWidget(table), m_table(table), m_first(first), m_count(count), m_column(column)
+    {
+        setProperty("worksheetLabelBlock", true);
+        QStringList captions;
+        for (int r=first;r<first+count;++r) {
+            const auto *item=table->item(r,column);
+            const QString text=item?item->text():QString();
+            m_texts.append(text);
+            if(!text.trimmed().isEmpty())captions.append(text);
+        }
+        setAccessibleName(captions.join(QStringLiteral("；")));
+        connect(table,&QTableWidget::itemChanged,this,[this](QTableWidgetItem *){update();});
+        setMinimumSize(0,0);
+    }
+protected:
+    void paintEvent(QPaintEvent *) override
+    {
+        QPainter p(this);
+        p.fillRect(rect(),Qt::white);
+        p.setFont(m_table->font());
+        p.setPen(Qt::black);
+        int total=0;
+        for(int i=0;i<m_count;++i)total+=m_table->rowHeight(m_first+i);
+        qreal y=0;
+        for(int i=0;i<m_count;++i) {
+            int sourceHeight=m_table->rowHeight(m_first+i);
+            // Original T10:T11 centers its single caption over both rows.
+            if(m_column==19&&m_first==8&&i==1)sourceHeight+=m_table->rowHeight(m_first+i+1);
+            const qreal h=height()*qreal(sourceHeight)/qMax(1,total);
+            const auto *item=m_table->item(m_first+i,m_column);
+            const QString text=item?item->text():QString();
+            if(!text.isEmpty())p.drawText(QRectF(2,y,width()-4,h),Qt::AlignCenter,text);
+            y+=height()*qreal(m_table->rowHeight(m_first+i))/qMax(1,total);
+        }
+        p.setPen(QPen(Qt::black,1));
+        p.drawRect(rect().adjusted(0,0,-1,-1));
+    }
+private:
+    QTableWidget *m_table;
+    int m_first,m_count,m_column;
+    QStringList m_texts;
+};
+
 struct Field {
     QString name, value, tip;
     int row = -1, col = -1;
@@ -35,6 +103,21 @@ struct Field {
 class LiveInputDelegate : public QStyledItemDelegate {
 public:
     using QStyledItemDelegate::QStyledItemDelegate;
+    void paint(QPainter *painter, const QStyleOptionViewItem &option,
+               const QModelIndex &index) const override
+    {
+        if ((index.flags() & Qt::ItemIsEditable)
+                && index.data(Qt::BackgroundRole).value<QBrush>().color() == QColor("#FF00FF")) {
+            QStyleOptionViewItem local(option);
+            initStyleOption(&local, index);
+            // The application stylesheet's item rule hides model backgrounds.
+            // Draw editable cells through Qt's unstyled item renderer instead.
+            static QCommonStyle plainStyle;
+            plainStyle.drawControl(QStyle::CE_ItemViewItem, &local, painter);
+            return;
+        }
+        QStyledItemDelegate::paint(painter, option, index);
+    }
     QWidget *createEditor(QWidget *parent, const QStyleOptionViewItem &option,
                           const QModelIndex &index) const override
     {
@@ -364,7 +447,11 @@ auto sheetGroups(const CalcResult &result)
     for (const auto &address : detailAddresses) {
         const auto it = result.calculationSheetDetails.constFind(address);
         const auto textIt = result.calculationSheetTexts.constFind(address);
-        const QString note = result.calculationSheetNotes.value(address);
+        QString note = result.calculationSheetNotes.value(address);
+        // Old saved schemes may contain the pre-relocation label in this note.
+        if (address == QStringLiteral("AJ45"))
+            note.replace(QStringLiteral("见下方高级工艺参数“低压附加损耗(W)”"),
+                QStringLiteral("见顶部“补充参数”的“参数”页中“低压附加损耗(W)”"));
         const bool hasValue = result.sheetDetailsSnapshotAvailable && it != result.calculationSheetDetails.cend();
         const bool hasText = result.sheetDetailsSnapshotAvailable && textIt != result.calculationSheetTexts.cend();
         const QString value = hasText ? textIt.value()
@@ -437,10 +524,9 @@ int resultZone(const QString &group, const QString &name)
 SchemeCalculationSheet::SchemeCalculationSheet(const TransformerParams &params,
         const StructureConfig &config, const CalcInput &input, const CalcResult &result,
         bool proMode, QWidget *parent)
-    : QWidget(parent), m_snapshot(result)
+    : QWidget(parent), m_snapshot(result), m_previewBaseInput(input)
 {
-    const QStringList shapes = {QStringLiteral("圆形"),QStringLiteral("长圆形"),QStringLiteral("椭圆形"),QStringLiteral("半椭圆形"),QStringLiteral("类椭圆形")};
-    m_coreShapeName = shapes.value(int(config.coreShape),QStringLiteral("未识别"));
+    m_coreShapeName = StructureConfig::coreShapeName(input.coreShape);
     m_coolingName = config.category == StructureConfig::OilImmersed ? QStringLiteral("ONAN") : QStringLiteral("干式（未支持）");
     auto *outer = new QVBoxLayout(this);
     outer->setContentsMargins(0, 0, 0, 0); outer->setSpacing(3);
@@ -453,28 +539,81 @@ SchemeCalculationSheet::SchemeCalculationSheet(const TransformerParams &params,
     // The complete worksheet exposes existing advanced parameters in-place.
     Q_UNUSED(proMode);
     // Only expose the existing selectors, not the design page's extra preview rows.
-    m_input->loadParamsForConfig(params, config, input, true, false, true);
+    auto sheetConfig = config;
+    if (input.hvCoilFormIdx == 1) sheetConfig.hvCoilStructure = StructureConfig::MultiLayerCylinder;
+    else if (input.hvCoilFormIdx == 2) sheetConfig.hvCoilStructure = StructureConfig::TwoSegCylinder;
+    m_input->loadParamsForConfig(params, sheetConfig, input, true, false, true);
     m_input->hide();
     m_results = new QTableWidget(this);
+    m_results->viewport()->installEventFilter(this);
     m_results->setItemDelegate(new LiveInputDelegate(m_results));
     m_results->setColumnCount(12);
     m_results->horizontalHeader()->hide();
     m_results->verticalHeader()->setDefaultSectionSize(28);
     m_results->verticalHeader()->setMinimumSectionSize(26);
-    m_results->setWordWrap(false); m_results->setTextElideMode(Qt::ElideRight);
+    m_results->setWordWrap(true); m_results->setTextElideMode(Qt::ElideNone);
     m_results->setSelectionBehavior(QAbstractItemView::SelectItems);
     m_results->setStyleSheet(QStringLiteral(
-        "QTableWidget {background:white; color:#24362B; gridline-color:#C9D8CE; border:1px solid #B8CEBF;"
+        "QTableWidget {background:white; color:#24362B; font-size:13px; gridline-color:#C9D8CE; border:1px solid #B8CEBF;"
         " selection-background-color:#CDE8D5; selection-color:#185C37;}"
         "QHeaderView::section {background:#E7F2EA; color:#185C37; border:1px solid #D3DDD6; padding:2px;}"
-        "QLineEdit,QComboBox,QSpinBox,QDoubleSpinBox {background:#F0FAF2; color:#24362B; border:1px solid #A8CDB3; padding:1px;}"
+        "QLineEdit,QComboBox,QSpinBox,QDoubleSpinBox {background:#FF00FF; color:#24362B; border:1px solid #A8CDB3; padding:1px;}"
         "QLineEdit:focus,QComboBox:focus,QSpinBox:focus,QDoubleSpinBox:focus {border:1px solid #217346;}"
+        "QLineEdit[readOnly=\"true\"] {background:white;}"
+        "QLineEdit:disabled,QComboBox:disabled,QSpinBox:disabled,QDoubleSpinBox:disabled {background:white;}"
         "QComboBox QAbstractItemView {background:white; color:#24362B; selection-background-color:#CDE8D5;}"));
     for (int col = 0; col < 12; ++col) {
         // 等宽列构成三个等宽分区，随最大化/还原自动铺满，不留下右侧空白。
         m_results->horizontalHeader()->setSectionResizeMode(col, QHeaderView::Stretch);
     }
-    m_results->horizontalHeader()->setMinimumSectionSize(30);
+    m_results->horizontalHeader()->setMinimumSectionSize(8);
+    auto *an3Row = new QHBoxLayout;
+    auto *an3Label = new QLabel(QStringLiteral("非标 AN3 原始空载电流(%)："), this);
+    m_an3Raw = new QLineEdit(this);
+    m_an3Raw->setObjectName(QStringLiteral("an3RawCurrent"));
+    m_an3Raw->setStyleSheet(QStringLiteral("QLineEdit {background:#FF00FF; color:#24362B; border:1px solid #A8CDB3; padding:1px;} QLineEdit:disabled {background:white;}"));
+    m_an3Raw->setPlaceholderText(QStringLiteral("例如 0.7"));
+    m_an3Raw->setMaximumWidth(110);
+    m_an3Status = new QLabel(this);
+    m_an3Status->setObjectName(QStringLiteral("an3ConversionStatus"));
+    m_an3Status->setWordWrap(true);
+    an3Row->addWidget(an3Label); an3Row->addWidget(m_an3Raw); an3Row->addWidget(m_an3Status, 1);
+    auto *supplement = new QPushButton(QStringLiteral("补充参数"), this);
+    supplement->setObjectName(QStringLiteral("supplementParametersButton"));
+    supplement->setToolTip(QStringLiteral("查看计算单辅助表及程序设计输入中未放入主表的参数和计算说明"));
+    an3Row->addWidget(supplement);
+    connect(supplement, &QPushButton::clicked, this, &SchemeCalculationSheet::showSupplement);
+    outer->addLayout(an3Row);
+    syncAn3Controls();
+    connect(m_an3Raw, &QLineEdit::textChanged, this, [this](const QString &text) {
+        if (m_input->getParams().standardMode != TransformerParams::StandardMode::Custom || m_input->getParams().hasManualNoLoadCurrent()) return;
+        bool ok = false;
+        const double raw = text.trimmed().toDouble(&ok);
+        m_an3Invalid = !ok || !std::isfinite(raw) || raw <= 0.34;
+        if (m_an3Invalid) {
+            m_an3Status->setText(QStringLiteral("请输入大于0.34的有效值；未更新O9，不能确认。"));
+        } else if (m_input->setNonstandardAn3(raw)) {
+            m_an3Status->setText(QStringLiteral("O9 = AN3 − 0.34 = %1%；原始值随方案保存。")
+                .arg(QString::number(raw - 0.34, 'g', 12)));
+            syncInputs();
+        }
+        markPending();
+    });
+    connect(m_input, &ParamTableWidget::stdValuesUpdated, this, [this](const QString &) {
+        if (m_an3Invalid && m_input->getParams().standardMode == TransformerParams::StandardMode::Custom && !m_input->getParams().hasManualNoLoadCurrent()) {
+            syncInputs();
+            markPending();
+            return;
+        }
+        m_an3Invalid = false;
+        syncAn3Controls();
+        syncInputs();
+        markPending();
+    });
+    connect(m_input, &ParamTableWidget::nonstandardAn3StateChanged, this, [this]() {
+        m_an3Invalid = false;
+        syncAn3Controls();
+    });
     outer->addWidget(m_results, 1);
     connect(m_results, &QTableWidget::itemChanged, this, [this](QTableWidgetItem *cell) {
         for (const auto &b : m_bindings) {
@@ -566,6 +705,13 @@ QWidget *SchemeCalculationSheet::mirrorEditor(QWidget *source)
 
 bool SchemeCalculationSheet::eventFilter(QObject *source, QEvent *event)
 {
+    if (m_results && source == m_results->viewport() && event->type() == QEvent::Resize && !m_columnFitPending) {
+        m_columnFitPending = true;
+        QTimer::singleShot(0, this, [this]() {
+            m_columnFitPending = false;
+            fitColumnsToViewport();
+        });
+    }
     if (auto *copy = m_editors.value(source).data()) {
         auto *widget = qobject_cast<QWidget *>(source);
         if (widget && (event->type() == QEvent::EnabledChange || event->type() == QEvent::Show
@@ -590,9 +736,12 @@ void SchemeCalculationSheet::syncInputs()
     show(3,2,QStringLiteral("3"));
     show(3,5,m_coreShapeName);
     show(16,5,m_coreShapeName);
-    show(4,5,QStringLiteral("T形轭"));
+    if (m_input->calculationConfig().coreShape != StructureConfig::LongRound)
+        show(17,5,QStringLiteral("0 字")); // Original non-long-round F18 literal, not a thickness.
+    show(4,5,StructureConfig::yokeShapeName(m_input->calculationConfig().yokeShape));
     show(5,2,m_coolingName);
-    show(20,12,QStringLiteral("波纹油箱"));
+    show(20,12,m_tankFormCombo&&m_tankFormCombo->currentIndex()>=0
+        ?m_tankFormCombo->currentText():QStringLiteral("未选择油箱型式"));
     const auto *hvMaterial = qobject_cast<QComboBox *>(m_results->cellWidget(12,20));
     const auto *lvMaterial = qobject_cast<QComboBox *>(m_results->cellWidget(12,29));
     if (hvMaterial && lvMaterial) {
@@ -602,7 +751,7 @@ void SchemeCalculationSheet::syncInputs()
             : (copperHv ? QStringLiteral("高铜低铝") : QStringLiteral("高铝低铜")));
     }
     show(2,5,params.standardMode == TransformerParams::StandardMode::Custom ? QStringLiteral("非标")
-        : params.standardMode == TransformerParams::StandardMode::BuiltIn ? QStringLiteral("内置标准") : QStringLiteral("待确认"));
+        : params.standardMode == TransformerParams::StandardMode::BuiltIn ? QStringLiteral("国标") : QStringLiteral("待确认"));
     show(2,24,params.connectionGroup.startsWith(QLatin1Char('D'),Qt::CaseInsensitive) ? QStringLiteral("D") : QStringLiteral("Y"));
     show(2,33,params.connectionGroup.contains(QStringLiteral("yn"),Qt::CaseInsensitive) ? QStringLiteral("yn") : QStringLiteral("d"));
     // 原联动有意用QSignalBlocker改变控件；此处也同步被屏蔽信号的选择值。
@@ -627,9 +776,14 @@ void SchemeCalculationSheet::syncInputs()
         auto flags = source->flags();
         if (m_input->cellWidget(b.row, b.col)) flags &= ~Qt::ItemIsEditable;
         b.cell->setFlags(flags);
-        b.cell->setBackground(QColor(source->flags().testFlag(Qt::ItemIsEditable) ? "#F0FAF2" : "#FFFFFF"));
+        b.cell->setBackground(QColor(source->flags().testFlag(Qt::ItemIsEditable) ? "#FF00FF" : "#FFFFFF"));
         b.cell->setToolTip(source->toolTip().isEmpty() ? source->text() : source->toolTip());
+        if(auto *edit=m_panelInputs.value(b.cell).data()) {
+            if(edit->text()!=source->text()){const QSignalBlocker block(edit);edit->setText(source->text());}
+            edit->setEnabled(source->flags().testFlag(Qt::ItemIsEditable));
+        }
     }
+    updateTankPanel();
 }
 
 void SchemeCalculationSheet::rebuildSheet()
@@ -662,7 +816,7 @@ void SchemeCalculationSheet::rebuildSheet()
                 const QString value = values.value(1) + (values.value(2).isEmpty() ? QString() : QLatin1Char(' ') + values.value(2));
                 QString displayName = values.value(0);
                 if (group.first == QStringLiteral("铁芯")) {
-                    if (displayName == QStringLiteral("心柱截面")) displayName = QStringLiteral("心柱几何截面 F14");
+                    if (displayName == QStringLiteral("心柱截面")) displayName = QStringLiteral("心柱设计截面 F14");
                     else if (displayName == QStringLiteral("铁轭截面")) displayName = QStringLiteral("铁轭几何截面（Sheet1!J23）");
                     else if (displayName == QStringLiteral("心柱磁密")) displayName = QStringLiteral("心柱设计磁密 F16");
                     else if (displayName == QStringLiteral("铁轭磁密")) displayName = QStringLiteral("铁轭查表磁密（Sheet1!O25）");
@@ -683,16 +837,25 @@ void SchemeCalculationSheet::rebuildSheet()
         }
     }
     const int scroll = m_results->verticalScrollBar()->value();
+    const int tankForm=m_tankFormCombo?m_tankFormCombo->currentIndex():0;
+    const int coilForm=m_coilFormCombo?m_coilFormCombo->currentData().toInt():m_previewBaseInput.hvCoilFormIdx;
     const QSignalBlocker blocker(m_results);
     m_bindings.clear(); m_editors.clear(); m_resultBindings.clear();
+    m_panelInputs.clear();m_tankPanel=nullptr;m_tankFormCombo=nullptr;
     m_results->clearSpans(); m_results->setRowCount(0);
     m_results->setColumnCount(38); m_results->setRowCount(54);
+    m_tankPanel=new TankDimensionsPanel(m_results);
+    m_tankFormCombo=new QComboBox(m_tankPanel);
+    m_tankFormCombo->setObjectName(QStringLiteral("sheetTankForm"));
+    m_tankFormCombo->addItem(QStringLiteral("波纹油箱"),0);
+    m_tankFormCombo->addItem(QStringLiteral("片散油箱"),1);
+    m_tankFormCombo->setCurrentIndex(tankForm);
+    m_tankFormCombo->setToolTip(QStringLiteral("原单两种油箱型式。当前完整算法仅支持波纹油箱；片散可选择查看，尚不能确认或用于寻优。"));
+    m_tankPanel->installEditor(QStringLiteral("M21"),m_tankFormCombo);
+    connect(m_tankFormCombo,&QComboBox::currentIndexChanged,this,[this]{syncInputs();markPending();});
     const auto layout = QJsonDocument::fromJson(calculationSheetTemplate).object();
-    const auto widths = layout.value(QStringLiteral("widths")).toArray();
-    for (int col = 0; col < 38; ++col) {
+    for (int col = 0; col < 38; ++col)
         m_results->horizontalHeader()->setSectionResizeMode(col, QHeaderView::Fixed);
-        m_results->setColumnWidth(col, std::max(34, int(widths[col].toDouble() * 10)));
-    }
     const auto cell = [&](int row, int col, const QString &text, const QString &tip = QString()) {
         auto *item = new QTableWidgetItem(text);
         item->setFlags(Qt::ItemIsEnabled | Qt::ItemIsSelectable);
@@ -721,8 +884,12 @@ void SchemeCalculationSheet::rebuildSheet()
     for (const auto &entry : layout.value(QStringLiteral("merges")).toArray()) {
         const auto a = entry.toArray();
         if (a[0].toInt() == 2 && a[1].toInt() >= 9) continue;
+        if(a[0].toInt()<27&&a[0].toInt()+a[2].toInt()>20
+            &&a[1].toInt()<19&&a[1].toInt()+a[3].toInt()>4)continue;
         m_results->setSpan(a[0].toInt(), a[1].toInt(), a[2].toInt(), a[3].toInt());
     }
+    m_results->setSpan(20,4,7,15);
+    m_results->setCellWidget(20,4,m_tankPanel);
     // Composite model and asymmetric taps need one continuous editing area.
     m_results->setSpan(0,0,2,5); cell(0,0,QStringLiteral("产品型号"));
     m_results->setSpan(0,5,2,14);
@@ -751,8 +918,25 @@ void SchemeCalculationSheet::rebuildSheet()
         if (f.row >= 0) {
             usedInputs.insert(QStringLiteral("%1/%2").arg(f.row).arg(f.col));
             m_bindings.append({f.row,f.col,value});
-            if (auto *source = m_input->cellWidget(f.row,f.col))
-                if (auto *editor = mirrorEditor(source)) m_results->setCellWidget(row,col,editor);
+            const bool inTank=row>=20&&row<=26&&col>=4&&col<=18;
+            const QString address=QString(QChar('A'+col))+QString::number(row+1);
+            if (auto *source = m_input->cellWidget(f.row,f.col)) {
+                if (auto *editor = mirrorEditor(source)) {
+                    if(inTank)m_tankPanel->installEditor(address,editor);
+                    else m_results->setCellWidget(row,col,editor);
+                }
+            } else if(inTank) {
+                auto *source=m_input->item(f.row,f.col);
+                if(source&&source->flags().testFlag(Qt::ItemIsEditable)) {
+                    auto *edit=new QLineEdit(source->text(),m_tankPanel);
+                    edit->setObjectName(QStringLiteral("tankInput_")+address);
+                    edit->setAlignment(Qt::AlignCenter);edit->setMinimumWidth(0);edit->setToolTip(f.tip);
+                    m_panelInputs.insert(value,edit);m_tankPanel->installEditor(address,edit);
+                    connect(edit,&QLineEdit::textEdited,this,[this,r=f.row,c=f.col](const QString &text){
+                        if(auto *item=m_input->item(r,c))item->setText(text);
+                    });
+                }
+            }
         }
         if (!withName) value->setToolTip(QStringLiteral("%1\n%2").arg(f.name, f.tip));
     };
@@ -778,27 +962,42 @@ void SchemeCalculationSheet::rebuildSheet()
     // Original dropdowns; unsupported structures are selectable for inspection,
     // but inputsReady rejects them before either preview calculation or confirmation.
     m_coreShapeCombo = new QComboBox(m_results);
-    for (const auto &name : {QStringLiteral("圆形"), QStringLiteral("长圆形"), QStringLiteral("椭圆形")})
-        m_coreShapeCombo->addItem(name + (name == QStringLiteral("椭圆形") ? QString() : QStringLiteral("（暂不支持计算）")), name);
-    int shapeIndex = m_coreShapeCombo->findData(m_coreShapeName);
+    const auto selection = m_input->calculationConfig();
+    for (const auto shape : {StructureConfig::Circle, StructureConfig::LongRound, StructureConfig::Ellipse})
+        m_coreShapeCombo->addItem(StructureConfig::coreShapeName(shape)
+            + (shape == StructureConfig::Ellipse ? QString() : QStringLiteral("（部分联动）")), int(shape));
+    int shapeIndex = m_coreShapeCombo->findData(int(selection.coreShape));
     if (shapeIndex < 0) {
-        m_coreShapeCombo->addItem(m_coreShapeName + QStringLiteral("（暂不支持计算）"), m_coreShapeName);
+        m_coreShapeCombo->addItem(StructureConfig::coreShapeName(selection.coreShape)
+            + QStringLiteral("（暂不支持计算）"), int(selection.coreShape));
         shapeIndex = m_coreShapeCombo->count() - 1;
     }
     m_coreShapeCombo->setCurrentIndex(shapeIndex);
-    m_coreShapeCombo->setToolTip(QStringLiteral("原单心柱选型；当前仅椭圆形有对应算法，其他形状不能计算或确认。"));
+    m_coreShapeCombo->setToolTip(QStringLiteral("椭圆形沿用完整计算；圆形/长圆形联动几何及已核实的绕组结果，整机重量、散热及温升待核对，不能确认或寻优。"));
     m_results->setCellWidget(3,5,m_coreShapeCombo);
     connect(m_coreShapeCombo, &QComboBox::currentIndexChanged, this, [this]() {
-        m_coreShapeName = m_coreShapeCombo->currentData().toString();
+        const auto shape = static_cast<StructureConfig::CoreShape>(m_coreShapeCombo->currentData().toInt());
+        m_coreShapeName = StructureConfig::coreShapeName(shape);
+        m_input->setCoreSelection(shape, m_input->calculationConfig().yokeShape);
         syncInputs(); markPending();
     });
     m_yokeShapeCombo = new QComboBox(m_results);
-    m_yokeShapeCombo->addItem(QStringLiteral("同心柱（暂不支持计算）"), false);
-    m_yokeShapeCombo->addItem(QStringLiteral("T形轭"), true);
-    m_yokeShapeCombo->setCurrentIndex(1);
+    m_yokeShapeCombo->addItem(QStringLiteral("同心柱（暂不支持计算）"), int(StructureConfig::SameAsCore));
+    m_yokeShapeCombo->addItem(QStringLiteral("T形轭"), int(StructureConfig::TYoke));
+    int yokeIndex = m_yokeShapeCombo->findData(int(selection.yokeShape));
+    if (yokeIndex < 0) {
+        m_yokeShapeCombo->addItem(StructureConfig::yokeShapeName(selection.yokeShape)
+            + QStringLiteral("（暂不支持计算）"), int(selection.yokeShape));
+        yokeIndex = m_yokeShapeCombo->count() - 1;
+    }
+    m_yokeShapeCombo->setCurrentIndex(yokeIndex);
     m_yokeShapeCombo->setToolTip(QStringLiteral("当前按T形轭计算；同心柱尚无独立对应算法，禁止计算或确认。"));
     m_results->setCellWidget(4,5,m_yokeShapeCombo);
-    connect(m_yokeShapeCombo, &QComboBox::currentIndexChanged, this, [this]() { markPending(); });
+    connect(m_yokeShapeCombo, &QComboBox::currentIndexChanged, this, [this]() {
+        m_input->setCoreSelection(m_input->calculationConfig().coreShape,
+            static_cast<StructureConfig::YokeShape>(m_yokeShapeCombo->currentData().toInt()));
+        syncInputs(); markPending();
+    });
     inputAt(QStringLiteral("C5"),QStringLiteral("频率(Hz)"));
     inputAt(QStringLiteral("H12"),QStringLiteral("铁芯直径(mm)"));
     inputAt(QStringLiteral("K12"),QStringLiteral("直线段长(mm)"));
@@ -821,6 +1020,8 @@ void SchemeCalculationSheet::rebuildSheet()
     inputAt(QStringLiteral("AB14"),QStringLiteral("高压叠绕根数"));
     inputAt(QStringLiteral("W12"),QStringLiteral("高压总层数 W12"));
     inputAt(QStringLiteral("AH8"),QStringLiteral("低压匝数"));
+    cell(7,34,QStringLiteral("参考磁密"),QStringLiteral("原单 AM8：仅用于推荐匝数"));
+    inputAt(QStringLiteral("AJ8"),QStringLiteral("低压参考磁密(T)"));
     inputAt(QStringLiteral("AG12"),QStringLiteral("低压内连接排厚(mm)"));
     inputAt(QStringLiteral("AJ12"),QStringLiteral("低压内连接排宽(mm)"));
     inputAt(QStringLiteral("AF14"),QStringLiteral("低压箔厚(mm)"));
@@ -830,6 +1031,7 @@ void SchemeCalculationSheet::rebuildSheet()
     inputAt(QStringLiteral("AG26"),QStringLiteral("低压层间绝缘层数"));
     inputAt(QStringLiteral("AI26"),QStringLiteral("低压层间绝缘厚(mm)"));
     inputAt(QStringLiteral("J10"),QStringLiteral("杂散损耗系数"));
+    inputAt(QStringLiteral("L51"),QStringLiteral("油顶层温升修正项(K)"));
     inputAt(QStringLiteral("S45"),QStringLiteral("波纹深(mm)"));
     inputAt(QStringLiteral("S46"),QStringLiteral("波纹高(mm)"));
     inputAt(QStringLiteral("S47"),QStringLiteral("波纹节距(mm)"));
@@ -856,6 +1058,28 @@ void SchemeCalculationSheet::rebuildSheet()
             if (!occupied) bind(p.first,p.second,f,false);
             representedAddresses.insert(f.key.section(QLatin1Char('\n'),1));
         }
+    // Original workbook's high-voltage coil selector overlays AC9.
+    m_coilFormCombo=new QComboBox(m_results);
+    m_coilFormCombo->setObjectName(QStringLiteral("sheetCoilForm"));
+    m_coilFormCombo->addItem(QStringLiteral("圆筒式"),1);
+    m_coilFormCombo->addItem(QStringLiteral("分段式"),2);
+    int coilIndex=m_coilFormCombo->findData(coilForm);
+    if(coilIndex<0) {
+        m_coilFormCombo->addItem(QStringLiteral("未知"),coilForm);
+        coilIndex=m_coilFormCombo->count()-1;
+    }
+    m_coilFormCombo->setCurrentIndex(coilIndex);
+    m_coilFormCombo->setToolTip(HvCoilFormNotes::processNote()+QStringLiteral("\n分段式整机计算仅覆盖五组油道均启用的情况。"));
+    m_results->setCellWidget(8,28,m_coilFormCombo);
+    connect(m_coilFormCombo,&QComboBox::currentIndexChanged,this,[this] {
+        const int form = m_coilFormCombo->currentData().toInt();
+        if (form == 1 || form == 2) {
+            auto config = m_input->calculationConfig();
+            config.hvCoilStructure = form == 2 ? StructureConfig::TwoSegCylinder : StructureConfig::MultiLayerCylinder;
+            m_input->setCalculationConfig(config);
+        }
+        markPending();
+    });
     QVector<Field> advanced, checks;
     const auto &owners = originalResultAddresses();
     for (int zone=0; zone<ZoneCount; ++zone) {
@@ -873,66 +1097,495 @@ void SchemeCalculationSheet::rebuildSheet()
             else checks.append(f);
         }
     }
-    // Collapse only hides rows: source bindings, editor instances and calculation
-    // remain alive, so toggling never rebuilds the sheet or discards user edits.
-    int row=54;
-    const auto addSection = [&](const QString &title, const QVector<Field> &items) {
-        if (items.isEmpty()) return;
-        const int headerRow=row++;
-        m_results->setRowCount(row);
-        m_results->setSpan(headerRow,0,1,38);
-        auto *header = cell(headerRow,0,QString());
-        header->setBackground(QColor("#DCEEDF"));
-        auto *button = new QToolButton(m_results);
-        button->setText(title + QStringLiteral("（%1项，点击展开）").arg(items.size()));
-        button->setCheckable(true);
-        button->setArrowType(Qt::RightArrow);
-        button->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
-        button->setStyleSheet(QStringLiteral("QToolButton {background:#DCEEDF; color:#185C37; border:0; text-align:left; padding:4px; font-weight:bold;}"));
-        m_results->setCellWidget(headerRow,0,button);
-        m_results->setRowHeight(headerRow,34);
-        const int firstRow=row;
-        int slot=0;
-        for (const auto &f : items) {
-            m_results->setRowCount(row+1);
-            const int base=slot*19;
-            cell(row,base,f.name,f.tip); m_results->setSpan(row,base,1,9);
-            bind(row,base+9,f,true); m_results->setSpan(row,base+9,1,10);
-            if (++slot==2) { slot=0; ++row; }
+    // Keep the worksheet itself at its original 54 rows. Inputs not mapped to
+    // the main sheet remain editable in the same source table via the dialog.
+    m_supplementRows.clear();
+    m_supplementKeys.clear();
+    for (const auto &group : {advanced, checks}) {
+        for (const auto &f : group) {
+            if (f.row >= 0) {
+                auto *source = m_input->item(f.row, f.col);
+                auto *widget = m_input->cellWidget(f.row, f.col);
+                if ((source && source->flags().testFlag(Qt::ItemIsEditable)) ||
+                    (widget && (qobject_cast<QComboBox *>(widget) || qobject_cast<QAbstractSpinBox *>(widget)
+                     || qobject_cast<QLineEdit *>(widget) || widget->findChild<QComboBox *>()
+                     || widget->findChild<QAbstractSpinBox *>() || widget->findChild<QLineEdit *>())))
+                    m_supplementRows.insert(f.row);
+            } else if (!f.key.isEmpty() && !m_supplementKeys.contains(f.key)) {
+                m_supplementKeys.append(f.key);
+            }
         }
-        if (slot) ++row;
-        const int lastRow=row;
-        for (int r=firstRow; r<lastRow; ++r) m_results->setRowHidden(r,true);
-        connect(button,&QToolButton::toggled,this,[this,button,title,count=items.size(),firstRow,lastRow](bool open) {
-            button->setArrowType(open ? Qt::DownArrow : Qt::RightArrow);
-            button->setText(title + QStringLiteral("（%1项，点击%2）").arg(count).arg(open ? QStringLiteral("收起") : QStringLiteral("展开")));
-            for (int r=firstRow; r<lastRow; ++r) m_results->setRowHidden(r,!open);
-        });
-    };
-    addSection(QStringLiteral("高级工艺参数"),advanced);
-    addSection(QStringLiteral("校核指标与说明"),checks);
+    }
     for (int r=0; r<m_results->rowCount(); ++r)
         for (int c=0; c<38; ++c)
             if (!m_results->item(r,c)) cell(r,c,QString());
     for (int r : {6,7,8,9,10,11,12,13,14,15,22,24,32,33,35,38,42,43,44,46,47,48,49,50,51,52,53})
         m_results->setRowHeight(r,36);
-    syncInputs(); m_results->verticalScrollBar()->setValue(scroll);
+    int tankHeight=0;for(int r=20;r<=26;++r)tankHeight+=m_results->rowHeight(r);
+    const int extra=std::max(0,m_tankPanel->sizeHint().height()+8-tankHeight);
+    for(int r=20;r<=26;++r)m_results->setRowHeight(r,m_results->rowHeight(r)+(extra+6)/7);
+    syncInputs(); mergeFieldSpace(); fitColumnsToViewport(); fitTextRows();
+    m_results->verticalScrollBar()->setValue(scroll);
+}
+
+void SchemeCalculationSheet::updateTankPanel(const QMap<QString, QPair<double, int>> *overrides)
+{
+    if(!m_tankPanel)return;
+    QMap<QString,QString> values;
+    const QStringList addresses=QStringLiteral("M21 Q22 F23 H23 J23 S23 F24 H24 J24 N24 O24 F25 H25 J25 Q25 H26 J26 L26 Q26 E27 F27 J27").split(' ');
+    for(const auto &address:addresses){
+        int col=0,index=0;while(index<address.size()&&address[index].isLetter())col=col*26+address[index++].unicode()-'A'+1;
+        if(auto *item=m_results->item(address.mid(index).toInt()-1,col-1))values.insert(address,item->text());
+    }
+    if (overrides) {
+        for (const auto &address : addresses) {
+            const auto it = overrides->constFind(address);
+            if (it != overrides->cend()) values.insert(address, QString::number(it->first, 'f', it->second));
+        }
+    }
+    m_tankPanel->setValues(values);
+}
+
+void SchemeCalculationSheet::mergeFieldSpace()
+{
+    // Excel lets a field visually overflow into empty neighbouring cells. A Qt
+    // table does not. Give that field the unused space without covering any
+    // independent value/editor, vertical merge, or the next calculation block.
+    constexpr int rows=54,columns=38;
+    QSet<int> leftBorders;
+    const auto sourceLayout=QJsonDocument::fromJson(calculationSheetTemplate).object();
+    for(const auto &entry:sourceLayout.value(QStringLiteral("leftBorders")).toArray()) {
+        const auto boundary=entry.toArray();
+        leftBorders.insert(boundary[0].toInt()*columns+boundary[1].toInt());
+    }
+    QSet<QTableWidgetItem *> boundCells;
+    for(const auto &binding:m_bindings)boundCells.insert(binding.cell);
+    for(auto *item:m_resultBindings)boundCells.insert(item);
+    QVector<int> owners(rows*columns,-1);
+    for(int r=0;r<rows;++r)for(int c=0;c<columns;++c){
+        if(owners[r*columns+c]>=0)continue;
+        const int height=m_results->rowSpan(r,c),width=m_results->columnSpan(r,c);
+        for(int y=r;y<r+height&&y<rows;++y)for(int x=c;x<c+width&&x<columns;++x)
+            owners[y*columns+x]=r*columns+c;
+    }
+    for(int r=2;r<rows;++r)for(int c=0;c<columns;++c){
+        // Keep the source workbook grid, including intentional blank cells,
+        // below row 26 and in the left weight/centre-distance block above it.
+        if(c==19||r>=26||(r>=22&&c<4))continue;
+        const int owner=r*columns+c;
+        if(owners[owner]!=owner||m_results->rowSpan(r,c)!=1)continue;
+        auto *item=m_results->item(r,c);
+        if((!item||item->text().trimmed().isEmpty())&&!m_results->cellWidget(r,c)&&!boundCells.contains(item))continue;
+        const int originalWidth=m_results->columnSpan(r,c);
+        int end=c+originalWidth;
+        const int boundary=c<19?19:c<29?29:columns;
+        while(end<boundary){
+            // Explicit source borders stop overflow even when the neighbour is empty.
+            if(c<19&&leftBorders.contains(r*columns+end-1))break;
+            const int next=r*columns+end;
+            auto *neighbour=m_results->item(r,end);
+            if(owners[next]!=next||m_results->rowSpan(r,end)!=1||m_results->columnSpan(r,end)!=1
+                ||m_results->cellWidget(r,end)||boundCells.contains(neighbour)
+                ||(neighbour&&!neighbour->text().trimmed().isEmpty()))break;
+            owners[next]=owner;++end;
+        }
+        if(end>c+originalWidth)m_results->setSpan(r,c,1,end-c);
+    }
+    // Left A-column blank blocks have no internal source border.
+    // Preserve independent numeric values in column B alongside these blocks.
+    for(const auto range: {qMakePair(32,3),qMakePair(41,3),qMakePair(45,2)}) {
+        auto *block=new WorksheetLabelBlock(m_results,range.first,range.second,0);
+        m_results->setSpan(range.first,0,range.second,1);
+        m_results->setCellWidget(range.first,0,block);
+    }
+    for(const auto region: {std::array<int,3>{41,3,1},std::array<int,3>{32,3,2},
+                            std::array<int,3>{32,3,3},std::array<int,3>{48,2,3}}) {
+        auto *block=new WorksheetLabelBlock(m_results,region[0],region[1],region[2]);
+        m_results->setSpan(region[0],region[2],region[1],1);
+        m_results->setCellWidget(region[0],region[2],block);
+    }
+    // Actual source borders: T9:T12, T13:T14, T22:T43,
+    // T44:T45 and T46:T54. Faint Excel gridlines are not cell boundaries.
+    m_results->setSpan(9,19,1,1); // Remove original T10:T11 before joining its block.
+    for(const auto range: {qMakePair(8,4),qMakePair(12,2),qMakePair(21,22),
+                            qMakePair(43,2),qMakePair(45,9)}) {
+        auto *block=new WorksheetLabelBlock(m_results,range.first,range.second);
+        m_results->setSpan(range.first,19,range.second,1);
+        m_results->setCellWidget(range.first,19,block);
+    }
+}
+
+void SchemeCalculationSheet::fitColumnsToViewport()
+{
+    if (!m_results || m_results->columnCount()!=38 || m_results->rowCount()<54) return;
+    const int available = m_results->viewport()->width() - 1;
+    if (available < 38 * 8) return;
+    const auto templateObject=QJsonDocument::fromJson(calculationSheetTemplate).object();
+    const auto original=templateObject.value(QStringLiteral("widths")).toArray();
+    QVector<int> minimum(38, 18);
+    const QFontMetrics metrics(m_results->font());
+    const int numericWidth=metrics.horizontalAdvance(QStringLiteral("000.00"))+4;
+    for (int r=0;r<54;++r) for(int c=0;c<38;++c) {
+        auto *item=m_results->item(r,c);
+        if (!item || m_results->columnSpan(r,c)!=1 || m_results->rowSpan(r,c)!=1) continue;
+        bool isNumber=false; item->text().trimmed().toDouble(&isNumber);
+        if (isNumber || item->flags().testFlag(Qt::ItemIsEditable))
+            minimum[c]=std::max(minimum[c],numericWidth);
+        else {
+            const QString name=item->text().trimmed();
+            if (!name.isEmpty() && name.size()<=3 && !name.contains(QLatin1Char('\n')))
+                minimum[c]=std::max(minimum[c],std::min(90,metrics.horizontalAdvance(name)+10));
+        }
+    }
+    minimum[0]=std::max(minimum[0],metrics.horizontalAdvance(QStringLiteral("相间距"))+26);
+    minimum[4]=std::max(minimum[4],metrics.horizontalAdvance(QStringLiteral("标准"))+22);
+    minimum[8]=std::max(minimum[8],metrics.horizontalAdvance(QStringLiteral("000.00"))+12);
+    minimum[16]=std::max(minimum[16],metrics.horizontalAdvance(QStringLiteral("大圆心角"))+10);
+    minimum[19]=std::max(minimum[19],metrics.horizontalAdvance(QStringLiteral("75℃电阻(Ω)"))+12);
+    minimum[28]=std::max(minimum[28],metrics.horizontalAdvance(QStringLiteral("圆筒式"))+25);
+    // In a narrow window keep the full sheet visible; longer text can wrap vertically.
+    int minSum=0; for(int v:minimum)minSum+=v;
+    if (minSum>available) {
+        const int fixed=38*8;
+        const double ratio=double(available-fixed)/double(minSum-fixed);
+        for(int &v:minimum)v=8+int((v-8)*ratio);
+        minSum=0;for(int v:minimum)minSum+=v;
+    }
+    double totalWeight=0.0;
+    for(const auto &v:original)totalWeight+=std::max(0.1,v.toDouble());
+    const int extra=std::max(0,available-minSum);
+    int used=0;
+    QVector<int> widths(38);
+    for(int c=0;c<38;++c) {
+        widths[c]=minimum[c]+int(extra*std::max(0.1,original[c].toDouble())/totalWeight);
+        used+=widths[c];
+    }
+    for(int i=0;used<available;++i,++used)++widths[i%38];
+    for(int c=0;c<38;++c)if(m_results->columnWidth(c)!=widths[c])m_results->setColumnWidth(c,widths[c]);
+    // Recalculate heights from the baseline on every resize so a temporarily
+    // narrow window does not leave permanently oversized rows after widening.
+    for(int r=0;r<54;++r)m_results->setRowHeight(r,28);
+    for(int r : {6,7,8,9,10,11,12,13,14,15,22,24,32,33,35,38,42,43,44,46,47,48,49,50,51,52,53})
+        m_results->setRowHeight(r,36);
+    if(m_tankPanel) {
+        int height=0;for(int r=20;r<=26;++r)height+=m_results->rowHeight(r);
+        const int extra=std::max(0,m_tankPanel->sizeHint().height()+8-height);
+        for(int r=20;r<=26;++r)m_results->setRowHeight(r,m_results->rowHeight(r)+(extra+6)/7);
+    }
+    fitTextRows();
+}
+
+void SchemeCalculationSheet::fitTextRows()
+{
+    // Keep editor instances and current row positions; only grow a row when a
+    // current value/description needs more space. Refreshes never rebuild it.
+    const int rows=m_results->rowCount(),columns=m_results->columnCount();
+    QVector<bool> covered(rows*columns,false);
+    for(int r=0;r<rows;++r)for(int c=0;c<columns;++c){
+        if(covered[r*columns+c])continue;
+        const int height=m_results->rowSpan(r,c),width=m_results->columnSpan(r,c);
+        int pixels=0,available=0;
+        for(int x=c;x<c+width;++x)pixels+=m_results->columnWidth(x);
+        for(int y=r;y<r+height;++y){available+=m_results->rowHeight(y);for(int x=c;x<c+width;++x)covered[y*columns+x]=true;}
+        int needed=0;
+        if(auto *widget=m_results->cellWidget(r,c))needed=widget->sizeHint().height()+4;
+        else if(auto *item=m_results->item(r,c)){
+            const QFontMetrics metrics(item->font());
+            needed=metrics.boundingRect(QRect(0,0,std::max(1,pixels-12),100000),
+                Qt::TextWordWrap|Qt::TextWrapAnywhere,item->text()).height()+10;
+        }
+        if(needed>available)m_results->setRowHeight(r+height-1,m_results->rowHeight(r+height-1)+needed-available);
+    }
 }
 
 void SchemeCalculationSheet::markPending()
 {
-    m_resultStatus->setText(QStringLiteral("浅绿：可输入　白色：只读　输入已修改，正在自动更新；旧结果暂未刷新"));
+    if (!refreshPartialPreview()) {
+        if (m_coilFormCombo && m_snapshot.valid
+            && m_coilFormCombo->currentData().toInt() != m_snapshot.winding.hvCoilFormIdx) {
+            const QSignalBlocker blocker(m_results);
+            QSet<QTableWidgetItem *> inputs;
+            for (const auto &binding : m_bindings) inputs.insert(binding.cell);
+            for (auto *cell : m_resultBindings) {
+                if (!inputs.contains(cell)) {
+                    cell->setText(QStringLiteral("待重新计算"));
+                    cell->setToolTip(QStringLiteral("线圈型式已变更，旧方案结果不可沿用。"));
+                }
+            }
+        }
+        if (m_partialActive) {
+            const QSignalBlocker blocker(m_results);
+            for (auto *cell : m_resultBindings) {
+                cell->setText(QStringLiteral("待重新计算"));
+                cell->setToolTip(QStringLiteral("已切回完整计算分支，等待本次重算；不沿用部分联动结果。"));
+            }
+            m_partialActive = false;
+        }
+        m_partialStatus.clear();
+        m_resultStatus->setText(QStringLiteral("品红色：可输入　白色：只读　输入已修改，正在自动更新；旧结果暂未刷新"));
+        updateTankPanel();
+        if(m_tankPanel)m_tankPanel->setCalculationStatus(QStringLiteral("参数已修改，尺寸待重算；旧值仅供查看。"));
+    }
     emit inputEdited();
+}
+
+void SchemeCalculationSheet::refreshInputValues()
+{
+    syncInputs();
+    refreshPartialPreview();
+    fitTextRows();
+}
+
+bool SchemeCalculationSheet::refreshPartialPreview()
+{
+    const QString tankError=tankSelectionError();
+    const bool segmentSelected = m_coilFormCombo && m_coilFormCombo->currentData().toInt() == 2;
+    const bool segmentPreview = segmentSelected && !coilSelectionError().isEmpty();
+    const QString selectionError=tankError.isEmpty() && !segmentPreview ? coilSelectionError() : tankError;
+    if(!selectionError.isEmpty()){
+        m_partialActive=true;m_partialStatus=selectionError;
+        const QSignalBlocker blocker(m_results);
+        for(auto *cell:m_resultBindings){
+            cell->setText(QStringLiteral("待核对"));cell->setForeground(QColor("#93642E"));
+            cell->setToolTip(selectionError+QStringLiteral("\n不沿用旧结构结果，原方案未修改。"));
+        }
+        // Shape-specific F17/F18 are updated outside m_resultBindings.
+        for(int row:{16,17})if(auto *cell=m_results->item(row,5)){
+            cell->setText(QStringLiteral("待核对"));cell->setForeground(QColor("#93642E"));cell->setToolTip(selectionError);
+        }
+        m_resultStatus->setText(selectionError);updateTankPanel();
+        if(m_tankPanel)m_tankPanel->setCalculationStatus(selectionError);
+        fitTextRows();return true;
+    }
+    const auto config = m_input->calculationConfig();
+    if (!segmentPreview && config.coreShape == StructureConfig::Ellipse && config.yokeShape == StructureConfig::TYoke) return false;
+    m_partialActive = true;
+    CalcInput current = m_previewBaseInput;
+    ShapeBranchPreview partial;
+    if (editorsReady(partial.error) && m_input->collectShapePreviewInput(current, partial.error, segmentPreview)) {
+        if (segmentPreview && captureCoilForm(current, partial.error))
+            partial = ElectromagneticEngine::previewSegmentWinding(current);
+        else if (!segmentPreview)
+            partial = ElectromagneticEngine::previewShapeBranch(current);
+    }
+    const QString scope = segmentPreview
+        ? QStringLiteral("分段式部分联动：绕组、损耗、阻抗和温升仅供核对；整机校核尚未完成，不能确认或寻优。")
+        : QStringLiteral("部分联动，未完成整机校核：片宽/几何半叠厚及已核实的绕组结果可查看；截面工艺、铁芯重量、空载/总损耗、阻抗、散热、温升和材料总价待核对，不能确认或寻优。");
+    const QSignalBlocker blocker(m_results);
+    const auto show = [&](QTableWidgetItem *cell, const QString &address) {
+        if (!cell) return;
+        const auto number = partial.values.constFind(address);
+        QString value = QStringLiteral("待核对");
+        if (partial.texts.contains(address)) value = partial.texts.value(address);
+        else if (number != partial.values.cend()) value = QString::number(number->first, 'f', number->second);
+        cell->setText(value);
+        cell->setTextAlignment((number != partial.values.cend() ? Qt::AlignRight : Qt::AlignLeft) | Qt::AlignVCenter);
+        cell->setForeground(QColor(number != partial.values.cend() ? "#185C37" : "#93642E"));
+        cell->setToolTip(address + QLatin1Char('\n') + scope + QLatin1Char('\n')
+            + partial.note + QLatin1Char('\n') + partial.error);
+    };
+    const auto &owners = originalResultAddresses();
+    for (auto it = m_resultBindings.cbegin(); it != m_resultBindings.cend(); ++it) {
+        const QString address = it.key().startsWith(QStringLiteral("原单\n"))
+            ? it.key().section(QLatin1Char('\n'), 1) : owners.value(it.key());
+        show(it.value(), address);
+    }
+    // F17/F18 are shape-specific header cells, not extra inputs or new rows.
+    show(m_results->item(16, 5), QStringLiteral("F17"));
+    show(m_results->item(17, 5), QStringLiteral("F18"));
+    m_partialStatus = scope + QLatin1Char('\n') + (segmentPreview ? partial.note + QLatin1Char('\n') : QString())
+        + (partial.windingAvailable ? (segmentPreview ? QStringLiteral("本次分段式绕组联动已更新。") : QStringLiteral("本次几何与绕组联动已更新。"))
+            : partial.geometryAvailable ? QStringLiteral("本次仅几何联动已更新。") : QStringLiteral("本次部分联动未生成有效数值。"))
+        + (partial.error.isEmpty() ? QString() : QLatin1Char('\n') + partial.error);
+    m_resultStatus->setText(m_partialStatus);
+    updateTankPanel(segmentPreview ? &partial.values : nullptr);
+    if(m_tankPanel) {
+        const bool dimensionsReady = segmentPreview && partial.values.contains(QStringLiteral("H26"))
+            && partial.values.contains(QStringLiteral("F25")) && partial.values.contains(QStringLiteral("J27"));
+        m_tankPanel->setCalculationStatus(dimensionsReady
+            ? QStringLiteral("分段式尺寸预览，仅供核对，非整机确认。")
+            : QStringLiteral("当前结构仅部分联动，油箱尺寸待核对。"));
+    }
+    fitTextRows();
+    return true;
 }
 
 bool SchemeCalculationSheet::inputsReady(QString &error) const
 {
-    if (!m_coreShapeCombo || m_coreShapeCombo->currentData().toString() != QStringLiteral("椭圆形")) {
-        error = QStringLiteral("当前心柱仅支持椭圆形；所选形状尚无对应算法，不能计算或确认。");
+    error=tankSelectionError();if(!error.isEmpty())return false;
+    error=coilSelectionError();if(!error.isEmpty())return false;
+    CalcInput selection;
+    m_input->saveToInput(selection);
+    error = selection.coreSelectionError();
+    if (!error.isEmpty()) return false;
+    return editorsReady(error);
+}
+
+bool SchemeCalculationSheet::captureCoilForm(CalcInput &input, QString &error) const
+{
+    const int form = m_coilFormCombo ? m_coilFormCombo->currentData().toInt() : 0;
+    if (form != 1 && form != 2) {
+        error = QStringLiteral("请选择有效的高压线圈型式。");
         return false;
     }
-    if (!m_yokeShapeCombo || !m_yokeShapeCombo->currentData().toBool()) {
-        error = QStringLiteral("当前铁轭仅支持T形轭；同心柱尚无对应算法，不能计算或确认。");
+    input.hvCoilFormIdx = form;
+    error.clear();
+    return true;
+}
+
+QString SchemeCalculationSheet::coilSelectionError() const
+{
+    if (!m_coilFormCombo) return QStringLiteral("请选择高压线圈型式。");
+    const int form = m_coilFormCombo->currentData().toInt();
+    if (form != 1 && form != 2) return QStringLiteral("高压线圈型式无效。");
+    if (form == 2) {
+        CalcInput candidate = m_previewBaseInput;
+        m_input->saveToInput(candidate);
+        candidate.hvCoilFormIdx = 2;
+        return candidate.segmentedCoilScopeError();
+    }
+    return {};
+}
+
+QString SchemeCalculationSheet::tankSelectionError() const
+{
+    if(!m_tankFormCombo||m_tankFormCombo->currentIndex()<0)
+        return QStringLiteral("请选择有效的油箱型式；尺寸待核对。" );
+    if(m_tankFormCombo->currentData().toInt()!=0)
+        return QStringLiteral("片散油箱完整算法尚未接入，尺寸及性能待核对；不能确认或用于寻优。" );
+    return {};
+}
+
+void SchemeCalculationSheet::showSupplement()
+{
+    QDialog dialog(this);
+    dialog.setObjectName(QStringLiteral("supplementParametersDialog"));
+    dialog.setWindowTitle(QStringLiteral("补充参数"));
+    dialog.resize(1050, 680);
+    auto *layout = new QVBoxLayout(&dialog);
+    auto *description = new QLabel(QStringLiteral("包含原计算单辅助表参数及设计输入中的补充设置。"), &dialog);
+    description->setWordWrap(true);
+    layout->addWidget(description);
+    auto *tabs = new QTabWidget(&dialog);
+    layout->addWidget(tabs, 1);
+    QVector<bool> hidden;
+    hidden.reserve(m_input->rowCount());
+    for (int row = 0; row < m_input->rowCount(); ++row) hidden.append(m_input->isRowHidden(row));
+    // Include headings only when they precede at least one retained input.
+    QSet<int> visible = m_supplementRows;
+    int heading = -1;
+    for (int row = 0; row < m_input->rowCount(); ++row) {
+        const auto *label = m_input->item(row, 1);
+        if (label && label->font().bold()) heading = row;
+        if (m_supplementRows.contains(row) && heading >= 0) visible.insert(heading);
+    }
+    m_input->setParent(tabs);
+    for (int row = 0; row < m_input->rowCount(); ++row)
+        m_input->setRowHidden(row, !visible.contains(row) || hidden.at(row));
+    tabs->addTab(m_input, QStringLiteral("参数"));
+    m_input->show();
+    auto *details = new QTextBrowser(tabs);
+    details->setObjectName(QStringLiteral("supplementDetails"));
+    m_supplementDetails = details;
+    tabs->addTab(details, QStringLiteral("计算说明"));
+    refreshSupplementDetails();
+    auto *buttons = new QDialogButtonBox(QDialogButtonBox::Close, &dialog);
+    buttons->button(QDialogButtonBox::Close)->setText(QStringLiteral("完成"));
+    connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::accept);
+    layout->addWidget(buttons);
+    dialog.exec();
+    tabs->removeTab(tabs->indexOf(m_input));
+    m_input->hide();
+    m_input->setParent(this);
+    for (int row = 0; row < m_input->rowCount() && row < hidden.size(); ++row)
+        m_input->setRowHidden(row, hidden.at(row));
+    m_supplementDetails = nullptr;
+}
+
+void SchemeCalculationSheet::refreshSupplementDetails()
+{
+    if (!m_supplementDetails) return;
+    QString html;
+    for (const auto &group : sheetGroups(m_snapshot)) {
+        QString content;
+        for (const auto &values : group.second) {
+            const QString key = group.first + QLatin1Char('\n') + values.value(0);
+            if (!m_supplementKeys.contains(key)) continue;
+            const QString value = values.value(1) + (values.value(2).isEmpty() ? QString() : QLatin1Char(' ') + values.value(2));
+            content += QStringLiteral("<p><b>%1：</b>%2<br/><small>%3</small></p>")
+                .arg(values.value(0).toHtmlEscaped(), value.toHtmlEscaped(), values.value(3).toHtmlEscaped());
+        }
+        if (!content.isEmpty()) html += QStringLiteral("<h3>%1</h3>%2").arg(group.first.toHtmlEscaped(), content);
+    }
+    if (m_snapshot.valid && m_snapshot.sheetDetailsSnapshotAvailable
+            && m_snapshot.calculationSheetDetails.contains(QStringLiteral("CoreSheetCount1"))) {
+        QString coreHtml=QStringLiteral("<h3>铁芯逐级片数与实际叠厚</h3><p>当前已计算方案的快照；修改参数后需重新计算。片宽=当前尺寸查表基数+片宽修正。第17—20级备用，尚未参与计算。</p><table border='1' cellspacing='0' cellpadding='5'><tr><th>级次</th><th>查表基数(mm)</th><th>片宽修正(mm)</th><th>片宽(mm)</th><th>基础片数</th><th>修正(片)</th><th>实际片数</th><th>实际总叠厚(mm)</th></tr>");
+        for(int i=1;i<=16;++i) {
+            if(!m_snapshot.calculationSheetDetails.contains(QStringLiteral("CoreSheetCount%1").arg(i))) continue;
+            const auto value=[this,i](const char *prefix){return m_snapshot.calculationSheetDetails.value(QString::fromLatin1(prefix)+QString::number(i)).first;};
+            const auto widthText=[this,i](const char *prefix){
+                const auto it=m_snapshot.calculationSheetDetails.constFind(QString::fromLatin1(prefix)+QString::number(i));
+                return it==m_snapshot.calculationSheetDetails.cend()?QStringLiteral("—"):QString::number(it.value().first,'g',15);
+            };
+            coreHtml+=QStringLiteral("<tr><td>%1（L%2）</td><td>%3</td><td>%4</td><td>%5</td><td>%6</td><td>%7</td><td>%8</td><td>%9</td></tr>")
+                .arg(i).arg(i+4).arg(widthText("CoreWidthBase")).arg(widthText("CoreWidthOffset"))
+                .arg(widthText("CoreFinalWidth")).arg(value("CoreSheetBase"),0,'f',0).arg(value("CoreSheetAdjust"),0,'f',0)
+                .arg(value("CoreSheetCount"),0,'f',0).arg(value("CoreActualStack"),0,'f',4);
+        }
+        for(int i=17;i<=20;++i) {
+            const auto key=QStringLiteral("CoreReservedSheetAdjust%1").arg(i);
+            if(!m_snapshot.calculationSheetDetails.contains(key))continue;
+            coreHtml+=QStringLiteral("<tr><td>%1（备用）</td><td>—</td><td>%2</td><td>未启用</td><td>—</td><td>%3</td><td>未启用</td><td>—</td></tr>")
+                .arg(i).arg(m_snapshot.calculationSheetDetails.value(QStringLiteral("CoreReservedWidthOffset%1").arg(i)).first,0,'g',15)
+                .arg(m_snapshot.calculationSheetDetails.value(key).first,0,'f',0);
+        }
+        coreHtml+=QStringLiteral("</table>");
+        if(m_snapshot.calculationSheetDetails.contains(QStringLiteral("CoreWeightCenter"))){
+            const auto value=[this](const char *key){return m_snapshot.calculationSheetDetails.value(QString::fromLatin1(key)).first;};
+            coreHtml+=QStringLiteral("<h3>铁芯分项重量核对</h3><p>窗高：%1 mm；中心距：%2 mm；中心距附加量：%3 mm；层绝缘计算系数：%4。</p><p>心柱合重：%5 kg；铁轭重：%6 kg；铁芯总重（取整）：%7 kg。</p><table border='1' cellspacing='0' cellpadding='5'><tr><th>级次</th><th>轭片宽(mm)</th><th>轭阶梯(mm)</th><th>外柱重(kg)</th><th>中柱重(kg)</th><th>铁轭重(kg)</th></tr>")
+                .arg(value("CoreWeightWindow"),0,'g',15).arg(value("CoreWeightCenter"),0,'g',15)
+                .arg(value("CoreCenterAllowance"),0,'g',15).arg(value("HVLayerCalcFactor"),0,'g',15)
+                .arg(m_snapshot.core.coreLegsWeight_kg,0,'f',2).arg(m_snapshot.core.yokesWeight_kg,0,'f',2).arg(m_snapshot.core.coreWeight_kg,0,'f',0);
+            for(int i=1;i<=16;++i){
+                if(!m_snapshot.calculationSheetDetails.contains(QStringLiteral("CoreYokeWeight%1").arg(i)))continue;
+                const auto stageValue=[this,i](const char *key){return m_snapshot.calculationSheetDetails.value(QString::fromLatin1(key)+QString::number(i)).first;};
+                coreHtml+=QStringLiteral("<tr><td>%1</td><td>%2</td><td>%3</td><td>%4</td><td>%5</td><td>%6</td></tr>").arg(i)
+                    .arg(stageValue("CoreYokeWidth"),0,'g',15).arg(stageValue("CoreYokeStep"),0,'g',15)
+                    .arg(stageValue("CoreOuterLegWeight"),0,'f',2).arg(stageValue("CoreMiddleLegWeight"),0,'f',2)
+                    .arg(stageValue("CoreYokeWeight"),0,'f',2);
+            }
+            coreHtml+=QStringLiteral("</table>");
+        }
+        html=coreHtml+html;
+    }
+    m_supplementDetails->setHtml(html);
+}
+
+void SchemeCalculationSheet::syncAn3Controls()
+{
+    if (!m_an3Raw || !m_an3Status || !m_input) return;
+    const auto params = m_input->getParams();
+    const bool custom = params.standardMode == TransformerParams::StandardMode::Custom;
+    const QSignalBlocker blocker(m_an3Raw);
+    const bool manual=params.hasManualNoLoadCurrent();
+    m_an3Raw->setEnabled(custom&&!manual);
+    m_an3Raw->setText(params.hasNonstandardAn3 ? QString::number(params.nonstandardAn3_pct, 'g', 15) : QString());
+    if(manual){m_an3Invalid=false;m_an3Status->setText(QStringLiteral("O9手工固定为%1%；切换国标/非标不覆盖，AN3不参与换算。").arg(PerformanceCriteria::valueText(params.noLoadCurrentStd_pct)));}
+    else if (custom && params.hasNonstandardAn3)
+        m_an3Status->setText(QStringLiteral("O9 = AN3 − 0.34 = %1%；原始值随方案保存。")
+            .arg(QString::number(params.noLoadCurrentStd_pct, 'g', 12)));
+    else if (custom)
+        m_an3Status->setText(QStringLiteral("自动来源尚未输入AN3；请填入有效值后确认，或选择手工固定。"));
+    else
+        m_an3Status->setText(QStringLiteral("%1；AN3仅在非标使用。").arg(m_input->standardStatus()));
+}
+
+bool SchemeCalculationSheet::editorsReady(QString &error) const
+{
+    const auto params=m_input->getParams();
+    if (params.standardMode == TransformerParams::StandardMode::Custom && !params.hasManualNoLoadCurrent()
+            && (m_an3Invalid || !params.hasNonstandardAn3)) {
+        error = QStringLiteral("AN3尚未输入有效值，不能沿用旧标准值；请输入大于0.34的数值。");
         return false;
     }
     for (auto it = m_editors.constBegin(); it != m_editors.constEnd(); ++it) {
@@ -947,17 +1600,28 @@ bool SchemeCalculationSheet::inputsReady(QString &error) const
 
 void SchemeCalculationSheet::showCalculationError(const QString &error)
 {
+    if (refreshPartialPreview()) return;
     m_resultStatus->setText(QStringLiteral("自动计算未更新（原结果仅供查看）：") + error);
+    updateTankPanel();
+    if(m_tankPanel)m_tankPanel->setCalculationStatus(QStringLiteral("自动计算未更新，旧尺寸仅供查看：")+error);
 }
 
 void SchemeCalculationSheet::refreshResult(const CalcResult &result)
 {
+    if (result.valid && m_coilFormCombo && m_coilFormCombo->currentData().toInt() != result.winding.hvCoilFormIdx) {
+        markPending(); return;
+    }
+    if (refreshPartialPreview()) return;
+    m_partialActive = false;
+    m_partialStatus.clear();
     m_snapshot = result;
+    refreshSupplementDetails();
     const QSignalBlocker blocker(m_results);
     for (const auto &group : sheetGroups(result)) {
         for (const auto &row : group.second) {
             const auto cells = m_resultBindings.values(group.first + QLatin1Char('\n') + row.value(0));
             for (auto *cell : cells) {
+            cell->setForeground(QColor("#24362B"));
             const QString value = row.value(1) + (row.value(2).isEmpty() ? QString() : QLatin1Char(' ') + row.value(2));
             cell->setText(value); cell->setToolTip(row.value(0) + QStringLiteral("\n计算值（只读）：") + value
                 + (row.value(3).isEmpty() ? QString() : QLatin1Char('\n') + row.value(3)));
@@ -966,13 +1630,205 @@ void SchemeCalculationSheet::refreshResult(const CalcResult &result)
             }
         }
     }
-    m_resultStatus->setText(QStringLiteral("原计算单布局　浅绿：可输入　白色：只读　已按当前参数自动计算；— 表示该字段未接入，不能用于判定"));
+    m_resultStatus->setText(QStringLiteral("原计算单布局　品红色：可输入　白色：只读　已按当前参数自动计算；— 表示该字段未接入，不能用于判定"));
+    updateTankPanel();
+    if(m_tankPanel)m_tankPanel->setCalculationStatus(result.valid?QString():QStringLiteral("尺寸不可用，待重新计算。"));
+    fitTextRows();
 }
 
 void SchemeCalculationSheet::loadResult(const CalcResult &result)
 {
     m_snapshot = result;
     rebuildSheet();
-    m_resultStatus->setText(result.valid ? QStringLiteral("原计算单布局　浅绿：可输入　白色：只读　—：未接入当前方案数据（悬停查看）；下方两区可点击展开")
-        : QStringLiteral("计算结果不可用，修改参数后自动计算；浅绿单元格可输入"));
+    if (result.valid && m_coilFormCombo && m_coilFormCombo->currentData().toInt() != result.winding.hvCoilFormIdx) {
+        markPending(); return;
+    }
+    if (refreshPartialPreview()) return;
+    m_partialActive = false;
+    m_partialStatus.clear();
+    m_resultStatus->setText(result.valid ? QStringLiteral("原计算单布局　品红色：可输入　白色：只读　—：未接入当前方案数据（悬停查看）；其他参数可在顶部查看")
+        : QStringLiteral("计算结果不可用，修改参数后自动计算；品红色单元格可输入"));
+    updateTankPanel();
+    if(m_tankPanel)m_tankPanel->setCalculationStatus(result.valid?QString():QStringLiteral("尺寸不可用，待重新计算。"));
+}
+
+namespace {
+QString outputWidgetText(QWidget *widget)
+{
+    if (auto *combo = qobject_cast<QComboBox *>(widget)) return combo->currentText();
+    if (auto *spin = qobject_cast<QDoubleSpinBox *>(widget)) return spin->text();
+    if (auto *spin = qobject_cast<QSpinBox *>(widget)) return spin->text();
+    if (auto *line = qobject_cast<QLineEdit *>(widget)) return line->text();
+    if (auto *label = qobject_cast<QLabel *>(widget)) return label->text();
+    QStringList parts;
+    if (auto *layout = widget->layout()) {
+        for (int i = 0; i < layout->count(); ++i)
+            if (auto *child = layout->itemAt(i)->widget()) parts << outputWidgetText(child);
+    }
+    return parts.join(QStringLiteral(" "));
+}
+}
+
+void SchemeCalculationSheet::setOutputMode()
+{
+    // Keep only the worksheet. AN3 and supplement controls belong to editing.
+    for (auto *child : findChildren<QWidget *>(QString(), Qt::FindDirectChildrenOnly))
+        if (child != m_results) child->hide();
+    const QSignalBlocker blocker(m_results);
+    QFont outputFont(QStringLiteral("Microsoft YaHei"));
+    outputFont.setPixelSize(13);
+    m_results->setFont(outputFont);
+    m_results->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    m_results->setSelectionMode(QAbstractItemView::NoSelection);
+    m_results->verticalHeader()->hide();
+    m_results->setStyleSheet(QStringLiteral(
+        "QTableWidget {background:white; color:black; font-size:13px; gridline-color:#777; border:1px solid black;}"
+        "QLabel {background:white; color:black;}"));
+    for (int r = 0; r < m_results->rowCount(); ++r) {
+        for (int c = 0; c < m_results->columnCount(); ++c) {
+            auto *cell = m_results->item(r,c);
+            if (auto *widget = m_results->cellWidget(r,c)) {
+                if (widget != m_tankPanel && !widget->property("worksheetLabelBlock").toBool()) {
+                    if (cell) cell->setText(outputWidgetText(widget));
+                    widget->hide();
+                    m_results->removeCellWidget(r,c);
+                }
+            }
+            if (cell) {
+                cell->setFlags(Qt::ItemIsEnabled);
+                cell->setBackground(Qt::white);
+                cell->setForeground(Qt::black);
+            }
+        }
+    }
+    // Preserve dimensions and schematic while replacing the panel's editors.
+    if (m_tankPanel) {
+        for (auto *widget : m_tankPanel->findChildren<QWidget *>()) {
+            if (!qobject_cast<QComboBox *>(widget) && !qobject_cast<QAbstractSpinBox *>(widget)
+                && !qobject_cast<QLineEdit *>(widget)) continue;
+            // Spin boxes own line edits; replace only top-level input controls.
+            if (qobject_cast<QAbstractSpinBox *>(widget->parentWidget())) continue;
+            auto *parent = widget->parentWidget();
+            if (!parent || !parent->layout()) continue;
+            auto *label = new QLabel(outputWidgetText(widget), parent);
+            label->setAlignment(Qt::AlignCenter);
+            label->setWordWrap(true);
+            if (auto *item = parent->layout()->replaceWidget(widget,label)) delete item;
+            widget->hide();
+            label->show();
+        }
+        m_tankPanel->setStyleSheet(QStringLiteral("QWidget {background:white; color:black;}"));
+    }
+    fitColumnsToViewport();
+}
+
+void SchemeCalculationSheet::printTo(QPrinter *printer) const
+{
+    if (!printer || !m_results || m_results->rowCount() == 0) return;
+    QPainter painter(printer);
+    if (!painter.isActive()) return;
+    const int rows = m_results->rowCount(), cols = m_results->columnCount();
+    QVector<qreal> x(cols+1,0), y(rows+1,0);
+    for (int c=0;c<cols;++c) x[c+1]=x[c]+m_results->columnWidth(c);
+    for (int r=0;r<rows;++r) y[r+1]=y[r]+m_results->rowHeight(r);
+    if (x.last() <= 0 || y.last() <= 0) return;
+    const QRectF page(QPointF(0,0), printer->pageRect(QPrinter::DevicePixel).size());
+    const qreal scale = std::min(page.width()/x.last(), page.height()/y.last());
+    painter.translate(page.left()+(page.width()-x.last()*scale)/2, page.top());
+    painter.scale(scale,scale);
+    painter.setRenderHint(QPainter::Antialiasing);
+    QFont font = m_results->font();
+    font.setPixelSize(13);
+    painter.setFont(font);
+    QVector<bool> covered(rows*cols,false);
+    for (int r=0;r<rows;++r) for (int c=0;c<cols;++c) {
+        if (covered[r*cols+c]) continue;
+        const int rs=m_results->rowSpan(r,c), cs=m_results->columnSpan(r,c);
+        for (int rr=r;rr<r+rs;++rr) for (int cc=c;cc<c+cs;++cc) covered[rr*cols+cc]=true;
+        const QRectF rect(x[c],y[r],x[c+cs]-x[c],y[r+rs]-y[r]);
+        painter.fillRect(rect,Qt::white);
+        painter.setPen(QPen(Qt::black,0.6));
+        painter.drawRect(rect);
+        if (auto *widget=m_results->cellWidget(r,c)) {
+            const QRectF contentRect = widget->property("worksheetLabelBlock").toBool()
+                ? rect : rect.adjusted(2,2,-2,-2);
+            widget->resize(qRound(contentRect.width()),qRound(contentRect.height()));
+            widget->ensurePolished();
+            if (widget->layout()) widget->layout()->activate();
+            QImage image(widget->size()*3,QImage::Format_ARGB32_Premultiplied);
+            image.setDevicePixelRatio(3);
+            image.fill(Qt::white);
+            QPainter imagePainter(&image);
+            widget->render(&imagePainter);
+            imagePainter.end();
+            painter.drawImage(contentRect,image);
+        } else if (auto *cell=m_results->item(r,c)) {
+            painter.drawText(rect.adjusted(3,2,-3,-2),Qt::AlignCenter|Qt::TextWordWrap,cell->text());
+        }
+    }
+}
+
+
+bool SchemeCalculationSheet::exportExcel(const QString &path, const CalcInput &input,
+        const TransformerParams &params, const CalcResult &result, QString &error) const
+{
+    QJsonObject cells;
+    const auto address=[](int row,int col) {
+        QString name;for(++col;col>0;col=(col-1)/26)name.prepend(QChar('A'+(col-1)%26));
+        return name+QString::number(row+1);
+    };
+    for(const auto &binding:m_bindings) {
+        auto *source=m_input->item(binding.row,binding.col);
+        auto *widget=m_input->cellWidget(binding.row,binding.col);
+        if(!widget&&(!source||!(source->flags()&Qt::ItemIsEditable)))continue;
+        cells.insert(address(binding.cell->row(),binding.cell->column()),widget?outputWidgetText(widget):source->text());
+    }
+    cells.insert("H1",input.capacity_kVA);cells.insert("J1",input.hvRated_kV);cells.insert("L1",input.lvRated_kV);
+    cells.insert("L3",input.hvTapPlusSteps);
+    cells.insert("N3",input.hvTapStep_pct/100.0);
+    const auto modelMatch=QRegularExpression(QStringLiteral("^(.+?)-[0-9]+(?:\\.[0-9]+)?/")).match(params.productModel);
+    if(modelMatch.hasMatch())cells.insert("F1",modelMatch.captured(1).section(QLatin1Char('-'),0,0));
+    cells.insert("AN3",params.nonstandardAn3_pct);
+    cells.insert("AM8",input.refFluxDens_T);
+    const QStringList grades={"18SQGD065","20R070","23R080","23RK085","27RK090","27ZH100","30Q120","30Q130"};
+    const QStringList insulation={"ZB-0.3","ZB-0.45","QQ-2","QZB-2/130","QQL-2","ZLB-0.3","ZLB-0.45"};
+    const int steel=grades.indexOf(input.steelGrade.toUpper());
+    const QString insType=input.resolvedInsulationType();
+    const int ins=insType==QStringLiteral("Custom")?7:(insType==QStringLiteral("RoundTable")?2:insulation.indexOf(insType));
+    if(steel<0||ins<0||input.coreShape>StructureConfig::Ellipse){error=QStringLiteral("当前牌号、绝缘或心柱不在原Excel模板选项中，不能按其他选项代替导出。");return false;}
+    QJsonObject controls{{"C2",input.hvCoilFormIdx},{"U10",1},{"J2",steel+1},
+        {"G2",input.hvCopperWire?1:2},{"G9",input.lvCopperFoil?1:2},
+        {"N2",input.yokeShape==StructureConfig::TYoke?2:1},
+        {"R10",input.hvDeltaConnected?(input.lvStarConnected?3:4):(input.lvStarConnected?1:2)},
+        {"U2",params.standardMode==TransformerParams::StandardMode::Custom?2:1},
+        {"N9",input.coreShape==StructureConfig::Ellipse?3:(input.coreShape==StructureConfig::Circle?1:2)},
+        {"X2",ins+1}};
+    QJsonObject spec{{"cells",cells},{"controls",controls},{"input",SchemeStore::toJson(input)},
+        {"manualCurrent",params.hasManualNoLoadCurrent()},{"currentStandard",params.noLoadCurrentStd_pct},
+        {"wavePitch",input.wavePitch_mm},{"tapMinusSteps",input.hvTapMinusSteps},{"customInsulation",insType==QStringLiteral("Custom")},
+        {"insulationIncrement",input.hvWireInsulAdd_mm},
+        {"engine",QJsonObject{{"materialCost",result.cost.materialCost},{"noLoadLoss",result.core.noLoadLoss_W},
+            {"loadLoss",result.winding.loadLoss_W},{"impedance",result.impedance.impedance_pct}}},
+        {"dataNote",QStringLiteral("查表数据来自计算用数据表.xls。硅钢性能P54采用源数据1.608，原工作簿外链缓存125未沿用。Excel按原表公式重算，程序结果仅供对照。")}};
+    QTemporaryDir temporary;
+    if(!temporary.isValid()){error=QStringLiteral("无法建立导出临时目录");return false;}
+    const auto copyResource=[&](const QString &resource,const QString &file){return QFile::copy(resource,temporary.filePath(file));};
+    if(!copyResource(":/templates/linked_calculation_sheet.xlsx","template.xlsx")
+        ||!copyResource(":/scripts/export_calculation_sheet.ps1","export.ps1")){error=QStringLiteral("导出模板资源不可用");return false;}
+    QFile json(temporary.filePath("spec.json"));
+    if(!json.open(QIODevice::WriteOnly)){error=json.errorString();return false;}
+    json.write(QJsonDocument(spec).toJson());json.close();
+    QProcess process;
+    process.start("powershell.exe",{"-NoProfile","-NonInteractive","-ExecutionPolicy","Bypass","-File",temporary.filePath("export.ps1"),
+        "-Template",temporary.filePath("template.xlsx"),"-Spec",json.fileName(),"-Output",temporary.filePath("result.xlsx")});
+    if(!process.waitForFinished(60000)){process.kill();process.waitForFinished();error=QStringLiteral("Excel导出超时");return false;}
+    if(process.exitStatus()!=QProcess::NormalExit||process.exitCode()!=0){error=QString::fromLocal8Bit(process.readAllStandardError());return false;}
+    // Replace the destination only after the temporary workbook is complete.
+    QFile complete(temporary.filePath("result.xlsx"));
+    if(!complete.open(QIODevice::ReadOnly)){error=complete.errorString();return false;}
+    QSaveFile target(path);
+    if(!target.open(QIODevice::WriteOnly)){error=target.errorString();return false;}
+    const QByteArray bytes=complete.readAll();
+    if(target.write(bytes)!=bytes.size()||!target.commit()){error=target.errorString();return false;}
+    return true;
 }

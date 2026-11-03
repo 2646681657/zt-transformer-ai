@@ -53,6 +53,91 @@ set_target_properties(ztf-designer PROPERTIES
 
 include(CTest)
 if(BUILD_TESTING)
+    qt_add_executable(test-candidate-comparison tests/candidate_comparison_test.cpp ${CORE_SOURCES} ${ENGINE_SOURCES}
+        src/adapter/DesignDatabase.cpp resources/resources.qrc)
+    set_target_properties(test-candidate-comparison PROPERTIES EXCLUDE_FROM_ALL TRUE)
+    target_include_directories(test-candidate-comparison PRIVATE src src/core src/engine src/adapter)
+    target_link_libraries(test-candidate-comparison PRIVATE Qt6::Core Qt6::Widgets Qt6::Gui Qt6::Concurrent Qt6::PrintSupport Qt6::Network)
+    add_test(NAME candidate-comparison-records COMMAND test-candidate-comparison)
+    set_tests_properties(candidate-comparison-records PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen" TIMEOUT 40)
+    qt_add_executable(test-candidate-comparison-ui tests/candidate_comparison_ui_test.cpp
+        src/gui/widgets/CandidateComparisonDialog.cpp ${CORE_SOURCES} ${ENGINE_SOURCES}
+        src/adapter/DesignDatabase.cpp resources/resources.qrc)
+    set_target_properties(test-candidate-comparison-ui PROPERTIES EXCLUDE_FROM_ALL TRUE)
+    target_include_directories(test-candidate-comparison-ui PRIVATE src src/core src/engine src/adapter src/gui/widgets)
+    target_link_libraries(test-candidate-comparison-ui PRIVATE Qt6::Core Qt6::Widgets Qt6::Gui Qt6::Concurrent Qt6::PrintSupport Qt6::Network)
+    add_test(NAME candidate-comparison-ui COMMAND test-candidate-comparison-ui)
+    set_tests_properties(candidate-comparison-ui PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen" TIMEOUT 40)
+    add_test(NAME candidate-comparison-integration COMMAND test-candidate-comparison-ui --integration)
+    set_tests_properties(candidate-comparison-integration PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen" TIMEOUT 120 SKIP_RETURN_CODE 77)
+    qt_add_executable(test-data-preparation tests/data_preparation_test.cpp ${CORE_SOURCES} ${ENGINE_SOURCES}
+        src/adapter/DesignDatabase.cpp resources/resources.qrc)
+    set_target_properties(test-data-preparation PROPERTIES EXCLUDE_FROM_ALL TRUE)
+    target_include_directories(test-data-preparation PRIVATE src src/core src/engine src/adapter)
+    target_link_libraries(test-data-preparation PRIVATE Qt6::Core Qt6::Widgets Qt6::Gui Qt6::Concurrent Qt6::PrintSupport Qt6::Network)
+    add_test(NAME learning-data-preparation COMMAND test-data-preparation)
+    set_tests_properties(learning-data-preparation PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen" TIMEOUT 40)
+    qt_add_executable(test-preparation-ui tests/learning_preparation_ui_test.cpp
+        src/gui/widgets/LearningPreparationPanel.cpp src/gui/widgets/LearningWorkspace.cpp
+        src/gui/widgets/LearningTrainingPanel.cpp src/gui/widgets/LearningReviewPanel.cpp ${CORE_SOURCES} ${ENGINE_SOURCES}
+        src/adapter/DesignDatabase.cpp resources/resources.qrc)
+    set_target_properties(test-preparation-ui PROPERTIES EXCLUDE_FROM_ALL TRUE)
+    target_include_directories(test-preparation-ui PRIVATE src src/core src/engine src/adapter src/gui/widgets)
+    target_link_libraries(test-preparation-ui PRIVATE Qt6::Core Qt6::Widgets Qt6::Gui Qt6::Concurrent Qt6::PrintSupport Qt6::Network)
+    add_test(NAME learning-data-preparation-ui COMMAND test-preparation-ui)
+    set_tests_properties(learning-data-preparation-ui PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen" TIMEOUT 40)
+    qt_add_executable(test-model-review tests/model_review_test.cpp ${CORE_SOURCES} ${ENGINE_SOURCES}
+        src/adapter/DesignDatabase.cpp resources/resources.qrc)
+    set_target_properties(test-model-review PROPERTIES EXCLUDE_FROM_ALL TRUE)
+    target_include_directories(test-model-review PRIVATE src src/core src/engine src/adapter)
+    target_link_libraries(test-model-review PRIVATE Qt6::Core Qt6::Widgets Qt6::Gui Qt6::Concurrent Qt6::PrintSupport Qt6::Network)
+    add_test(NAME model-review-registry COMMAND test-model-review)
+    set_tests_properties(model-review-registry PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen" TIMEOUT 40)
+    qt_add_executable(test-learning-training tests/learning_training_test.cpp
+        src/gui/widgets/LearningTrainingPanel.cpp src/gui/widgets/LearningReviewPanel.cpp ${CORE_SOURCES} ${ENGINE_SOURCES}
+        src/adapter/DesignDatabase.cpp resources/resources.qrc)
+    set_target_properties(test-learning-training PROPERTIES EXCLUDE_FROM_ALL TRUE)
+    target_include_directories(test-learning-training PRIVATE src src/core src/engine src/adapter src/gui/widgets)
+    target_link_libraries(test-learning-training PRIVATE Qt6::Core Qt6::Widgets Qt6::Gui Qt6::Concurrent Qt6::PrintSupport Qt6::Network)
+    add_test(NAME learning-training-process COMMAND test-learning-training)
+    set_tests_properties(learning-training-process PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen" TIMEOUT 40)
+    add_test(NAME learning-training-integration COMMAND test-learning-training --integration)
+    set_tests_properties(learning-training-integration PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen" TIMEOUT 120 SKIP_RETURN_CODE 77)
+    qt_add_executable(test-self-learning
+        tests/self_learning_test.cpp
+        src/gui/widgets/LearningWorkspace.cpp
+        src/gui/widgets/LearningTrainingPanel.cpp
+        src/gui/widgets/LearningReviewPanel.cpp
+        src/gui/widgets/LearningPreparationPanel.cpp
+        ${CORE_SOURCES}
+        ${ENGINE_SOURCES}
+        src/adapter/DesignDatabase.cpp
+        resources/resources.qrc
+    )
+    set_target_properties(test-self-learning PROPERTIES EXCLUDE_FROM_ALL TRUE)
+    target_include_directories(test-self-learning PRIVATE src src/core src/engine src/adapter src/gui/widgets)
+    target_link_libraries(test-self-learning PRIVATE Qt6::Core Qt6::Widgets Qt6::Gui Qt6::Concurrent Qt6::PrintSupport Qt6::Network)
+    add_test(NAME self-learning-foundation COMMAND test-self-learning)
+    set_tests_properties(self-learning-foundation PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+    qt_add_executable(test-core-selection
+        tests/core_selection_test.cpp
+        ${CORE_SOURCES}
+        ${ENGINE_SOURCES}
+        src/adapter/DesignDatabase.cpp
+        src/gui/widgets/ParamTableWidget.cpp
+        src/gui/widgets/SchemeCalculationSheet.cpp
+        src/gui/widgets/EmResultPanel.cpp
+        resources/resources.qrc
+    )
+    set_target_properties(test-core-selection PROPERTIES EXCLUDE_FROM_ALL TRUE)
+    target_include_directories(test-core-selection PRIVATE
+        src src/core src/engine src/adapter src/gui/widgets
+    )
+    target_link_libraries(test-core-selection PRIVATE
+        Qt6::Core Qt6::Widgets Qt6::Gui Qt6::Concurrent Qt6::PrintSupport Qt6::Network
+    )
+    add_test(NAME core-selection-state COMMAND test-core-selection)
+    set_tests_properties(core-selection-state PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
     qt_add_executable(test-enter-calc-page
         tests/enter_calc_page_test.cpp
         ${CORE_SOURCES}
@@ -62,6 +147,7 @@ if(BUILD_TESTING)
         resources/resources.qrc
     )
     set_target_properties(test-enter-calc-page PROPERTIES EXCLUDE_FROM_ALL TRUE)
+    target_compile_definitions(test-enter-calc-page PRIVATE ZTBLD_TEST_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
     target_include_directories(test-enter-calc-page PRIVATE
         src src/core src/engine src/adapter src/gui src/gui/pages src/gui/widgets src/gui/dialogs
     )
@@ -69,5 +155,7 @@ if(BUILD_TESTING)
         Qt6::Core Qt6::Widgets Qt6::Gui Qt6::Concurrent Qt6::PrintSupport Qt6::Network
     )
     add_test(NAME enter-calc-page-state COMMAND test-enter-calc-page)
-    set_tests_properties(enter-calc-page-state PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+    add_test(NAME linked-excel-export COMMAND test-enter-calc-page --worksheet-output)
+    set_tests_properties(linked-excel-export PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen" TIMEOUT 90)
+    set_tests_properties(enter-calc-page-state PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen" TIMEOUT 25)
 endif()
