@@ -278,6 +278,11 @@ void OptimizeCalcPage::setupMainArea()
 
     // Param table（设计变量初值取自 m_input，默认即 SB20-M-630-10；
     // 计算模式已在 setupRibbon 中从 QSettings 恢复）
+    // Fresh startup uses the original SB20/630 worksheet's AN3 input.
+    // Seed only this new-session preset, never missing values in loaded schemes.
+    m_params.hasNonstandardAn3 = true;
+    m_params.nonstandardAn3_pct = 0.7;
+    m_params.noLoadCurrentSource = TransformerParams::NoLoadCurrentSource::Automatic;
     m_paramTable = new ParamTableWidget(this);
     m_paramTable->loadParamsForConfig(m_params, m_config, m_input,
                                       m_config.calcMode == StructureConfig::Professional, true);
@@ -392,7 +397,7 @@ bool OptimizeCalcPage::ensureSupportedCoreShape()
     if (reason.isEmpty())
         return true;
     QMessageBox::warning(this, QStringLiteral("当前配置暂不支持"), reason + QStringLiteral(
-        "。\n支持范围：油浸式、低压箔绕、叠铁芯、椭圆形、双绕组、多层圆筒式，50Hz/75℃。"));
+        "。\n支持范围：油浸式、低压箔绕、叠铁芯、椭圆形、双绕组，圆筒式或已支持油道配置的分段式，50Hz/75℃。"));
     return false;
 }
 
@@ -400,19 +405,28 @@ bool OptimizeCalcPage::ensureSupportedCoreShape()
 // 避免其先把旧表格值存回 m_input 覆盖方案值）
 void OptimizeCalcPage::applySchemeInput(const CalcInput &input)
 {
-    if (input.hvCoilFormIdx != 1) {
-        QMessageBox::warning(this, QStringLiteral("方案型式暂不支持"),
-            HvCoilFormNotes::unavailableReason() + QStringLiteral("\n未替换当前输入。"));
+    if (input.hvCoilFormIdx != 1 && input.hvCoilFormIdx != 2) {
+        QMessageBox::warning(this, QStringLiteral("方案型式无效"),
+            QStringLiteral("高压线圈型式无效，未替换当前输入。"));
         return;
     }
     m_input = input;
-    // 可用旧方案明确回显圆筒式；不能用当前“两段”按钮标签包装单段输入。
+    // 仅回显已保存的型式；分段式仍由统一范围检查与引擎禁止计算。
     {
         const QSignalBlocker blocker(m_selectGroups[4]);
         const auto &coilButtons = m_selectGroups[4]->buttons();
-        coilButtons[0]->setActive(true);
-        coilButtons[1]->setActive(false);
+        coilButtons[0]->setActive(input.hvCoilFormIdx == 1);
+        coilButtons[1]->setActive(input.hvCoilFormIdx == 2);
     }
+    // Restore the scheme's shape before reading the ribbon. Unknown persisted
+    // values stay unselected/invalid; they must not silently become ellipse.
+    {
+        const QSignalBlocker blocker(m_selectGroups[2]);
+        const auto &buttons = m_selectGroups[2]->buttons();
+        for (int i = 0; i < buttons.size(); ++i)
+            buttons[i]->setActive(i == int(input.coreShape));
+    }
+    m_config.yokeShape = input.yokeShape;
     updateConfigFromRibbon();
     // 先收集用户在表格中编辑过的输入信息（海拔/环境温度等），
     // 重建表格时保留这些值；再同步额定值（容量/电压）
@@ -435,6 +449,8 @@ void OptimizeCalcPage::applySchemeInput(const CalcInput &input)
     const bool proMode = (m_config.calcMode == StructureConfig::Professional);
     m_paramTable->loadParamsForConfig(m_params, m_config, m_input, proMode, true);
     updateHelpPanel();
+    if (input.hvCoilFormIdx == 2)
+        m_linkStatusLabel->setText(QStringLiteral("分段式整机计算目前仅覆盖高低压五组油道均启用的情况。"));
 }
 
 // 侧边栏方案按钮分发（0=导入参数表 1=AI助手 7=进入计算，均已独立连接，此处忽略；
@@ -676,7 +692,10 @@ void OptimizeCalcPage::updateConfigFromRibbon()
     case 2: m_config.coreShape = StructureConfig::Ellipse; break;
     case 3: m_config.coreShape = StructureConfig::HalfEllipse; break;
     case 4: m_config.coreShape = StructureConfig::EllipseLike; break;
+    default: m_config.coreShape = StructureConfig::UnknownCoreShape; break;
     }
+    m_input.coreShape = m_config.coreShape;
+    m_input.yokeShape = m_config.yokeShape;
 
     idx = m_selectGroups[3]->selectedIndex();
     m_config.windingForm = (idx == 1) ? StructureConfig::DualSplit : StructureConfig::Dual;
@@ -693,6 +712,9 @@ void OptimizeCalcPage::refreshParamTable()
 {
     m_params = m_paramTable->getParams();
     m_paramTable->saveToInput(m_input);   // 刷新前保留已编辑的设计变量
+    // The old table still has the previous ribbon configuration during a rebuild.
+    m_input.coreShape = m_config.coreShape;
+    m_input.yokeShape = m_config.yokeShape;
     const bool wasUpdatesEnabled = updatesEnabled();
     setUpdatesEnabled(false);
     const bool proMode = (m_config.calcMode == StructureConfig::Professional);

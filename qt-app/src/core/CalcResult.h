@@ -1,4 +1,4 @@
-#ifndef CALCRESULT_H
+﻿#ifndef CALCRESULT_H
 #define CALCRESULT_H
 // 电磁计算结果：与 SB20 计算单输出项一一对应
 // 单元格标注（如 O16）为 SB20-M-630-10 计算单中的缓存值位置
@@ -110,7 +110,7 @@ struct WindingResult {
     double lvCopperLoss_W = 0.0;       // AH20 低压电阻损耗
     double hvExtraLossPct = 0.0;       // AA45 高压附加损耗 %
     double hvExtraLoss_W = 0.0;        // AC45 高压附加损耗 W
-    double lvExtraLoss_W = 0.0;        // 输入快照：圆线不计入L10，仍参与低压热负荷
+    double lvExtraLoss_W = 0.0;        // 输入快照：圆线不计入L10；温升是否沿用由低压热附加来源决定
     double strayLossFactor = 0.0;      // J10 杂散系数快照，如0.11，不是百分数11
     double loadLossBeforeStray_W = 0.0; // 杂散修正前合计，保留实际导线分支，未另行取整
     double loadLoss_W = 0.0;           // L10 负载损耗
@@ -132,7 +132,8 @@ struct ImpedanceResult {
     double kx = 0.0;                   // Q32 横向漏磁系数
     double resistanceDrop_pct = 0.0;   // Q34 电阻压降 %
     double reactanceDrop_pct = 0.0;    // P43 电抗压降 %
-    double impedance_pct = 0.0;        // Q35 阻抗电压 %
+    double combinedImpedance_pct = 0.0; // Q35中间合成阻抗
+    double impedance_pct = 0.0;        // R10最终阻抗电压 %
 };
 
 // ---- 温升 ----
@@ -146,6 +147,7 @@ struct ThermalResult {
     double hvWindingRise_K = 0.0;      // Y54 高压绕组温升
     double lvWindingRise_K = 0.0;      // AK52 低压绕组温升
     double hvHeatLoad = 0.0;           // AB48 高压热负荷
+    double lvThermalExtraLoss_W = 0.0; // 温升热负荷附加项，独立于负载损耗附加项
     double lvHeatLoad = 0.0;           // AK48 低压热负荷
     double hvSurface_m2 = 0.0;         // AC47 高压散热面积
     double hvEffectiveHeight_mm = 0.0; // AC47高度因子，AC9=2时为AC30-AA29

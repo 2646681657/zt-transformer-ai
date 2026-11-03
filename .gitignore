@@ -34,3 +34,8 @@ Thumbs.db
 
 # Logs
 debug.log
+
+# Local verification artifacts and Python caches
+build-*/
+__pycache__/
+*.pyc

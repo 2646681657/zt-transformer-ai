@@ -1,4 +1,4 @@
-#ifndef PARAMTABLEWIDGET_H
+﻿#ifndef PARAMTABLEWIDGET_H
 #define PARAMTABLEWIDGET_H
 // 参数编辑表格（展示并编辑变压器设计输入参数，按结构配置动态切换行；
 // 设计变量节（铁芯/绕组/主空道）与 CalcInput 双向同步）
@@ -14,6 +14,7 @@ class QSpinBox;
 class QDoubleSpinBox;
 class QComboBox;
 class QTimer;
+class QLabel;
 struct CalcResult;
 
 class ParamTableWidget : public QTableWidget {
@@ -27,26 +28,30 @@ public:
                              const CalcInput &input, bool proMode = false, bool designConnectionUi = false,
                              bool sheetSelectionUi = false);
     TransformerParams getParams() const;
+    bool setNonstandardAn3(double value);
     // 当前接法及指标来源是否允许计算；Dd/Yd仅限非标，不代表有内置标准列。
     bool hasSupportedConnectionGroup() const;
     bool hasValidSteelGrade() const;
     // 从表格设计变量节读回 CalcInput（未绑定或非法输入的域保持原值）
     void saveToInput(CalcInput &input) const;
+    // Read live preview drivers strictly: invalid text must not fall back to
+    // the last valid saved value. No standard/whole-machine approval is implied.
+    bool collectShapePreviewInput(CalcInput &input, QString &error, bool validateLossInputs = false) const;
     // 计算边界统一校验并提交完整型号；失败时不改变调用方输入。
     bool collectForCalculation(TransformerParams &params, CalcInput &input, QString &error,
                                bool interactive = true);
     // 方案回显与输出元数据必须来自该方案，而不是寻优基准额定值。
     static TransformerParams paramsForInput(const TransformerParams &base, const CalcInput &input);
     QString standardStatus() const { return m_standardStatus; }
-    void setCalculationConfig(const StructureConfig &config) {
-        m_config = config;
-        applyModelLinkage();
-        updateHvCoilHints();
-    }
+    void setCalculationConfig(const StructureConfig &config);
+    StructureConfig calculationConfig() const { return m_config; }
+    // Update the popup's existing selectors without rebuilding editors or losing focus.
+    void setCoreSelection(StructureConfig::CoreShape core, StructureConfig::YokeShape yoke);
 
 signals:
     // 内置叠铁芯损耗标准表的适用状态；阻抗始终保留当前设置。
     void stdValuesUpdated(const QString &summary);
+    void nonstandardAn3StateChanged();
 
 private:
     // 复合产品型号：型号-M-容量/高压额定电压-低压额定电压
@@ -68,6 +73,11 @@ private:
     void scheduleDesignCore();
     void updateDesignCore();
     void showDesignCore(const CalcResult *result, const QString &reason);
+    void addLaminationPreview(int &row);
+    void updateLaminationPreview();
+    QLabel *m_laminationStatus = nullptr;
+    QTableWidget *m_laminationTable = nullptr;
+    bool m_laminationExpanded = false;
     QTimer *m_corePreviewTimer = nullptr;
     int m_designCoreRow = -1;
     bool m_designConnectionUi = false;
@@ -103,8 +113,11 @@ private:
     QString m_lastLinkageKey;
     TransformerParams m_baseParams;
     StructureConfig m_config;
+    bool m_updatingNonstandardAn3 = false;
     bool m_lossStandardsManual = false;
     TransformerParams::StandardMode m_standardMode = TransformerParams::StandardMode::BuiltIn;
+    QComboBox *m_currentSourceCombo = nullptr;
+    int m_currentSourceRow = -1;
     QComboBox *m_standardModeCombo = nullptr;
     int m_standardModeRow = -1;
     QString m_standardStatus;

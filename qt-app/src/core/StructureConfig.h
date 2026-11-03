@@ -22,8 +22,31 @@ struct StructureConfig {
     CoreType coreType = StackedSilicon;
 
     // 铁芯截面形状
-    enum CoreShape { Circle, LongRound, Ellipse, HalfEllipse, EllipseLike };
+    // Values are persisted in scheme JSON; do not reorder or reuse them.
+    enum CoreShape { UnknownCoreShape = -1, Circle = 0, LongRound = 1, Ellipse = 2,
+                     HalfEllipse = 3, EllipseLike = 4 };
     CoreShape coreShape = Ellipse;
+
+    enum YokeShape { UnknownYokeShape = -1, SameAsCore = 0, TYoke = 1 };
+    YokeShape yokeShape = TYoke;
+
+    static QString coreShapeName(CoreShape shape) {
+        switch (shape) {
+        case Circle: return QStringLiteral("圆形");
+        case LongRound: return QStringLiteral("长圆形");
+        case Ellipse: return QStringLiteral("椭圆形");
+        case HalfEllipse: return QStringLiteral("半椭圆形");
+        case EllipseLike: return QStringLiteral("类椭圆形");
+        default: return QStringLiteral("未识别心柱");
+        }
+    }
+    static QString yokeShapeName(YokeShape shape) {
+        switch (shape) {
+        case SameAsCore: return QStringLiteral("同心柱");
+        case TYoke: return QStringLiteral("T形轭");
+        default: return QStringLiteral("未识别铁轭");
+        }
+    }
 
     // 绕组方式
     enum WindingForm { Dual, DualSplit };

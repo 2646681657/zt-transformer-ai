@@ -1,0 +1,46 @@
+[
+  {
+    "sheet": {
+      "name": "计算单",
+      "sheetId": "1",
+      "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id": "rId1"
+    },
+    "formulas": 400,
+    "externalFormulas": 30,
+    "validations": [],
+    "print": "<ns0:pageSetup xmlns:ns0=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\" paperSize=\"9\" orientation=\"portrait\" horizontalDpi=\"600\" verticalDpi=\"600\" />"
+  },
+  {
+    "sheet": {
+      "name": "成本测算",
+      "sheetId": "5",
+      "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id": "rId2"
+    },
+    "formulas": 26,
+    "externalFormulas": 0,
+    "validations": [],
+    "print": "<ns0:pageSetup xmlns:ns0=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\" paperSize=\"9\" orientation=\"portrait\" horizontalDpi=\"600\" />"
+  },
+  {
+    "sheet": {
+      "name": "线圈型式",
+      "sheetId": "3",
+      "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id": "rId3"
+    },
+    "formulas": 471,
+    "externalFormulas": 7,
+    "validations": [],
+    "print": "<ns0:pageSetup xmlns:ns0=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\" paperSize=\"9\" orientation=\"portrait\" horizontalDpi=\"600\" />"
+  },
+  {
+    "sheet": {
+      "name": "Sheet1",
+      "sheetId": "6",
+      "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id": "rId4"
+    },
+    "formulas": 392,
+    "externalFormulas": 0,
+    "validations": [],
+    "print": "<ns0:pageSetup xmlns:ns0=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\" paperSize=\"9\" scale=\"76\" orientation=\"landscape\" />"
+  }
+]

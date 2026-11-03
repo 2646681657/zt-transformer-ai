@@ -46,7 +46,7 @@ private:
     // 帮助面板文案随计算模式切换（正常/专业）
     void updateHelpPanel();
     void saveModePreference() const;
-    // 应用可用方案设计变量，并回显其高压线圈选型；其他结构选型不变
+    // 应用方案设计变量，并恢复其心柱、铁轭及高压线圈选型。
     void applySchemeInput(const CalcInput &input);
     // 侧边栏方案按钮（0=推荐 1=保存我的 2=方案库 3=记忆库 4=上次方案）
     void onSchemeButtonClicked(int index);

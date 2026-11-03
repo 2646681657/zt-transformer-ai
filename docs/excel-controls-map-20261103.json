@@ -1,0 +1,110 @@
+[
+  {
+    "part": "xl/ctrlProps/ctrlProp1.xml",
+    "objectType": "Drop",
+    "dx": "16",
+    "fmlaLink": "线圈型式!$C$2",
+    "fmlaRange": "线圈型式!$B$2:$B$3",
+    "page": "2",
+    "sel": "1",
+    "val": "0"
+  },
+  {
+    "part": "xl/ctrlProps/ctrlProp10.xml",
+    "objectType": "Drop",
+    "dropLines": "2",
+    "dx": "16",
+    "fmlaLink": "线圈型式!$U$10",
+    "fmlaRange": "线圈型式!$T$10:$T$11",
+    "noThreeD": "1",
+    "page": "10",
+    "sel": "1",
+    "val": "0"
+  },
+  {
+    "part": "xl/ctrlProps/ctrlProp2.xml",
+    "objectType": "Drop",
+    "dropLines": "9",
+    "dx": "16",
+    "fmlaLink": "线圈型式!$J$2",
+    "fmlaRange": "线圈型式!$I$2:$I$9",
+    "page": "8",
+    "sel": "1",
+    "val": "0"
+  },
+  {
+    "part": "xl/ctrlProps/ctrlProp3.xml",
+    "objectType": "Drop",
+    "dx": "16",
+    "fmlaLink": "线圈型式!$G$2",
+    "fmlaRange": "线圈型式!$E$2:$E$3",
+    "noThreeD": "1",
+    "page": "2",
+    "sel": "1",
+    "val": "0"
+  },
+  {
+    "part": "xl/ctrlProps/ctrlProp4.xml",
+    "objectType": "Drop",
+    "dropLines": "2",
+    "dx": "16",
+    "fmlaLink": "线圈型式!$G$9",
+    "fmlaRange": "线圈型式!$E$9:$E$10",
+    "noThreeD": "1",
+    "page": "4",
+    "sel": "1",
+    "val": "0"
+  },
+  {
+    "part": "xl/ctrlProps/ctrlProp5.xml",
+    "objectType": "Drop",
+    "dropLines": "2",
+    "dx": "16",
+    "fmlaLink": "线圈型式!$N$2",
+    "fmlaRange": "线圈型式!$M$2:$M$3",
+    "page": "1",
+    "sel": "2",
+    "val": "0"
+  },
+  {
+    "part": "xl/ctrlProps/ctrlProp6.xml",
+    "objectType": "Drop",
+    "dx": "16",
+    "fmlaLink": "线圈型式!$R$10",
+    "fmlaRange": "线圈型式!$Q$10:$Q$13",
+    "page": "4",
+    "sel": "3",
+    "val": "0"
+  },
+  {
+    "part": "xl/ctrlProps/ctrlProp7.xml",
+    "objectType": "Drop",
+    "dx": "16",
+    "fmlaLink": "线圈型式!$U$2",
+    "fmlaRange": "线圈型式!$T$2:$T$3",
+    "page": "2",
+    "sel": "1",
+    "val": "0"
+  },
+  {
+    "part": "xl/ctrlProps/ctrlProp8.xml",
+    "objectType": "Drop",
+    "dx": "16",
+    "fmlaLink": "线圈型式!$N$9",
+    "fmlaRange": "线圈型式!$M$9:$M$11",
+    "page": "8",
+    "sel": "3",
+    "val": "0"
+  },
+  {
+    "part": "xl/ctrlProps/ctrlProp9.xml",
+    "objectType": "Drop",
+    "dx": "16",
+    "fmlaLink": "线圈型式!$X$2",
+    "fmlaRange": "线圈型式!$W$2:$W$8",
+    "noThreeD": "1",
+    "page": "2",
+    "sel": "4",
+    "val": "0"
+  }
+]

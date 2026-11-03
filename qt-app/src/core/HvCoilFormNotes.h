@@ -16,7 +16,7 @@ inline QString name(int index)
 inline QString processNote()
 {
     return QStringLiteral("原计算单AC10批注：分段圆筒式按串联计算；Y9批注：分段时两段算一层。"
-                          "这是工艺口径说明，不代表分段型式已验证支持；不要额外将层数或每层匝数除以2。");
+                          "已对照的分段式仅限高低压五组油道均启用；不要额外将层数或每层匝数除以2。");
 }
 
 inline QString layerNote()
@@ -27,8 +27,7 @@ inline QString layerNote()
 
 inline QString unavailableReason()
 {
-    return QStringLiteral("分段圆筒式（两段串联）及其他高压线圈暂不开放计算："
-                          "尚缺分段参考算例，工艺说明和公式准备不代表已验证支持。");
+    return QStringLiteral("分段式整机计算目前仅支持高低压五组油道两侧均启用；停用油道的计算依据待核对。");
 }
 
 } // namespace HvCoilFormNotes

@@ -15,6 +15,9 @@
 #include "RecommendSchemes.h"
 #include "SchemePickDialog.h"
 #include "SelfLearnDialog.h"
+#include "CandidateComparisonDialog.h"
+#include "SelfLearningDataset.h"
+#include <QFileInfo>
 #include "AiAnalysisDialog.h"
 #include "QuoteCalculator.h"
 #include "CostBasisNotes.h"
@@ -299,8 +302,8 @@ void EnterCalcPage::buildOptimizeRibbon()
     });
     gMem->addButton(memBtn);
 
-    // AI 自学习：设计值 vs 试验实测值对比（需求4.5第一步，修正系数待数据积累）
-    auto *learnBtn = new RibbonButton(QStringLiteral("自学习对比"), ":/icons/ai_assist.svg", gMem);
+    // AI 自学习：保留实测对比，学习样本独立管理；无模型不接管原公式。
+    auto *learnBtn = new RibbonButton(QStringLiteral("自学习管理"), ":/icons/ai_assist.svg", gMem);
     learnBtn->setCheckable(false);
     connect(learnBtn, &QToolButton::clicked, this, [this]() {
         SelfLearnDialog dlg(this);
@@ -508,6 +511,11 @@ void EnterCalcPage::buildSchemeRibbon()
         dlg.exec();
     });
     g4->addButton(aiCompareBtn);
+    auto *dnnCompareBtn=new RibbonButton(QStringLiteral("DNN旁路对比"),":/icons/compare.svg",g4);
+    dnnCompareBtn->setObjectName("openCandidateComparison");dnnCompareBtn->setCheckable(false);
+    dnnCompareBtn->setToolTip(QStringLiteral("仅对当前可见候选生成独立修正值，不改变正式方案或排名。"));
+    connect(dnnCompareBtn,&QToolButton::clicked,this,&EnterCalcPage::onCandidateComparison);
+    g4->addButton(dnnCompareBtn);
     m_schemeRibbon->addSeparator();
 
     // ---- 组5 方案选择：方案库/方案序号 + 方案确认 ----
@@ -539,17 +547,9 @@ void EnterCalcPage::buildSchemeRibbon()
     schemeRow->addWidget(m_schemeIndexSpin);
     selLayout->addLayout(schemeRow);
     g5->addWidget(selWidget);
-    auto *confirmBtn = new RibbonButton(QStringLiteral("方案确认"), ":/icons/confirm.svg", g5);
-    confirmBtn->setCheckable(false);
-    connect(confirmBtn, &QToolButton::clicked, this, &EnterCalcPage::onConfirmScheme);
-    g5->addButton(confirmBtn);
 
     // ---- 组6 方案存储：批量保存/打开方案库（JSON 文件持久化）----
     auto *g6 = m_schemeRibbon->addGroup(QStringLiteral("方案存储"));
-    auto *saveLibBtn = new RibbonButton(QStringLiteral("保存方案库"), ":/icons/save_scheme.svg", g6);
-    saveLibBtn->setCheckable(false);
-    connect(saveLibBtn, &QToolButton::clicked, this, &EnterCalcPage::onSaveSchemes);
-    g6->addButton(saveLibBtn);
     auto *openLibBtn = new RibbonButton(QStringLiteral("打开方案库"), ":/icons/library.svg", g6);
     openLibBtn->setCheckable(false);
     connect(openLibBtn, &QToolButton::clicked, this, &EnterCalcPage::onLoadSchemes);
@@ -654,30 +654,45 @@ void EnterCalcPage::buildPrintRibbon()
                 return;
             }
         }
-        // 打印表数据 → 文本（左/右双栏行合并为键值对）
-        const PrintOutputData po =
-            ElectromagneticEngine::buildPrintOutput(m_calcInput, m_emResult);
-        QString data = QStringLiteral("计算单数据（引擎输出，双栏行已合并）：\n");
-        for (const auto &r : po.rows) {
-            if (r.isSectionHeader) {
-                data += QStringLiteral("【%1】\n").arg(r.leftName);
-                continue;
-            }
-            QString line;
-            if (!r.leftName.isEmpty())
-                line += QStringLiteral("%1 = %2 %3").arg(
-                    r.leftName, r.leftValue, r.leftUnit).trimmed() + QStringLiteral("；");
-            if (!r.rightName.isEmpty())
-                line += QStringLiteral("%1 = %2 %3").arg(
-                    r.rightName, r.rightValue, r.rightUnit).trimmed();
-            if (!line.isEmpty())
-                data += line + QStringLiteral("\n");
-        }
+        // 只发送起草说明需要的关键输入与结果，避免把整张计算单全部送入上下文。
+        const CalcInput &input = m_lastInput;
+        const TransformerParams params = currentResultParams();
+        const auto value = [](double number, int precision) {
+            return QString::number(number, 'f', precision);
+        };
+        QString data = QStringLiteral("当前已计算方案摘要（仅供文字说明）：\n");
+        data += QStringLiteral("产品型号：%1\n").arg(params.productModel);
+        data += QStringLiteral("额定容量：%1 kVA；高压：%2 kV；低压：%3 kV\n")
+                    .arg(value(input.capacity_kVA, 0), value(input.hvRated_kV, 2),
+                         value(input.lvRated_kV, 1));
+        data += QStringLiteral("联结组别：%1；硅钢牌号：%2；铁芯直径：%3 mm；椭圆角：%4°；叠片系数：%5\n")
+                    .arg(params.connectionGroup, input.steelGrade,
+                         value(input.coreDiameter_mm, 1), value(input.ellipseAngle_deg, 1),
+                         value(input.stackFactor, 3));
+        data += QStringLiteral("高压绕组：%1导线，裸线尺寸%2 × %3 mm；低压绕组：%4箔，%5匝，箔尺寸%6 × %7 mm\n")
+                    .arg(input.hvCopperWire ? QStringLiteral("铜") : QStringLiteral("铝"),
+                         value(input.hvBareWidth_mm, 3), value(input.hvBareThick_mm, 3),
+                         input.lvCopperFoil ? QStringLiteral("铜") : QStringLiteral("铝"),
+                         QString::number(input.lvTurns), value(input.lvFoilThick_mm, 3),
+                         value(input.lvFoilWidth_mm, 1));
+        data += QStringLiteral("计算结果：心柱截面%1 cm²；磁密%2 T；硅钢片重%3 kg；空载损耗%4 W；负载损耗%5 W；阻抗电压%6%；\n")
+                    .arg(value(m_emResult.core.coreArea_cm2, 2),
+                         value(m_emResult.core.fluxDensity_core_T, 3),
+                         value(m_emResult.core.coreWeight_kg, 0),
+                         value(m_emResult.core.noLoadLoss_W, 0),
+                         value(m_emResult.winding.loadLoss_W, 0),
+                         value(m_emResult.impedance.impedance_pct, 2));
+        data += QStringLiteral("温升：油面%1 K；高压绕组%2 K；低压绕组%3 K。总重%4 kg；材料合计%5 元。\n")
+                    .arg(value(m_emResult.thermal.oilRise_K, 1),
+                         value(m_emResult.thermal.hvWindingRise_K, 1),
+                         value(m_emResult.thermal.lvWindingRise_K, 1),
+                         value(m_emResult.mass.totalWeight_kg, 0),
+                         value(m_emResult.cost.materialCost, 0));
+        data += QStringLiteral("未提供明确性能限值的数据，不作达标判定。\n");
         AiAnalysisDialog dlg(QStringLiteral("AI 计算书说明草稿"),
-            QStringLiteral("任务：为该变压器计算单起草一段文字说明（计算书用），"
-                           "包括产品概况、主要设计参数选取、性能指标达标情况和结构特点描述。"
-                           "只使用数据中出现的数值，不得编造。"),
-            data, this);
+            QStringLiteral("任务：为该变压器计算单起草约200字的中文说明，简要概述产品、主要设计输入和计算结果。"
+                           "只引用提供的数据，不得编造或自行推算；没有明确限值时不得宣称性能达标。"),
+            data, this, 512, 180);
         dlg.exec();
     });
     g3->addButton(aiDraftBtn);
@@ -895,7 +910,7 @@ std::optional<OptimizationSettings> EnterCalcPage::showLoopParamsDialog()
     auto coverage = std::make_shared<OptimizationSettings>(cur);
     auto *coverageLayout = new QHBoxLayout;
     auto *budgetSpin = new QSpinBox(dlg);
-    budgetSpin->setRange(1000, 1000000);
+    budgetSpin->setRange(1000, 10000000);
     budgetSpin->setSingleStep(10000);
     budgetSpin->setValue(cur.combinationBudget);
     budgetSpin->setGroupSeparatorShown(true);
@@ -1291,7 +1306,7 @@ std::optional<OptimizationSettings> EnterCalcPage::showLoopParamsDialog()
     btnBox->button(QDialogButtonBox::Cancel)->setText(QStringLiteral("取消"));
     connect(btnBox, &QDialogButtonBox::accepted, dlg, [this, dlg, base, gather, budgetSpin, roundSpin, stepSpins, rangeSpins, searchChecks]() {
         if (!budgetSpin->hasAcceptableInput()) {
-            QMessageBox::warning(dlg, QStringLiteral("搜索设置无效"), QStringLiteral("请完整输入1000至1000000的总处理预算。"));
+            QMessageBox::warning(dlg, QStringLiteral("搜索设置无效"), QStringLiteral("请完整输入1000至10000000的总处理预算。"));
             return;
         }
         if (gather().method == OptimizationSettings::MultiRound && !roundSpin->hasAcceptableInput()) {
@@ -1574,8 +1589,31 @@ void EnterCalcPage::setupPrintTab()
     m_printTable = new PrintTableWidget(tab);
     // 初始计算单延迟到 setCalcInput（进入页面同步设计变量时计算），
     // 构造时 m_calcInput 尚未同步，预计算会显示默认方案结果
-    outer->addWidget(m_printTable, 1);
+    m_printTable->hide();
+    m_printLayout = outer;
     m_stack->addWidget(tab);
+}
+
+void EnterCalcPage::updatePrintSheet(const TransformerParams &params, const CalcInput &input,
+                                     const CalcResult &result)
+{
+    m_printTable->loadData(ElectromagneticEngine::buildPrintOutput(input, result));
+    CalcResult detailed = result;
+    if (!result.sheetDetailsSnapshotAvailable || !result.sheetLayoutSnapshotAvailable
+        || result.calculationSheetDetailVersion < ElectromagneticEngine::SheetDetailVersion) {
+        if (!m_engine.calcElectromagnetic(input, detailed, true) || !detailed.valid) {
+            delete m_printSheet;
+            m_printSheet = nullptr;
+            m_statusBar->setText(QStringLiteral("计算单生成失败：") + detailed.error);
+            return;
+        }
+    }
+    delete m_printSheet;
+    m_printSheet = new SchemeCalculationSheet(params, m_config, input, detailed,
+        m_config.calcMode == StructureConfig::Professional, m_stack->widget(2));
+    m_printSheet->setObjectName(QStringLiteral("outputCalculationSheet"));
+    m_printSheet->setOutputMode();
+    m_printLayout->addWidget(m_printSheet, 1);
 }
 
 void EnterCalcPage::setCalcInput(const CalcInput &input)
@@ -1586,6 +1624,9 @@ void EnterCalcPage::setCalcInput(const CalcInput &input)
         m_optimizer->stop();
     }
     m_calcInput = input;
+    m_config = calculationConfigForInput(m_config, input);
+    m_config.coreShape = input.coreShape;
+    m_config.yokeShape = input.yokeShape;
     m_lastInput = CalcInput{};
     m_lastParams = m_params;
     m_emResult = CalcResult{};
@@ -1602,12 +1643,13 @@ void EnterCalcPage::setCalcInput(const CalcInput &input)
         return;   // 构造期间 Tab 未建完（正常流程不会发生）
     }
     m_printTable->setRowCount(0);
+    delete m_printSheet;
+    m_printSheet = nullptr;
     if (!calculationScopeError(m_config, m_params, m_calcInput).isEmpty())
         return;
     CalcResult initResult;
     if (m_engine.calcElectromagnetic(m_calcInput, initResult) && initResult.valid) {
-        m_printTable->loadData(
-            ElectromagneticEngine::buildPrintOutput(m_calcInput, initResult));
+        updatePrintSheet(m_params, m_calcInput, initResult);
     }
 }
 
@@ -1632,6 +1674,7 @@ void EnterCalcPage::runEmCalcInput(const CalcInput &candidate)
         return;
     }
     CalcInput input = candidate;
+    const StructureConfig candidateConfig = calculationConfigForInput(m_config, input);
     const auto reportFailure = [this](const QString &title, const QString &reason) {
         const QString state = m_hasResult && m_emResult.valid
             ? QStringLiteral("本次未更新；仍保留上一次成功方案的结果、指标及打印数据。")
@@ -1642,14 +1685,14 @@ void EnterCalcPage::runEmCalcInput(const CalcInput &candidate)
     // 侧栏方案库也走同一标准匹配/输入校验入口，不能绕过设计页。
     ParamTableWidget inputTable(this);
     inputTable.loadParamsForConfig(ParamTableWidget::paramsForInput(m_params, input),
-        m_config, input, m_config.calcMode == StructureConfig::Professional);
+        candidateConfig, input, candidateConfig.calcMode == StructureConfig::Professional);
     TransformerParams resultParams;
     QString inputError;
     if (!inputTable.collectForCalculation(resultParams, input, inputError)) {
         reportFailure(QStringLiteral("方案输入不可用"), inputError);
         return;
     }
-    const QString scopeError = calculationScopeError(m_config, resultParams, input);
+    const QString scopeError = calculationScopeError(candidateConfig, resultParams, input);
     if (!scopeError.isEmpty()) {
         reportFailure(QStringLiteral("当前配置暂不支持"), scopeError);
         return;
@@ -1667,11 +1710,12 @@ void EnterCalcPage::runEmCalcInput(const CalcInput &candidate)
     m_hasResult = true;
     m_lastParams = resultParams;
     m_calcInput = input;
+    m_config = candidateConfig;
     m_params = resultParams;
 
     // 结果面板 + 打印表 + 方案入库
     m_emResultPanel->loadResult(m_emResult);
-    m_printTable->loadData(ElectromagneticEngine::buildPrintOutput(input, m_emResult));
+    updatePrintSheet(resultParams, input, m_emResult);
     const int schemeIdx = appendScheme(input, m_emResult);
     m_schemeParams.insert(schemeIdx, resultParams);
 
@@ -1935,7 +1979,7 @@ void EnterCalcPage::onOptimizeFinished(bool stopped, const OptimizeCandidate &be
         m_emResult = best.result;
         m_hasResult = true;
         m_emResultPanel->loadResult(m_emResult);
-        m_printTable->loadData(ElectromagneticEngine::buildPrintOutput(best.input, best.result));
+        updatePrintSheet(m_lastParams, best.input, best.result);
     }
     QString text = QStringLiteral("寻优%1：实际计算%2/%3组合，可行%4，计算失败%5，约束剔除%6。")
         .arg(stopped ? QStringLiteral("已停止") : QStringLiteral("完成"))
@@ -2251,6 +2295,21 @@ void EnterCalcPage::onSelfTest()
     m_statusBar->setText(QStringLiteral("对拍自检已执行，详见弹窗报告"));
 }
 
+void EnterCalcPage::onCandidateComparison()
+{
+    if(m_optRunning){QMessageBox::information(this,QStringLiteral("寻优进行中"),QStringLiteral("请先结束或停止本轮寻优，再对已保留方案做DNN旁路对比。"));return;}
+    QVector<OptimizeCandidate> visible;
+    for(int row=0;row<m_schemeTable->rowCount();++row){
+        if(m_schemeTable->isRowHidden(row))continue;
+        bool ok=false;const int id=m_schemeTable->item(row,1)?m_schemeTable->item(row,1)->text().toInt(&ok):-1;
+        if(!ok||!m_schemeData.contains(id)){QMessageBox::warning(this,QStringLiteral("方案快照不完整"),QStringLiteral("可见方案缺少完整原始结果，本次未进行对比。请重新计算或载入方案。"));return;}
+        visible.append(m_schemeData.value(id));
+    }
+    if(visible.isEmpty()){QMessageBox::information(this,QStringLiteral("暂无可见方案"),QStringLiteral("请先计算或寻优，并在方案选择中显示需要比较的方案。"));return;}
+    CandidateComparisonDialog dialog(visible,QFileInfo(SelfLearning::datasetPath()).absolutePath(),this);
+    dialog.exec(); // Read-only snapshot: deliberately no writeback to any formal data.
+}
+
 void EnterCalcPage::onSaveCalcSheet()
 {
     if (!m_hasResult) {
@@ -2285,85 +2344,6 @@ namespace {
 // 表格分页绘制到打印机（表头每页重复，列宽按打印区宽度等比）；
 // 按页面物理尺寸设置打印字号（HighResolution 打印机 DPI 远高于屏幕，
 // 直接用屏幕字号会导致表格在纸面上只占一角）
-void paintTableToPrinter(QPrinter *printer, QTableWidget *table)
-{
-    QPainter painter(printer);
-    const QRectF page = printer->pageRect(QPrinter::DevicePixel);
-    const int rows = table->rowCount();
-    const int cols = table->columnCount();
-
-    // 列宽比例：按表格当前可见列宽
-    QVector<double> ratios(cols, 0.0);
-    double totalRatio = 0.0;
-    for (int c = 0; c < cols; ++c) {
-        ratios[c] = table->isColumnHidden(c) ? 0.0 : table->columnWidth(c);
-        totalRatio += ratios[c];
-    }
-    if (totalRatio <= 0.0) {
-        return;
-    }
-    for (int c = 0; c < cols; ++c) {
-        ratios[c] /= totalRatio;
-    }
-
-    // 打印专用字号：point 为物理单位，与打印机分辨率解耦；
-    // 度量必须以打印机设备为基准（QFontMetricsF 默认按屏幕 DPI 换算，
-    // 在 HighResolution 打印画布上行高会缩成十几个设备像素，整表挤压）
-    const QFont bodyFont(QStringLiteral("Microsoft YaHei"), 9);
-    QFont bFont = bodyFont;
-    bFont.setBold(true);
-    const QFontMetricsF fmBody(bodyFont, printer);
-    const QFontMetricsF fmHead(bFont, printer);
-    const double rowH = fmBody.height() * 1.4;
-    const double headH = fmHead.height() * 1.4;
-
-    auto drawRow = [&](int row, double y, bool header) {
-        double x = page.left();
-        for (int c = 0; c < cols; ++c) {
-            const double w = ratios[c] * page.width();
-            if (w <= 0.0) {
-                continue;
-            }
-            QString text;
-            if (header) {
-                text = table->horizontalHeaderItem(c)
-                           ? table->horizontalHeaderItem(c)->text() : QString();
-                text.replace(QLatin1Char('\n'), QLatin1Char(' '));
-            } else {
-                const QTableWidgetItem *it = table->item(row, c);
-                text = it ? it->text() : QString();
-            }
-            painter.setFont(header ? bFont : bodyFont);
-            painter.drawText(QRectF(x + 3, y, w - 6, header ? headH : rowH),
-                             Qt::AlignVCenter | Qt::AlignLeft,
-                             text);
-            painter.drawLine(QPointF(x, y + (header ? headH : rowH)),
-                             QPointF(x + w, y + (header ? headH : rowH)));
-            painter.drawLine(QPointF(x, y), QPointF(x, y + (header ? headH : rowH)));
-            x += w;
-        }
-        painter.drawLine(QPointF(page.right(), y),
-                         QPointF(page.right(), y + (header ? headH : rowH)));
-    };
-
-    double y = page.top();
-    drawRow(-1, y, true);
-    y += headH;
-    for (int r = 0; r < rows; ++r) {
-        if (y + rowH > page.bottom()) {
-            printer->newPage();
-            y = page.top();
-            drawRow(-1, y, true);
-            y += headH;
-        }
-        if (!table->isRowHidden(r)) {
-            drawRow(r, y, false);
-            y += rowH;
-        }
-    }
-    painter.end();
-}
-
 } // namespace
 
 // ---- 方案选择 Tab ----
@@ -2474,7 +2454,13 @@ void EnterCalcPage::onSchemeSelected(int row)
 
     // 方案参数弹窗：可修改该方案设计变量并重算（仅改这一个方案，
     // 寻优基准 m_calcInput/参数设置页不受影响）；确认后返回本页并点亮行内按钮
-    const OptimizeCandidate original = it.value();
+    OptimizeCandidate original = it.value();
+    const bool needsBarDefaults = original.input.lvConnectionBarThicknessText.trimmed().isEmpty()
+        && original.input.lvConnectionBarWidthText.trimmed().isEmpty();
+    if (needsBarDefaults) {
+        original.input.lvConnectionBarThicknessText = QStringLiteral("6");
+        original.input.lvConnectionBarWidthText = QStringLiteral("50");
+    }
     QDialog dlg(this);
     dlg.setWindowTitle(QStringLiteral("方案计算单 - 方案 %1").arg(schemeIdx));
     dlg.setModal(true);
@@ -2499,11 +2485,11 @@ void EnterCalcPage::onSchemeSelected(int row)
     TransformerParams pendingParams = originalParams;
 
     // 结果摘要（计算/确认后刷新）
-    const auto summaryText = [](const CalcResult &r) {
+    const auto summaryText = [](const CalcResult &r, const TransformerParams &params) {
         if (!r.valid) {
             return QStringLiteral("尚未计算，修改参数后自动更新");
         }
-        return QStringLiteral(
+        QString text = QStringLiteral(
                    "本方案材料合计 %1 元 | 空载损耗 %2 W | 负载损耗 %3 W | 阻抗电压 %4 % "
                    "| 油顶层温升 %5 K")
             .arg(QString::number(r.cost.materialCost, 'f', 0),
@@ -2511,8 +2497,15 @@ void EnterCalcPage::onSchemeSelected(int row)
                  QString::number(r.winding.loadLoss_W, 'f', 1),
                  QString::number(r.impedance.impedance_pct, 'f', 2),
                  QString::number(r.thermal.oilTopRise_K, 'f', 1));
+        const auto checks = checkSchemeConstraints(params, r);
+        text += checks.passed ? QStringLiteral("\n已启用指标通过")
+                              : QStringLiteral("\n注意：") + checks.violations.join(QStringLiteral("；"));
+        if (!checks.skippedChecks.isEmpty())
+            text += QStringLiteral("；未校核：") + checks.skippedChecks.join(QStringLiteral("、"));
+        return text;
     };
-    auto *summary = new QLabel(summaryText(pendingResult), &dlg);
+    auto *summary = new QLabel(summaryText(pendingResult, originalParams), &dlg);
+    summary->setObjectName(QStringLiteral("schemeCalculationSummary"));
     summary->setWordWrap(true);
     summary->setStyleSheet("color: #607368; font-size: 12px;");
     layout->addWidget(summary);
@@ -2529,12 +2522,15 @@ void EnterCalcPage::onSchemeSelected(int row)
         CalcInput in = working;
         TransformerParams params;
         QString inputError;
-        const bool collected = sheet->inputsReady(inputError)
+        const bool collected = sheet->captureCoilForm(in, inputError)
+            && sheet->inputsReady(inputError)
             && table->collectForCalculation(params, in, inputError, interactive);
         sheet->refreshInputValues(); // 完整型号提交时的屏蔽信号联动也要回显，失败时同样同步。
         if (!collected) {
             sheet->showCalculationError(inputError);
-            summary->setText(QStringLiteral("当前参数未完成有效计算：") + inputError);
+            summary->setText(sheet->partialPreviewStatus().isEmpty()
+                ? QStringLiteral("当前参数未完成有效计算：") + inputError
+                : QStringLiteral("本次仅更新部分联动；整机校核待完成，未确认或保存方案。"));
             if (interactive) QMessageBox::warning(&dlg, QStringLiteral("方案输入不可用"), inputError);
             return false;
         }
@@ -2549,12 +2545,19 @@ void EnterCalcPage::onSchemeSelected(int row)
         pendingResult = res;
         pendingParams = params;
         sheet->refreshResult(pendingResult);
-        summary->setText(summaryText(pendingResult));
+        summary->setText(summaryText(pendingResult, pendingParams));
         return true;
     };
 
     auto *btnRow = new QHBoxLayout;
-    auto *okBtn = new QPushButton(QStringLiteral("确认"), &dlg);
+    auto *okBtn = new QPushButton(QStringLiteral("确认方案"), &dlg);
+    okBtn->setObjectName(QStringLiteral("confirmSchemeButton"));
+    auto *saveBtn = new QPushButton(QStringLiteral("保存方案库"), &dlg);
+    saveBtn->setObjectName(QStringLiteral("saveSchemeLibraryButton"));
+    saveBtn->setAutoDefault(false);
+    auto *excelBtn = new QPushButton(QStringLiteral("输出Excel"), &dlg);
+    excelBtn->setObjectName(QStringLiteral("exportLinkedExcelButton"));
+    excelBtn->setAutoDefault(false);
     auto *cancelBtn = new QPushButton(QStringLiteral("取消"), &dlg);
     okBtn->setAutoDefault(false);
     cancelBtn->setAutoDefault(false); // 在型号或单元格内按回车不意外提交方案。
@@ -2570,6 +2573,8 @@ void EnterCalcPage::onSchemeSelected(int row)
         " border-radius: 4px; }"
         "QPushButton:hover { background: rgba(255,255,255,0.15); }");
     btnRow->addStretch(1);
+    btnRow->addWidget(excelBtn);
+    btnRow->addWidget(saveBtn);
     btnRow->addWidget(okBtn);
     btnRow->addWidget(cancelBtn);
     layout->addLayout(btnRow);
@@ -2593,25 +2598,40 @@ void EnterCalcPage::onSchemeSelected(int row)
         m_schemeTable->updateResult(row, updated.scheme);
         m_schemeTable->markRow(row);
         m_schemeTable->selectRow(row);
-        m_statusBar->setText(
-            QStringLiteral("已选择方案 %1（本方案材料合计 %2 元），点击\"方案确认\"进入输出打印")
-                .arg(schemeIdx)
-                .arg(QString::number(pendingResult.cost.materialCost, 'f', 0)));
         dlg.accept();
     });
 
+    connect(excelBtn, &QPushButton::clicked, &dlg, [&]() {
+        if(!recalc(true))return;
+        const QString path=QFileDialog::getSaveFileName(&dlg,QStringLiteral("输出联动计算单Excel"),
+            QStringLiteral("方案%1_计算单.xlsx").arg(schemeIdx),QStringLiteral("Excel工作簿 (*.xlsx)"));
+        if(path.isEmpty())return;
+        QString error;
+        if(!sheet->exportExcel(path,working,pendingParams,pendingResult,error))
+            QMessageBox::warning(&dlg,QStringLiteral("Excel导出失败"),error);
+        else QMessageBox::information(&dlg,QStringLiteral("Excel导出完成"),
+            QStringLiteral("已导出原计算单格式、下拉控件与联动公式。请用桌面Excel打开并自动重算，程序结果见“导出说明”表供复核。\n%1").arg(path));
+    });
+    connect(saveBtn, &QPushButton::clicked, &dlg, [&]() {
+        if (recalc(true)) saveSchemes(&working, schemeIdx, &dlg);
+    });
     connect(cancelBtn, &QPushButton::clicked, &dlg, &QDialog::reject);
     connect(&dlg, &QDialog::finished, &autoCalcTimer, &QTimer::stop);
-    if (!pendingResult.valid || !pendingResult.linkageSnapshotAvailable || !pendingResult.sheetLayoutSnapshotAvailable
+    if (needsBarDefaults || !pendingResult.valid || !pendingResult.linkageSnapshotAvailable || !pendingResult.sheetLayoutSnapshotAvailable
         || !pendingResult.sheetDetailsSnapshotAvailable
         || pendingResult.calculationSheetDetailVersion < ElectromagneticEngine::SheetDetailVersion) autoCalcTimer.start(0);
 
     // 默认占满屏幕工作区，保留标题栏、关闭按钮和还原能力。
     dlg.showMaximized();
-    dlg.exec();
+    if (dlg.exec() == QDialog::Accepted) confirmSchemeAt(row);
 }
 
 void EnterCalcPage::onSaveSchemes()
+{
+    saveSchemes(nullptr, -1, this);
+}
+
+void EnterCalcPage::saveSchemes(const CalcInput *editedInput, int editedIndex, QWidget *dialogParent)
 {
     if (m_optRunning) {
         QMessageBox::information(this, QStringLiteral("寻优进行中"),
@@ -2629,13 +2649,13 @@ void EnterCalcPage::onSaveSchemes()
     QVector<CalcInput> inputs;
     inputs.reserve(idxs.size());
     for (int idx : idxs) {
-        inputs.append(m_schemeData.value(idx).input);
+        inputs.append(editedInput && idx == editedIndex ? *editedInput : m_schemeData.value(idx).input);
     }
 
     const QString defaultName = QStringLiteral("schemes_%1.json")
         .arg(QDateTime::currentDateTime().toString(QStringLiteral("yyyyMMdd_HHmm")));
     const QString path = QFileDialog::getSaveFileName(
-        this, QStringLiteral("保存方案库"), defaultName,
+        dialogParent, QStringLiteral("保存方案库"), defaultName,
         QStringLiteral("方案库文件 (*.json)"));
     if (path.isEmpty()) {
         return;
@@ -2680,12 +2700,40 @@ void EnterCalcPage::onLoadSchemes()
                 QStringLiteral("文件中有旧方案或缺少完整指标来源的方案。当前方案表未替换；请先在设计输入页载入并核对来源，再保存新版方案。"));
             return;
         }
-        const QString reason = calculationScopeError(m_config, ParamTableWidget::paramsForInput(m_params, in), in);
+        const StructureConfig candidateConfig = calculationConfigForInput(m_config, in);
+        const QString reason = calculationScopeError(candidateConfig, ParamTableWidget::paramsForInput(m_params, in), in);
         if (!reason.isEmpty()) {
             QMessageBox::warning(this, QStringLiteral("方案库包含不支持的配置"),
                 reason + QStringLiteral("。本次未替换当前方案表，请先在设计输入页调整方案。"));
             return;
         }
+    }
+    // 先完整校验并重算全部方案，任何失败都保留当前方案表和已确认结果。
+    struct RestoredScheme { CalcInput input; TransformerParams params; CalcResult result; };
+    QVector<RestoredScheme> restored;
+    restored.reserve(inputs.size());
+    for (int i = 0; i < inputs.size(); ++i) {
+        const CalcInput &in = inputs.at(i);
+        CalcInput checkedInput = in;
+        ParamTableWidget inputTable(this);
+        const StructureConfig candidateConfig = calculationConfigForInput(m_config, in);
+        inputTable.loadParamsForConfig(ParamTableWidget::paramsForInput(m_params, in),
+            candidateConfig, in, candidateConfig.calcMode == StructureConfig::Professional);
+        TransformerParams checkedParams;
+        QString error;
+        if (!inputTable.collectForCalculation(checkedParams, checkedInput, error)) {
+            QMessageBox::warning(this, QStringLiteral("打开方案库"),
+                QStringLiteral("第 %1 个方案校验失败：%2。当前方案表未替换。")
+                    .arg(i + 1).arg(error));
+            return;
+        }
+        CalcResult result;
+        if (!m_engine.calcElectromagnetic(checkedInput, result) || !result.valid) {
+            QMessageBox::warning(this, QStringLiteral("打开方案库"),
+                QStringLiteral("第 %1 个方案计算失败，当前方案表未替换。") .arg(i + 1));
+            return;
+        }
+        restored.append({checkedInput, checkedParams, result});
     }
     if (!m_schemeData.isEmpty()
             && QMessageBox::question(
@@ -2696,31 +2744,18 @@ void EnterCalcPage::onLoadSchemes()
         return;
     }
 
-    // 清空当前方案，逐个重算恢复（引擎确定性，结果与保存时一致）
     m_schemeTable->clearResults();
     m_schemeData.clear();
     m_schemeParams.clear();
     m_confirmedSchemeIdx = -1;
-    int loaded = 0;
-    for (const CalcInput &in : inputs) {
-        CalcInput checkedInput = in;
-        ParamTableWidget inputTable(this);
-        inputTable.loadParamsForConfig(ParamTableWidget::paramsForInput(m_params, in),
-            m_config, in, m_config.calcMode == StructureConfig::Professional);
-        TransformerParams checkedParams;
-        QString error;
-        if (!inputTable.collectForCalculation(checkedParams, checkedInput, error))
-            continue;
-        CalcResult r;
-        if (m_engine.calcElectromagnetic(checkedInput, r) && r.valid) {
-            const int schemeIdx = appendScheme(checkedInput, r);
-            m_schemeParams.insert(schemeIdx, checkedParams);
-            ++loaded;
-        }
+    for (const RestoredScheme &scheme : restored) {
+        const int schemeIdx = appendScheme(scheme.input, scheme.result);
+        m_schemeParams.insert(schemeIdx, scheme.params);
     }
-    m_statusBar->setText(QStringLiteral("方案库已加载：%1（%2/%3 个方案重算成功）")
-                             .arg(QDir::toNativeSeparators(path))
-                             .arg(loaded).arg(inputs.size()));
+    // 自动确认首项，同步结果、打印和报价，避免保留旧方案的数据。
+    confirmSchemeAt(0);
+    m_statusBar->setText(QStringLiteral("方案库已加载：%1（%2 个方案；已确认首个方案）")
+                             .arg(QDir::toNativeSeparators(path)).arg(restored.size()));
 }
 
 TransformerParams EnterCalcPage::currentResultParams() const
@@ -2749,7 +2784,7 @@ void EnterCalcPage::confirmSchemeAt(int row)
         m_emResult = it->result;
         m_hasResult = true;
         m_emResultPanel->loadResult(m_emResult);
-        m_printTable->loadData(ElectromagneticEngine::buildPrintOutput(it->input, it->result));
+        updatePrintSheet(currentResultParams(), it->input, it->result);
         // 通知主界面：已确认方案数据同步到产品报价页
         emit schemeConfirmed(currentResultParams(), m_lastInput, m_emResult);
     }
@@ -2937,7 +2972,7 @@ void EnterCalcPage::onCompareLibrary()
     if (m_confirmedSchemeIdx <= 0 || itConf == m_schemeData.constEnd()) {
         QMessageBox::information(this, QStringLiteral("方案库比较"),
                                  QStringLiteral("尚无已确认方案，请先在方案表中点击行内\"选择\"按钮"
-                                                 "或选中方案后点\"方案确认\""));
+                                                 "或打开方案计算单后点\"确认方案\""));
         return;
     }
     const int cur = m_schemeTable->currentRow();
@@ -3082,6 +3117,11 @@ void EnterCalcPage::onPrintSetup()
 
 void EnterCalcPage::onQuickPrint()
 {
+    if (!m_printSheet) {
+        QMessageBox::information(this, QStringLiteral("计算单尚未生成"),
+            QStringLiteral("请先完成计算并确认方案，再预览或打印计算单。"));
+        return;
+    }
     QPrinter printer(QPrinter::HighResolution);
     if (!m_defaultPrinterName.isEmpty()) {
         printer.setPrinterName(m_defaultPrinterName);
@@ -3092,13 +3132,18 @@ void EnterCalcPage::onQuickPrint()
                              QStringLiteral("未找到可用打印机，请检查打印机连接"));
         return;
     }
-    paintTableToPrinter(&printer, m_printTable);
+    if (m_printSheet) m_printSheet->printTo(&printer);
     m_statusBar->setText(QStringLiteral("快速打印已发送至打印机: %1")
                              .arg(printer.printerName()));
 }
 
 void EnterCalcPage::onPrint()
 {
+    if (!m_printSheet) {
+        QMessageBox::information(this, QStringLiteral("计算单尚未生成"),
+            QStringLiteral("请先完成计算并确认方案，再预览或打印计算单。"));
+        return;
+    }
     QPrinter printer(QPrinter::HighResolution);
     if (!m_defaultPrinterName.isEmpty()) {
         printer.setPrinterName(m_defaultPrinterName);
@@ -3109,13 +3154,18 @@ void EnterCalcPage::onPrint()
     if (dlg.exec() != QDialog::Accepted) {
         return;
     }
-    paintTableToPrinter(&printer, m_printTable);
+    if (m_printSheet) m_printSheet->printTo(&printer);
     m_statusBar->setText(QStringLiteral("打印已发送至打印机: %1")
                              .arg(printer.printerName()));
 }
 
 void EnterCalcPage::onPrintPreview()
 {
+    if (!m_printSheet) {
+        QMessageBox::information(this, QStringLiteral("计算单尚未生成"),
+            QStringLiteral("请先完成计算并确认方案，再预览或打印计算单。"));
+        return;
+    }
     QPrinter printer(QPrinter::HighResolution);
     if (!m_defaultPrinterName.isEmpty()) {
         printer.setPrinterName(m_defaultPrinterName);
@@ -3125,7 +3175,7 @@ void EnterCalcPage::onPrintPreview()
     preview.setWindowTitle(QStringLiteral("打印预览 - 计算单"));
     preview.resize(900, 700);
     connect(&preview, &QPrintPreviewDialog::paintRequested, this,
-            [this](QPrinter *p) { paintTableToPrinter(p, m_printTable); });
+            [this](QPrinter *p) { if (m_printSheet) m_printSheet->printTo(p); });
     preview.exec();
     m_statusBar->setText(QStringLiteral("打印预览已关闭"));
 }

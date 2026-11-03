@@ -8,12 +8,23 @@
 #include <QStringList>
 #include <cmath>
 
+inline StructureConfig calculationConfigForInput(const StructureConfig &base, const CalcInput &input)
+{
+    StructureConfig config = base;
+    if (input.hvCoilFormIdx == 1) config.hvCoilStructure = StructureConfig::MultiLayerCylinder;
+    else if (input.hvCoilFormIdx == 2) config.hvCoilStructure = StructureConfig::TwoSegCylinder;
+    return config;
+}
+
 // 界面入口共享的支持范围检查；不更改引擎公式或推测新算法。
 inline QString calculationScopeError(const StructureConfig &config,
                                      const TransformerParams &params,
                                      const CalcInput &input)
 {
     QStringList reasons;
+    const QString coreError = input.coreSelectionError();
+    if (!coreError.isEmpty())
+        reasons << coreError;
     if (!input.lvStarConnected && params.standardMode != TransformerParams::StandardMode::Custom)
         reasons << QStringLiteral("低压d接的Dd/Yd仅限非标手工指标模式，无对应内置损耗标准列");
     const QString ductError = input.oilDuctInputError();
@@ -30,10 +41,15 @@ inline QString calculationScopeError(const StructureConfig &config,
         reasons << QStringLiteral("卷铁芯、非晶结构尚未接入对应算法");
     if (config.coreShape != StructureConfig::Ellipse)
         reasons << QStringLiteral("铁芯截面仅支持椭圆形");
+    if (config.yokeShape != StructureConfig::TYoke)
+        reasons << QStringLiteral("铁轭仅支持T形轭");
     if (config.windingForm != StructureConfig::Dual)
         reasons << QStringLiteral("双分裂绕组尚未接入对应算法");
-    if (config.hvCoilStructure != StructureConfig::MultiLayerCylinder || input.hvCoilFormIdx != 1)
-        reasons << HvCoilFormNotes::unavailableReason();
+    const bool coilMatches = (config.hvCoilStructure == StructureConfig::MultiLayerCylinder && input.hvCoilFormIdx == 1)
+        || (config.hvCoilStructure == StructureConfig::TwoSegCylinder && input.hvCoilFormIdx == 2);
+    if (!coilMatches) reasons << QStringLiteral("高压线圈型式与方案配置不一致或无效。");
+    const QString segmentError = input.segmentedCoilScopeError();
+    if (!segmentError.isEmpty()) reasons << segmentError;
     if (params.frequency_Hz != 50)
         reasons << QStringLiteral("当前公式固定按50Hz计算，不支持其他频率");
     if (!std::isfinite(params.calcRefTemp_C) || std::abs(params.calcRefTemp_C - 75.0) > 1e-9)

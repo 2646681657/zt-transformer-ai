@@ -1,4 +1,4 @@
-#ifndef TRANSFORMERPARAMS_H
+﻿#ifndef TRANSFORMERPARAMS_H
 #define TRANSFORMERPARAMS_H
 // 变压器输入参数结构体（容量/电压/损耗/温升等设计输入）
 
@@ -7,6 +7,15 @@
 struct TransformerParams {
     enum class StandardMode { BuiltIn, Custom, Unconfirmed };
     StandardMode standardMode = StandardMode::BuiltIn;
+    enum class NoLoadCurrentSource { Legacy, Automatic, Manual };
+    NoLoadCurrentSource noLoadCurrentSource = NoLoadCurrentSource::Legacy;
+    bool hasManualNoLoadCurrent() const {
+        if(noLoadCurrentSource==NoLoadCurrentSource::Manual)return true;
+        if(noLoadCurrentSource==NoLoadCurrentSource::Automatic)return false;
+        // 旧文件只有最终手工标准时保留，不把O9误作AN3再减0.34。
+        return (standardMode==StandardMode::Custom&&!hasNonstandardAn3)
+            ||(standardMode==StandardMode::BuiltIn&&lossStandardsManual);
+    }
     // 输入信息（默认值对齐 SB20-M-630-10 计算单）
     double capacity_kVA = 630.0;
     double hvRatedVoltage_kV = 10.0;
@@ -32,6 +41,10 @@ struct TransformerParams {
     double impedanceVoltageMaxDev_pct = 10.0;
     double impedanceVoltageMinDev_pct = -10.0;
     double noLoadCurrentStd_pct = 0.6;
+    bool hasNonstandardAn3 = false;
+    double nonstandardAn3_pct = 0.0;
+    bool hasSavedCustomNoLoadCurrent = false;
+    double savedCustomNoLoadCurrent_pct = 0.0;
     double noLoadCurrentMaxDev_pct = 30.0;
     double oilTopTempRise_K = 60.0;
     double hvCoilTempRise_K = 65.0;

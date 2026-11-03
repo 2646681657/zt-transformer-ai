@@ -72,6 +72,20 @@ inline QVector<double> capacities()
     return caps;
 }
 
+// 原计算单外链 Sheet1!A41:F60；仅精确匹配，不对缺失容量套用相邻值。
+inline bool originalNoLoadCurrent(double capacity, double &out)
+{
+    static const double rows[][2] = {{30,2.1},{50,2.0},{63,1.8},{80,1.8},{100,1.6},
+        {125,1.5},{160,1.4},{200,1.3},{250,1.2},{315,1.1},{400,1.0},
+        {500,1.0},{630,0.9},{800,0.8},{1000,0.7},{1250,0.6},
+        {1600,0.5},{2000,0.5},{2500,0.4},{3150,0.4}};
+    for (const auto &row : rows) if (row[0] == capacity) {
+        out = (qRound64((row[1] - 0.34) * 100.0)) / 100.0;
+        return true;
+    }
+    return false;
+}
+
 // 按系列+容量查标准值；非标准容量返回 nullptr
 inline const StdEntry *lookup(const QString &series, double capacity_kVA)
 {

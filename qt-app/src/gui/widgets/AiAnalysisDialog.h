@@ -18,7 +18,8 @@ public:
     // title：窗口标题；taskDesc：分析任务描述（写入 system 提示词）；
     // dataText：引擎输出的汇总数据（键值对文本）
     explicit AiAnalysisDialog(const QString &title, const QString &taskDesc,
-                              const QString &dataText, QWidget *parent = nullptr);
+                              const QString &dataText, QWidget *parent = nullptr,
+                              int maxTokens = 1024, int requestTimeoutSec = 0);
 
 private slots:
     void onSubmit();
@@ -28,6 +29,8 @@ private slots:
 private:
     QString m_taskDesc;
     QString m_dataText;
+    int m_maxTokens = 1024;
+    int m_requestTimeoutSec = 0;
     QTextEdit *m_outputEdit = nullptr;
     QLabel *m_statusLabel = nullptr;
     QPushButton *m_submitBtn = nullptr;

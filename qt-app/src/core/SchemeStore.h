@@ -44,6 +44,8 @@ inline QJsonObject toJson(const CalcInput &in)
     o.insert(QStringLiteral("hvDeltaConnected"), in.hvDeltaConnected);
     o.insert(QStringLiteral("lvStarConnected"), in.lvStarConnected);
     // 铁芯
+    o.insert(QStringLiteral("coreShape"), int(in.coreShape));
+    o.insert(QStringLiteral("yokeShape"), int(in.yokeShape));
     o.insert(QStringLiteral("coreDiameter_mm"), in.coreDiameter_mm);
     o.insert(QStringLiteral("coreStraight_mm"), in.coreStraight_mm);
     o.insert(QStringLiteral("ellipseAngle_deg"), in.ellipseAngle_deg);
@@ -63,7 +65,18 @@ inline QJsonObject toJson(const CalcInput &in)
     materialPrices.insert(QStringLiteral("tank"), prices.tank);
     o.insert(QStringLiteral("materialPrices"), materialPrices);
     o.insert(QStringLiteral("seamCount"), in.seamCount);
+    QJsonArray widthOffsets;
+    for(double value:in.coreWidthOffsets_mm)widthOffsets.append(value);
+    o.insert(QStringLiteral("coreWidthOffsets_mm"),widthOffsets);
+    QJsonArray coreSheetAdjust;
+    for (double value : in.coreSheetCountAdjust) coreSheetAdjust.append(value);
+    o.insert(QStringLiteral("coreSheetCountAdjust"), coreSheetAdjust);
     o.insert(QStringLiteral("coreLossCraftCoef"), in.coreLossCraftCoef);
+    o.insert("thermalFormulaMode",in.thermalFormulaMode);o.insert("lvThermalExtraMode",in.lvThermalExtraMode);
+    o.insert("designAreaMode",in.designAreaMode);
+    o.insert("unitIronLossMode",in.unitIronLossMode);
+    o.insert("manualCoreLossPerKg_W",in.manualCoreLossPerKg_W);
+    o.insert("manualYokeLossPerKg_W",in.manualYokeLossPerKg_W);
     o.insert(QStringLiteral("legacyUnitLossRecordText"), in.legacyUnitLossRecordText);
     o.insert(QStringLiteral("legacyCraftCoefRecordText"), in.legacyCraftCoefRecordText);
     o.insert(QStringLiteral("yokeLossCraftCoef"), in.yokeLossCraftCoef);
@@ -131,7 +144,22 @@ inline QJsonObject toJson(const CalcInput &in)
     o.insert(QStringLiteral("waveDepth_mm"), in.waveDepth_mm);
     o.insert(QStringLiteral("waveHeight_mm"), in.waveHeight_mm);
     o.insert(QStringLiteral("wavePitch_mm"), in.wavePitch_mm);
+    o.insert("tankRimHighCapacity_mm",in.tankRimHighCapacity_mm);
+    o.insert("tankWallThicknessOverride_mm",in.tankWallThicknessOverride_mm);
+    o.insert("tankBottomThicknessAdjust_mm",in.tankBottomThicknessAdjust_mm);
+    o.insert("conservatorWeight_kg",in.conservatorWeight_kg);
+    o.insert("waveLongCountAdjust",in.waveLongCountAdjust);
     o.insert(QStringLiteral("phaseGapBase_mm"), in.phaseGapBase_mm);
+    o.insert(QStringLiteral("centerDistanceAllowance_mm"), in.centerDistanceAllowance_mm);
+    o.insert(QStringLiteral("hvLayerInsulCalcFactor"), in.hvLayerInsulCalcFactor);
+    o.insert(QStringLiteral("hvMaxTurnsAdjust"), in.hvMaxTurnsAdjust);
+    o.insert(QStringLiteral("activePartHvWeightMode"),in.activePartHvWeightMode);
+    o.insert("hvAxialAllowance_mm",in.hvAxialAllowance_mm);
+    o.insert("hvDuctLayerRule",in.hvDuctLayerRule);
+    o.insert("impedanceOutputMode",in.impedanceOutputMode);
+    o.insert("impedanceCalibrationFactor",in.impedanceCalibrationFactor);
+    if (in.oilTopCorrection_K != 6.0)
+        o.insert(QStringLiteral("oilTopCorrection_K"), in.oilTopCorrection_K);
     o.insert(QStringLiteral("refFluxDens_T"), in.refFluxDens_T);
     if (in.hasPerformanceCriteria) {
         const auto &p = in.performanceCriteria;
@@ -143,6 +171,9 @@ inline QJsonObject toJson(const CalcInput &in)
         criteria.insert(QStringLiteral("productModel"), p.productModel);
         criteria.insert(QStringLiteral("lossStandardsKey"), p.lossStandardsKey);
         criteria.insert(QStringLiteral("lossStandardsManual"), p.lossStandardsManual);
+        criteria.insert(QStringLiteral("noLoadCurrentSource"),p.hasManualNoLoadCurrent()?QStringLiteral("manual"):QStringLiteral("automatic"));
+        if (p.hasNonstandardAn3) criteria.insert(QStringLiteral("nonstandardAn3_pct"), p.nonstandardAn3_pct);
+        if (p.hasSavedCustomNoLoadCurrent) criteria.insert(QStringLiteral("savedCustomNoLoadCurrent_pct"), p.savedCustomNoLoadCurrent_pct);
         int count;
         const auto *fields = PerformanceCriteria::fields(count);
         for (int i = 0; i < count; ++i)
@@ -179,12 +210,37 @@ inline CalcInput fromJson(const QJsonObject &o)
         && PerformanceCriteria::validModel(criteria.value(QStringLiteral("productModel")).toString())
         && criteria.value(QStringLiteral("lossStandardsKey")).isString()
         && criteria.value(QStringLiteral("lossStandardsManual")).isBool();
+    const auto an3 = criteria.value(QStringLiteral("nonstandardAn3_pct"));
+    const auto customCurrent = criteria.value(QStringLiteral("savedCustomNoLoadCurrent_pct"));
+    if (!an3.isUndefined()) {
+        criteriaValid = criteriaValid && an3.isDouble() && std::isfinite(an3.toDouble()) && an3.toDouble() > 0.34;
+        if (an3.isDouble()) { in.performanceCriteria.hasNonstandardAn3 = true; in.performanceCriteria.nonstandardAn3_pct = an3.toDouble(); }
+    }
+    if (!customCurrent.isUndefined()) {
+        criteriaValid = criteriaValid && customCurrent.isDouble() && std::isfinite(customCurrent.toDouble()) && customCurrent.toDouble() >= 0.0;
+        if (customCurrent.isDouble()) { in.performanceCriteria.hasSavedCustomNoLoadCurrent = true; in.performanceCriteria.savedCustomNoLoadCurrent_pct = customCurrent.toDouble(); }
+    }
     int fieldCount;
     const auto *fields = PerformanceCriteria::fields(fieldCount);
     for (int i = 0; i < fieldCount; ++i) {
         const auto value = criteria.value(QLatin1String(fields[i].key));
         criteriaValid = criteriaValid && value.isDouble() && std::isfinite(value.toDouble());
         if (value.isDouble()) in.performanceCriteria.*(fields[i].member) = value.toDouble();
+    }
+    in.performanceCriteria.standardMode=mode==QLatin1String("builtin")?TransformerParams::StandardMode::BuiltIn:mode==QLatin1String("custom")?TransformerParams::StandardMode::Custom:TransformerParams::StandardMode::Unconfirmed;
+    in.performanceCriteria.lossStandardsManual=criteria.value("lossStandardsManual").toBool();
+    const auto currentSource=criteria.value("noLoadCurrentSource");
+    if(!currentSource.isUndefined()){
+        criteriaValid=criteriaValid&&currentSource.isString()&&(currentSource.toString()=="automatic"||currentSource.toString()=="manual");
+        in.performanceCriteria.noLoadCurrentSource=currentSource.toString()=="manual"?TransformerParams::NoLoadCurrentSource::Manual:TransformerParams::NoLoadCurrentSource::Automatic;
+    }else in.performanceCriteria.noLoadCurrentSource=in.performanceCriteria.hasManualNoLoadCurrent()?TransformerParams::NoLoadCurrentSource::Manual:TransformerParams::NoLoadCurrentSource::Automatic;
+    if(criteriaValid&&!in.performanceCriteria.hasManualNoLoadCurrent()&&mode==QLatin1String("custom")&&!in.performanceCriteria.hasNonstandardAn3)criteriaValid=false;
+    if (criteriaValid && in.performanceCriteria.hasNonstandardAn3 && !in.performanceCriteria.hasManualNoLoadCurrent()) {
+        const double converted = QString::number(in.performanceCriteria.nonstandardAn3_pct - 0.34, 'g', 12).toDouble();
+        if (mode == QLatin1String("custom"))
+            criteriaValid = std::abs(in.performanceCriteria.noLoadCurrentStd_pct - converted) < 1e-9;
+        if (currentSource.isUndefined() && in.performanceCriteria.hasSavedCustomNoLoadCurrent)
+            criteriaValid = criteriaValid && std::abs(in.performanceCriteria.savedCustomNoLoadCurrent_pct - converted) < 1e-9;
     }
     in.hasPerformanceCriteria = criteriaValid;
     in.performanceCriteria.standardMode = criteriaValid && mode == QLatin1String("builtin")
@@ -236,6 +292,18 @@ inline CalcInput fromJson(const QJsonObject &o)
     in.hvDeltaConnected = o.value(QStringLiteral("hvDeltaConnected")).toBool(in.hvDeltaConnected);
     in.lvStarConnected = o.value(QStringLiteral("lvStarConnected")).toBool(in.lvStarConnected);
 
+    // Only absent fields are legacy defaults. Null, strings, fractions and unknown
+    // indices stay explicitly invalid across subsequent saves and recalculation.
+    const auto selectionIndex = [&o](const char *key, int legacy, int maximum) {
+        const QString name = QString::fromLatin1(key);
+        if (!o.contains(name)) return legacy;
+        const auto value = o.value(name);
+        const double index = value.toDouble(-1.0);
+        return value.isDouble() && std::isfinite(index) && index >= 0.0
+                && index <= maximum && std::floor(index) == index ? int(index) : -1;
+    };
+    in.coreShape = static_cast<StructureConfig::CoreShape>(selectionIndex("coreShape", 2, 4));
+    in.yokeShape = static_cast<StructureConfig::YokeShape>(selectionIndex("yokeShape", 1, 1));
     in.coreDiameter_mm = num("coreDiameter_mm", in.coreDiameter_mm);
     in.coreStraight_mm = num("coreStraight_mm", in.coreStraight_mm);
     in.ellipseAngle_deg = num("ellipseAngle_deg", in.ellipseAngle_deg);
@@ -256,6 +324,22 @@ inline CalcInput fromJson(const QJsonObject &o)
         in.steelPriceGrade = in.steelGrade.trimmed();
     }
     in.seamCount = integ("seamCount", in.seamCount);
+    if(o.contains(QStringLiteral("coreWidthOffsets_mm"))){
+        const auto value=o.value(QStringLiteral("coreWidthOffsets_mm"));const auto values=value.toArray();
+        if(!value.isArray()||values.size()!=20)in.coreWidthOffsets_mm[0]=std::numeric_limits<double>::quiet_NaN();
+        else for(int i=0;i<20;++i)in.coreWidthOffsets_mm[i]=values.at(i).toDouble(std::numeric_limits<double>::quiet_NaN());
+    }
+    if (o.contains(QStringLiteral("coreSheetCountAdjust"))) {
+        const auto value=o.value(QStringLiteral("coreSheetCountAdjust"));
+        const auto adjustments=value.toArray();
+        // Accept the previous 16-level format; new reserve slots retain zero.
+        if (!value.isArray() || (adjustments.size()!=16 && adjustments.size()!=20)) {
+            in.coreSheetCountAdjust[0]=std::numeric_limits<double>::quiet_NaN();
+        } else {
+            for (int i=0;i<adjustments.size();++i)
+                in.coreSheetCountAdjust[i]=adjustments.at(i).toDouble(std::numeric_limits<double>::quiet_NaN());
+        }
+    }
     if (o.contains(QStringLiteral("materialPrices"))) {
         const auto value = o.value(QStringLiteral("materialPrices"));
         const auto prices = value.toObject();
@@ -275,6 +359,12 @@ inline CalcInput fromJson(const QJsonObject &o)
         }
     }
     in.coreLossCraftCoef = num("coreLossCraftCoef", in.coreLossCraftCoef);
+    const auto lossNumber=[&o](const char *key,double fallback){return o.contains(QLatin1String(key))?o.value(QLatin1String(key)).toDouble(std::numeric_limits<double>::quiet_NaN()):fallback;};
+    in.thermalFormulaMode=lossNumber("thermalFormulaMode",in.thermalFormulaMode);in.lvThermalExtraMode=lossNumber("lvThermalExtraMode",in.lvThermalExtraMode);
+    in.designAreaMode=lossNumber("designAreaMode",in.designAreaMode);
+    in.unitIronLossMode=lossNumber("unitIronLossMode",in.unitIronLossMode);
+    in.manualCoreLossPerKg_W=lossNumber("manualCoreLossPerKg_W",in.manualCoreLossPerKg_W);
+    in.manualYokeLossPerKg_W=lossNumber("manualYokeLossPerKg_W",in.manualYokeLossPerKg_W);
     // 旧方案没有铁轭字段时沿用其原共同系数；显式非法新字段不能静默迁移。
     in.yokeLossCraftCoef = !o.contains(QStringLiteral("yokeLossCraftCoef")) ? in.coreLossCraftCoef
         : num("yokeLossCraftCoef", std::numeric_limits<double>::quiet_NaN());
@@ -285,7 +375,7 @@ inline CalcInput fromJson(const QJsonObject &o)
     in.yokeWidenTo_mm = num("yokeWidenTo_mm", in.yokeWidenTo_mm);
     in.yokeWidenStages = integ("yokeWidenStages", in.yokeWidenStages);
     const QJsonArray steps = o.value(QStringLiteral("yokeSteps_mm")).toArray();
-    for (int i = 0; i < 16 && i < steps.size(); ++i) {
+    for (int i = 0; i < 20 && i < steps.size(); ++i) {
         in.yokeSteps_mm[i] = steps.at(i).toDouble(in.yokeSteps_mm[i]);
     }
 
@@ -332,8 +422,10 @@ inline CalcInput fromJson(const QJsonObject &o)
         // 保留非法外部记录的可见证据，不静默变成未录入或示例值。
         return QStringLiteral("非法记录（需要文本）");
     };
-    in.lvConnectionBarThicknessText = optionalRecordText(QStringLiteral("lvConnectionBarThicknessText"));
-    in.lvConnectionBarWidthText = optionalRecordText(QStringLiteral("lvConnectionBarWidthText"));
+    if (o.contains(QStringLiteral("lvConnectionBarThicknessText")))
+        in.lvConnectionBarThicknessText = optionalRecordText(QStringLiteral("lvConnectionBarThicknessText"));
+    if (o.contains(QStringLiteral("lvConnectionBarWidthText")))
+        in.lvConnectionBarWidthText = optionalRecordText(QStringLiteral("lvConnectionBarWidthText"));
     in.legacyUnitLossRecordText = optionalRecordText(QStringLiteral("legacyUnitLossRecordText"));
     in.legacyCraftCoefRecordText = optionalRecordText(QStringLiteral("legacyCraftCoefRecordText"));
     in.lvCopperFoil = o.value(QStringLiteral("lvCopperFoil")).toBool(in.lvCopperFoil);
@@ -373,7 +465,28 @@ inline CalcInput fromJson(const QJsonObject &o)
     in.waveDepth_mm = integ("waveDepth_mm", in.waveDepth_mm);
     in.waveHeight_mm = integ("waveHeight_mm", in.waveHeight_mm);
     in.wavePitch_mm = integ("wavePitch_mm", in.wavePitch_mm);
+    const auto tankNumber=[&o](const char *key,double fallback){return o.contains(QLatin1String(key))?o.value(QLatin1String(key)).toDouble(std::numeric_limits<double>::quiet_NaN()):fallback;};
+    in.tankRimHighCapacity_mm=tankNumber("tankRimHighCapacity_mm",in.tankRimHighCapacity_mm);
+    in.tankWallThicknessOverride_mm=tankNumber("tankWallThicknessOverride_mm",in.tankWallThicknessOverride_mm);
+    in.tankBottomThicknessAdjust_mm=tankNumber("tankBottomThicknessAdjust_mm",in.tankBottomThicknessAdjust_mm);
+    in.conservatorWeight_kg=tankNumber("conservatorWeight_kg",in.conservatorWeight_kg);
+    in.waveLongCountAdjust=tankNumber("waveLongCountAdjust",in.waveLongCountAdjust);
     in.phaseGapBase_mm = num("phaseGapBase_mm", in.phaseGapBase_mm);
+    const auto electricalNumber=[&o](const char *key,double fallback){return o.contains(QLatin1String(key))?o.value(QLatin1String(key)).toDouble(std::numeric_limits<double>::quiet_NaN()):fallback;};
+    in.hvAxialAllowance_mm=electricalNumber("hvAxialAllowance_mm",in.hvAxialAllowance_mm);
+    in.hvDuctLayerRule=electricalNumber("hvDuctLayerRule",in.hvDuctLayerRule);
+    in.impedanceOutputMode=electricalNumber("impedanceOutputMode",in.impedanceOutputMode);
+    in.impedanceCalibrationFactor=electricalNumber("impedanceCalibrationFactor",in.impedanceCalibrationFactor);
+    if(o.contains(QStringLiteral("activePartHvWeightMode")))
+        in.activePartHvWeightMode=o.value(QStringLiteral("activePartHvWeightMode")).toDouble(std::numeric_limits<double>::quiet_NaN());
+    if(o.contains(QStringLiteral("hvMaxTurnsAdjust")))
+        in.hvMaxTurnsAdjust=o.value(QStringLiteral("hvMaxTurnsAdjust")).toDouble(std::numeric_limits<double>::quiet_NaN());
+    // Only missing fields migrate; explicit malformed values must be rejected on calculation.
+    if (o.contains(QStringLiteral("centerDistanceAllowance_mm")))
+        in.centerDistanceAllowance_mm=o.value(QStringLiteral("centerDistanceAllowance_mm")).toDouble(std::numeric_limits<double>::quiet_NaN());
+    if (o.contains(QStringLiteral("hvLayerInsulCalcFactor")))
+        in.hvLayerInsulCalcFactor=o.value(QStringLiteral("hvLayerInsulCalcFactor")).toDouble(std::numeric_limits<double>::quiet_NaN());
+    in.oilTopCorrection_K = num("oilTopCorrection_K", in.oilTopCorrection_K);
     in.refFluxDens_T = num("refFluxDens_T", in.refFluxDens_T);
     return in;
 }

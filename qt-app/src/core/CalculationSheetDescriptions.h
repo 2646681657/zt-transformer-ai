@@ -1,4 +1,4 @@
-#ifndef CALCULATIONSHEETDESCRIPTIONS_H
+﻿#ifndef CALCULATIONSHEETDESCRIPTIONS_H
 #define CALCULATIONSHEETDESCRIPTIONS_H
 
 #include "CalcInput.h"
@@ -35,13 +35,13 @@ inline void capture(const CalcInput &in, CalcResult &r)
         r.calculationSheetNotes.insert(key, note.isEmpty()
             ? QStringLiteral("原计算单说明文字；只读，不作为新增输入或合格判定。") : note);
     };
-    text("D18", QStringLiteral("未接入"),
-        QStringLiteral("储油柜相关项：当前程序未接入独立储油柜选型、重量及排油模型。原单该位置的字面量0不能证明当前方案未配置储油柜，也不能作为计算结果；本批仅补显示状态，不新增输入或制造判断。"));
+    text("D18", number(in.conservatorWeight_kg),
+        QStringLiteral("原表D18的手工重量，已计入油箱及附件重C19；入口在补充参数。0表示本次输入为0，不代表自动选型判断。未接入独立储油柜容量、排油或充油模型，C23仍需另行核对。"));
     text("C23", QStringLiteral("未接入"),
         QStringLiteral("储油柜油重：当前没有独立容量、充油量及排油计算来源，不能将原单字面量0当作已算油重。现有总油重和成本仍沿用原模型；需要储油柜的方案不能凭本状态视为已覆盖。"));
-    text("AJ45", QStringLiteral("待核对"),
-        QStringLiteral("原单AJ45为固定0，与AS45及程序低压附加损耗的工艺口径尚未确认，不直接绑定或替换为0。本次程序实际低压附加损耗为%1 W（见下方高级工艺参数“低压附加损耗(W)”）：扁线计入负载损耗及低压热负荷AK48；圆线不计入L10，但仍进入AK48。仅说明既有行为，不代表与原单等价，也不改变损耗、温升或筛选公式。")
-            .arg(number(r.winding.lvExtraLoss_W)));
+    text("AJ45", number(r.winding.lvExtraLoss_W),
+        QStringLiteral("负载附加项%1 W，入口见顶部“补充参数”的“参数”页“低压附加损耗(W)”；扁线计入L10，圆线不计入L10。低压热负荷另用%2 W，按“低压热附加来源”选择跟随此项或按箔材公式计算，两者不重复加入负载损耗。")
+            .arg(number(r.winding.lvExtraLoss_W),number(r.thermal.lvThermalExtraLoss_W)));
     const auto turnsTotal = r.calculationSheetDetails.constFind(QStringLiteral("AA12"));
     text("AB12", turnsTotal == r.calculationSheetDetails.cend() ? QStringLiteral("不可用")
         : turnsTotal.value().first != r.winding.hvTurnsMax ? QStringLiteral("需核对") : QString(),
@@ -74,8 +74,8 @@ inline void capture(const CalcInput &in, CalcResult &r)
         .arg(number(in.lvFoilWidth_mm), detail("LvSurfaceDuctTerm")), surfaceNote
         + QStringLiteral(" 原单内表面乘0项不参与数值，这里省略该无贡献项。"));
     text("AD47", r.winding.mainDuct_mm < 4.0 ? QStringLiteral("+0]/10^6=")
-        : QStringLiteral("+(%1+%2)×0.85]/10^6=").arg(detail("AK36"), detail("AK39")), surfaceNote
-        + QStringLiteral(" 主空道AK43<4mm时该项为0，否则采用(AK36+AK39)×0.85；等于4mm时采用后者。"));
+        : QStringLiteral("+%1×0.85]/10^6=").arg(detail("LvSurfaceOuterPerimeter")), surfaceNote
+        + QStringLiteral(" 主空道AK43<4mm时该项为0；否则读取本次版本实际外周长并乘0.85。五档为AK36+AK39，三档按原表整周长公式。"));
     text("X8", QStringLiteral("(%1)").arg(r.winding.hvTurnsMax - r.winding.hvTurnsRated));
     text("Z8", QStringLiteral("(%1)").arg(r.winding.hvTurnsRated - r.winding.hvTurnsMin));
     for (const char *a : {"Z9", "Z11", "Z15"}) text(a, QStringLiteral("="));
@@ -224,8 +224,8 @@ inline void capture(const CalcInput &in, CalcResult &r)
         .arg(number(r.winding.hvCopperLoss_W), number(r.winding.hvExtraLoss_W), number(r.thermal.hvSurface_m2)),
         QStringLiteral("按实际引擎显示高压电阻损耗+附加损耗。圆线附加项的实际值同样读取本次结果，不沿用原表文字中的省略分支。"));
     text("AD48", QStringLiteral("q2=(%1+%2)/%3=")
-        .arg(number(r.winding.lvCopperLoss_W), number(r.winding.lvExtraLoss_W), number(r.thermal.lvSurface_m2)),
-        QStringLiteral("当前低压热负荷包含低压附加损耗；原表拼接文字只写电阻损耗，这里与实际AK48计算口径一致。"));
+        .arg(number(r.winding.lvCopperLoss_W), number(r.thermal.lvThermalExtraLoss_W), number(r.thermal.lvSurface_m2)),
+        QStringLiteral("低压热负荷采用本次温升热附加项；选择箔材公式时独立计算，不改变负载损耗附加项。"));
     text("U49", QStringLiteral("τ1=0.065×%1^0.8=").arg(number(r.thermal.hvHeatLoad)));
     text("AD49", QStringLiteral("τ02=0.065×%1^0.8=").arg(number(r.thermal.lvHeatLoad)));
     const bool largeGap = r.thermal.hvLayerGap_mm > 0.64;
@@ -240,12 +240,12 @@ inline void capture(const CalcInput &in, CalcResult &r)
         .arg(number(std::min(r.thermal.hvLayerGap_mm, 0.64))).arg(in.hvTurnsPerLayer).arg(coolingCount)
         .arg(number(r.thermal.hvHeatLoad)),
         QStringLiteral("按实际AC52公式：计数只含前三组端部油道，不照抄原U52字符串中的五组。修正项允许为负；汇总Y53时只叠加非负层间修正。"));
-    int lvCoolingCount = 1;
+    double lvCoolingCount = in.thermalFormulaMode==1.0?1.5:1.0;
     for (int i = 0; i < 5; ++i) if (in.lvDuctHeightSide[i] > 0.0) lvCoolingCount += 2;
     text("AD50", QStringLiteral("τc2=0.002×%1×(%2−2×%3)×%4=")
         .arg(number(in.lvLayerInsulCount*in.lvLayerInsul_mm)).arg(in.lvTurns).arg(lvCoolingCount)
         .arg(number(r.thermal.lvHeatLoad)),
-        QStringLiteral("当前低压层间修正AK50；五组启用端部油道各计2再加1，结果取一位小数；允许负值，汇总AK51时只叠加非负层间修正。"));
+        QStringLiteral("当前低压层间修正AK50；启用端部油道各计2，五档末项1、三档末项1.5，结果取一位小数；允许负值，汇总AK51时只叠加非负层间修正。"));
     text("P49", r.thermal.oilRise_K > 42.0 ? QStringLiteral("需核对") : QString(),
         QStringLiteral("原表N49>42时显示问号，此处改为需核对。42是原表固定油面温升参考，不是用户油顶层温升限值；不改变寻优筛选。"));
     text("AA53", in.hvDuctHeightSide[1] != 0.0 && r.thermal.hvRiseAboveOil_K <= 20.0
