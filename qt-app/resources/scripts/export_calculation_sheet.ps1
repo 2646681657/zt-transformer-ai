@@ -3,6 +3,18 @@ $ErrorActionPreference='Stop'
 Add-Type -AssemblyName System.IO.Compression
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 $specData=Get-Content -LiteralPath $Spec -Raw -Encoding UTF8 | ConvertFrom-Json
+function Get-ProcessInput($name,$fallback) {
+ $property=$specData.input.psobject.Properties[$name]
+ if(!$property){return [double]$fallback}
+ $number=0.0
+ if(![double]::TryParse([string]$property.Value,[Globalization.NumberStyles]::Float,[Globalization.CultureInfo]::InvariantCulture,[ref]$number) -or [double]::IsNaN($number) -or [double]::IsInfinity($number)){throw "Invalid export input: $name"}
+ return $number
+}
+$layerFactor=Get-ProcessInput 'hvLayerInsulCalcFactor' 4900
+$axialAllowance=Get-ProcessInput 'hvAxialAllowance_mm' 1
+$ductRule=Get-ProcessInput 'hvDuctLayerRule' 0
+$turnsAdjust=Get-ProcessInput 'hvMaxTurnsAdjust' 0
+if($layerFactor -le 0 -or $ductRule -notin @(0,1) -or $turnsAdjust -ne [math]::Truncate($turnsAdjust)){throw 'Invalid winding process inputs for Excel export'}
 Copy-Item -LiteralPath $Template -Destination $Output
 (Get-Item -LiteralPath $Output).IsReadOnly=$false
 $zip=[IO.Compression.ZipFile]::Open($Output,[IO.Compression.ZipArchiveMode]::Update)
@@ -31,6 +43,24 @@ try {
  $tapManager=[Xml.XmlNamespaceManager]::new($sheet.NameTable);$tapManager.AddNamespace('m',$ns)
  $sheet.SelectSingleNode("//m:c[@r='V5']/m:f",$tapManager).InnerText='Y5*(1+L3*N3)'
  $sheet.SelectSingleNode("//m:c[@r='AA5']/m:f",$tapManager).InnerText="Y5*(1-'导出说明'!`$B`$8*N3)"
+ # Preserve the selected scheme's process rules as editable formula inputs.
+ $processFormulas=@{
+  X42="CEILING(2*Y9*AC4/(AC9*'导出说明'!`$B`$9*X35),1)"
+  AA28="ROUND(AA26*1.01/5,0)*5+'导出说明'!`$B`$10"
+  V8="ROUND(V6/AC4,0)+'导出说明'!`$B`$12"
+ }
+ foreach($address in $processFormulas.Keys){$sheet.SelectSingleNode("//m:c[@r='$address']/m:f",$tapManager).InnerText=$processFormulas[$address]}
+ $alternateDuctFormulas=@{
+  Z30='IF(Y30=0,W12,IF(OR(Y31=0,Y32=0),INT(W12/3),INT(W12/4)))'
+  Z31='IF(Y31=0,"",IF(Y32=0,INT(W12/3),INT(W12/4)))'
+  Z32='IF(Y32=0,"",INT(W12/4))'
+  Z33='""'
+  Z34='""'
+ }
+ foreach($address in $alternateDuctFormulas.Keys){
+  $formula=$sheet.SelectSingleNode("//m:c[@r='$address']/m:f",$tapManager)
+  $formula.InnerText="IF('导出说明'!`$B`$11=1,"+$alternateDuctFormulas[$address]+','+$formula.InnerText+')'
+ }
  if($specData.customInsulation){
   $mgr=[Xml.XmlNamespaceManager]::new($sheet.NameTable);$mgr.AddNamespace('m',$ns)
   foreach($address in @('X14','Z14')){$f=$sheet.SelectSingleNode("//m:c[@r='$address']/m:f",$mgr);$base=if($address -eq 'X14'){'X13'}else{'Z13'};$f.InnerText='IF(U14="自定义",'+$base+"+'导出说明'!`$B`$7,"+$f.InnerText+')'}
@@ -72,8 +102,16 @@ try {
  foreach($p in $specData.engine.psobject.Properties){$rows+=,@($p.Name,[string]$p.Value)}
  $rows+=,@('自定义绝缘总增厚(mm)',[string]$specData.insulationIncrement)
  $rows+=,@('负分接档数',[string]$specData.tapMinusSteps)
+ $rows+=,@('高压层绝缘计算系数',$layerFactor)
+ $rows+=,@('高压轴向附加量(mm)',$axialAllowance)
+ $rows+=,@('高压油道层序规则(0/1)',$ductRule)
+ $rows+=,@('高压最大匝数修正(匝)',$turnsAdjust)
  $i=0
  foreach($pair in $rows){$i++;$row=$info.CreateElement('row',$ns);$row.SetAttribute('r',[string]$i);[void]$info.DocumentElement.LastChild.AppendChild($row);for($j=0;$j -lt 2;$j++){$cell=$info.CreateElement('c',$ns);$cell.SetAttribute('r',([string][char](65+$j))+$i);$cell.SetAttribute('t','inlineStr');$is=$info.CreateElement('is',$ns);$text=$info.CreateElement('t',$ns);$text.InnerText=[string]$pair[$j];[void]$is.AppendChild($text);[void]$cell.AppendChild($is);[void]$row.AppendChild($cell)}}
+ Set-Cell $info 'B9' $layerFactor $true
+ Set-Cell $info 'B10' $axialAllowance $true
+ Set-Cell $info 'B11' $ductRule $true
+ Set-Cell $info 'B12' $turnsAdjust $true
  Write-Part 'xl/worksheets/exportInfo.xml' $info.OuterXml
  [xml]$book=Read-Part 'xl/workbook.xml';$new=$book.CreateElement('sheet',$ns);$new.SetAttribute('name','导出说明');$new.SetAttribute('sheetId','30');$attr=$book.CreateAttribute('r','id','http://schemas.openxmlformats.org/officeDocument/2006/relationships');$attr.Value='rIdExportInfo';[void]$new.Attributes.Append($attr);[void]$book.DocumentElement.SelectSingleNode("*[local-name()='sheets']").AppendChild($new);Write-Part 'xl/workbook.xml' $book.OuterXml
  [xml]$rels=Read-Part 'xl/_rels/workbook.xml.rels';$new=$rels.CreateElement('Relationship',$rels.DocumentElement.NamespaceURI);$new.SetAttribute('Id','rIdExportInfo');$new.SetAttribute('Type','http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet');$new.SetAttribute('Target','worksheets/exportInfo.xml');[void]$rels.DocumentElement.AppendChild($new);Write-Part 'xl/_rels/workbook.xml.rels' $rels.OuterXml
