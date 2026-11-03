@@ -4,13 +4,36 @@
 // 默认值即 SB20-M-630-10 计算单的取值，可作为寻优变量空间
 
 #include <QString>
+#include <QRegularExpression>
 #include <QVector>
+#include <cmath>
+#include "PerformanceCriteria.h"
+#include "MaterialPrices.h"
+#include "CraftConstraints.h"
 
 struct CalcInput {
+    CraftConstraints craftConstraints; // Frozen user manufacturing evidence, persisted for recalculation.
+    // 持久化/校核元数据，不参与电磁实际值公式。
+    bool hasPerformanceCriteria = false;
+    TransformerParams performanceCriteria;
+    // 线圈型式!J17：牌号前两位代表硅钢片厚度的百分之一毫米。
+    static double thicknessFromSteelGrade(const QString &grade)
+    {
+        static const QRegularExpression pattern(QStringLiteral("^[0-9]{2}[A-Za-z0-9]+$"));
+        const QString value = grade.trimmed();
+        if (!pattern.match(value).hasMatch()) {
+            return 0.0;
+        }
+        return value.left(2).toInt() / 100.0;
+    }
+
     // ---- 额定值 ----
     double capacity_kVA = 630.0;      // H1 容量
     double hvRated_kV = 10.0;         // J1 高压
     double lvRated_kV = 0.4;          // L1 低压
+    int hvTapPlusSteps = 2;           // 正向调压级数
+    int hvTapMinusSteps = 2;          // 负向调压级数（存正数，显示为 -2）
+    double hvTapStep_pct = 2.5;       // 每级调压电压百分比
     double hvTapMax_pct = 5.0;        // 分接上限（±2×2.5% → +5%）
     double hvTapMin_pct = -5.0;       // 分接下限
     bool hvDeltaConnected = true;     // 高压 D 接（false 为 Y 接）
@@ -23,9 +46,28 @@ struct CalcInput {
     double stackFactor = 0.95;        // L16 叠片系数
     double steelThickness_mm = 0.18;  // 硅钢片厚（由牌号前缀决定）
     QString steelGrade = QStringLiteral("18SQGD065");  // 硅钢牌号
+    bool useCustomSteelPrice = false; // 默认保留计算单17元/kg，仅影响成本
+    double steelPricePerKg = 17.0;
+    QString steelPriceGrade; // 候选的价格绑定牌号，不能用于后来换成的其他牌号
+    MaterialPrices materialPrices; // 铜、铝、油、油箱基价；与硅钢定价独立
+    QString steelPriceError() const {
+        if (!useCustomSteelPrice) return {};
+        if (!std::isfinite(steelPricePerKg) || steelPricePerKg <= 0.0 || steelPricePerKg > 99999.0)
+            return QStringLiteral("自定义硅钢价须为大于0、不超过99999元/kg的有效数值，不允许缺价回退为17元/kg。");
+        if (steelPriceGrade.trimmed().isEmpty()
+                || steelPriceGrade.trimmed().compare(steelGrade.trimmed(), Qt::CaseInsensitive) != 0)
+            return QStringLiteral("自定义硅钢价绑定牌号%1，与当前牌号%2不一致。请回循环参数设置该牌号价格并重新寻优，不沿用其他牌号价格。")
+                .arg(steelPriceGrade, steelGrade);
+        return {};
+    }
     int seamCount = 5;                // 接缝数
-    double coreLossCraftCoef = 1.23;  // 心柱/轭工艺系数（T25/W25）
-    // T形轭补充片（轭片基宽 90/80/60 对应的叠厚，工艺手动值）
+    double coreLossCraftCoef = 1.23;  // 心柱工艺系数（Sheet1 T25），保留旧字段名
+    double yokeLossCraftCoef = 1.23;  // 铁轭工艺系数（Sheet1 W25）
+    // 原单H16/M16历史记录，仅供人工对照，不替代查表铁损或现用工艺系数。
+    QString legacyUnitLossRecordText;
+    QString legacyCraftCoefRecordText;
+    // 宽90支持F20自动几何；手填值独立保留，宽80/60仍是工艺手动值。
+    bool yokePiece1Auto = true;
     double yokePiece1Stack_mm = 4.0;  // 宽 90 片叠厚（Sheet1 D16）
     double yokePiece2Stack_mm = 1.5;  // 宽 80 片叠厚（Sheet1 D17 手输）
     double yokePiece3Stack_mm = 2.0;  // 宽 60 片叠厚（Sheet1 D18 手输）
@@ -40,25 +82,95 @@ struct CalcInput {
     double hvBareThick_mm = 5.52;     // Z13 裸线厚
     int hvParallelCount = 1;          // AB13 并绕
     int hvStackCount = 1;             // AB14 叠绕
-    int hvTurnsPerLayer = 15;         // W12 每层匝数
+    // 保持计算单及旧方案的宽=厚圆线判定；规格由数据库在计算入口校验。
+    bool isRoundHighVoltageWire() const { return hvBareWidth_mm == hvBareThick_mm; }
+    QString highVoltageWireError() const
+    {
+        if (!std::isfinite(hvBareWidth_mm) || !std::isfinite(hvBareThick_mm) ||
+            hvBareWidth_mm <= 0.0 || hvBareThick_mm <= 0.0)
+            return QStringLiteral("高压裸线宽、厚必须是大于零的有效数值");
+        if (hvParallelCount <= 0 || hvStackCount <= 0)
+            return QStringLiteral("高压并绕、叠绕根数必须是大于零的整数");
+        if (isRoundHighVoltageWire()) return QString(); // 圆线不使用扁线绝缘增厚输入
+        if (!std::isfinite(hvWireInsulAdd_mm) || hvWireInsulAdd_mm < 0.0)
+            return QStringLiteral("高压导线绝缘增厚必须是大于等于零的有效数值");
+        return QString();
+    }
+    int hvTurnsPerLayer = 15;         // W12 高压总层数；保留旧字段名以兼容方案文件
     double hvLayerInsul_mm = 0.0967;  // X35 层间绝缘厚
-    double hvWireInsulAdd_mm = 0.15;  // QZB 绝缘增厚（X14=X13+0.15）
-    int hvCoilFormIdx = 1;            // 线圈型式序号（1=圆筒式, 2=双层圆筒式）
+    double hvWireInsulAdd_mm = 0.15;  // X14/Z14 的总尺寸增厚（不是单边厚度）
+    QString hvWireInsulation = QStringLiteral("QZB-2/130"); // U14；Custom保留手填值
+    static double insulationIncrement(const QString &type)
+    {
+        if (type == QLatin1String("QZB-2/130")) return 0.15;
+        if (type == QLatin1String("ZB-0.3") || type == QLatin1String("ZLB-0.3")) return 0.35;
+        if (type == QLatin1String("ZB-0.45") || type == QLatin1String("ZLB-0.45")) return 0.50;
+        return -1.0;
+    }
+    // 数值仍是计算引擎的唯一来源；旧代码/导入数据有不一致时不能丢弃手填值。
+    QString resolvedInsulationType() const
+    {
+        if (isRoundHighVoltageWire()) return QStringLiteral("RoundTable");
+        const double preset = insulationIncrement(hvWireInsulation);
+        return preset >= 0.0 && std::abs(preset - hvWireInsulAdd_mm) < 1e-9
+            ? hvWireInsulation : QStringLiteral("Custom");
+    }
+    bool hvCopperWire = true;         // 高压铜导线（false 铝导线）
+    int hvCoilFormIdx = 1;            // AC9：1=圆筒式，2=分段圆筒式（两段串联）；2仍禁算
     // 高压轴向油道（宽侧 X30..X34 / 高侧 Y30..Y34，0=无）
     double hvDuctWidthSide[5] = {4, 4, 4, 4, 4};
     double hvDuctHeightSide[5] = {4, 4, 4, 4, 4};
 
-    // ---- 低压绕组（铜箔）----
+    // ---- 低压绕组（铜箔或铝箔）----
     int lvTurns = 18;                 // AH8 低压匝数
     double lvFoilThick_mm = 1.35;     // AF14 箔厚
     double lvFoilWidth_mm = 323.0;    // AJ14 箔宽
     int lvLayerInsulCount = 1;        // AG26 层间绝缘层数
     double lvLayerInsul_mm = 0.18;    // AI26 层间绝缘厚
     double lvEndInsul_mm = 17.5;      // AI25 端绝缘
+    // 原单AG12/AJ12可选工艺记录；保留未录入/未完成文本，不是电磁设计变量。
+    QString lvConnectionBarThicknessText;
+    QString lvConnectionBarWidthText;
     bool lvCopperFoil = true;         // 低压铜箔（false 铝箔）
     // 低压轴向油道（宽侧 AG28..AG32 / 高侧 AH28..AH32，0=无）
     double lvDuctWidthSide[5] = {3.5, 3.5, 3.5, 3.5, 3.5};
     double lvDuctHeightSide[5] = {3.5, 3.5, 3.5, 3.5, 3.5};
+
+    QString oilDuctInputError() const
+    {
+        for (int side = 0; side < 2; ++side) {
+            const double *widths = side == 0 ? hvDuctWidthSide : lvDuctWidthSide;
+            const double *heights = side == 0 ? hvDuctHeightSide : lvDuctHeightSide;
+            const QString winding = side == 0 ? QStringLiteral("高压") : QStringLiteral("低压");
+            for (int i = 0; i < 5; ++i) {
+                if (!std::isfinite(widths[i]) || widths[i] < 0.0)
+                    return QStringLiteral("%1油道宽 %2（相间侧）必须是大于等于零的有效数值，0表示该侧停用").arg(winding).arg(i + 1);
+                if (!std::isfinite(heights[i]) || heights[i] < 0.0)
+                    return QStringLiteral("%1油道高 %2（端部侧）必须是大于等于零的有效数值，0表示该侧停用").arg(winding).arg(i + 1);
+            }
+        }
+        return QString();
+    }
+
+    // 原表独立判定两侧的0值；这些布局只提示，不擅自配对、重排或禁算。
+    QString oilDuctLayoutNote() const
+    {
+        QString note;
+        for (int side = 0; side < 2; ++side) {
+            const double *widths = side == 0 ? hvDuctWidthSide : lvDuctWidthSide;
+            const double *heights = side == 0 ? hvDuctHeightSide : lvDuctHeightSide;
+            const QString winding = side == 0 ? QStringLiteral("高压") : QStringLiteral("低压");
+            bool stopped = false;
+            for (int i = 0; i < 5; ++i) {
+                if ((widths[i] > 0.0) != (heights[i] > 0.0))
+                    note += QStringLiteral("%1油道%2仅单侧启用；").arg(winding).arg(i + 1);
+                if (heights[i] == 0.0) stopped = true;
+                else if (stopped)
+                    note += QStringLiteral("%1端部油道%2在停用油道之后仍启用；").arg(winding).arg(i + 1);
+            }
+        }
+        return note.isEmpty() ? QString() : note + QStringLiteral("分段与散热需人工核对，程序未自动重排或禁算");
+    }
 
     // ---- 主空道 ----
     double mainDuctWidth_mm = 3.5;    // AD43 高低压间油道
@@ -66,7 +178,7 @@ struct CalcInput {
 
     // ---- 损耗系数 ----
     double strayLossFactor = 0.11;    // J10 杂散损耗系数
-    double leadLoss_W = 0.0;          // J10 引线损耗
+    double leadLoss_W = 0.0;          // 引线损耗记录值，未参与计算；原表J10是杂散系数，非此字段
     double lvExtraLoss_W = 0.0;       // AS45 低压附加损耗
 
     // ---- 油箱（波纹油箱）----

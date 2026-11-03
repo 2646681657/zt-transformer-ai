@@ -91,7 +91,7 @@ void SelfLearnDialog::setupUi()
 
     // 方案信息行
     m_infoLabel = new QLabel(QStringLiteral("未选择方案"), this);
-    m_infoLabel->setStyleSheet("color: #8a9bb0; font-size: 11px;");
+    m_infoLabel->setStyleSheet("color: #607368; font-size: 11px;");
     layout->addWidget(m_infoLabel);
 
     const QVector<MetricDef> defs = metricDefs();
@@ -114,7 +114,7 @@ void SelfLearnDialog::setupUi()
         QStringLiteral("偏差 = (实测-设计)/设计×100%；|偏差| > 10% 标红（损耗/阻抗/温升通用工程容差）。"
                        "修正系数自动调整需积累多组对比数据后开放"), this);
     hint->setWordWrap(true);
-    hint->setStyleSheet("color: #8a9bb0; font-size: 11px;");
+    hint->setStyleSheet("color: #607368; font-size: 11px;");
     layout->addWidget(hint);
 }
 

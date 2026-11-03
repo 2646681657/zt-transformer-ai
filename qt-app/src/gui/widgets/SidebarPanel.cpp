@@ -10,7 +10,7 @@ SidebarPanel::SidebarPanel(QWidget *parent)
     m_layout->setSpacing(8);
     m_layout->addStretch();
     setFixedWidth(130);
-    setStyleSheet("SidebarPanel { background: #22262e; border-right: 1px solid #3a4050; }");
+    setStyleSheet("SidebarPanel { background: #FFFFFF; border-right: 1px solid #D3DDD6; }");
 }
 
 QToolButton *SidebarPanel::addButton(const QString &text)
@@ -29,9 +29,9 @@ QToolButton *SidebarPanel::addButton(const QString &text, const QString &iconPat
     btn->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     btn->setFixedHeight(64);
     btn->setStyleSheet(
-        "QToolButton { background: rgba(0,188,212,0.15); color: #4dd0e1;"
-        "border: 1px solid #3a4050; border-radius: 4px; font-size: 11px; padding: 4px; }"
-        "QToolButton:hover { background: #00bcd4; color: #0d1117; border-color: #00bcd4; }");
+        "QToolButton { background: rgba(33, 115, 70,0.15); color: #185C37;"
+        "border: 1px solid #D3DDD6; border-radius: 4px; font-size: 11px; padding: 4px; }"
+        "QToolButton:hover { background: #217346; color: #FFFFFF; border-color: #217346; }");
     int idx = m_buttons.size();
     m_layout->insertWidget(idx, btn);
     m_buttons.append(btn);

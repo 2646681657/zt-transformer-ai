@@ -1,6 +1,6 @@
 #ifndef EMRESULTPANEL_H
 #define EMRESULTPANEL_H
-// 电磁计算结果面板（铁芯/绕组/阻抗/温升/重量成本五组页签展示 CalcResult）
+// 电磁结果及独立油膨缩参考校核，分组展示 CalcResult。
 
 #include <QTabWidget>
 #include "CalcResult.h"
@@ -14,6 +14,8 @@ public:
 
     // 填充一次完整电磁计算结果
     void loadResult(const CalcResult &result);
+    // 输入切换后清除上一轮结果
+    void clearResult();
 
     // 结果文本化（保存计算单用）
     static QString resultText(const CalcResult &result);
@@ -30,6 +32,7 @@ private:
     QTableWidget *m_impedanceTab = nullptr;
     QTableWidget *m_thermalTab = nullptr;
     QTableWidget *m_massTab = nullptr;
+    QTableWidget *m_oilExpansionTab = nullptr;
 };
 
 #endif // EMRESULTPANEL_H

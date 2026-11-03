@@ -27,12 +27,12 @@ AiAnalysisDialog::AiAnalysisDialog(const QString &title, const QString &taskDesc
     m_outputEdit->setPlaceholderText(QStringLiteral(
         "点击「开始分析」后，AI 基于引擎计算结果生成分析内容"));
     m_outputEdit->setStyleSheet(
-        "QTextEdit { background: #22262e; color: #e0e6ed;"
-        " border: 1px solid #3a4050; border-radius: 4px; padding: 6px; }");
+        "QTextEdit { background: #FFFFFF; color: #24362B;"
+        " border: 1px solid #D3DDD6; border-radius: 4px; padding: 6px; }");
     layout->addWidget(m_outputEdit, 1);
 
     m_statusLabel = new QLabel(this);
-    m_statusLabel->setStyleSheet("color: #8a9bb0; font-size: 11px;");
+    m_statusLabel->setStyleSheet("color: #607368; font-size: 11px;");
     m_statusLabel->setWordWrap(true);
     layout->addWidget(m_statusLabel);
 
@@ -40,15 +40,15 @@ AiAnalysisDialog::AiAnalysisDialog(const QString &title, const QString &taskDesc
     m_submitBtn = new QPushButton(QStringLiteral("开始分析"), this);
     m_submitBtn->setCursor(Qt::PointingHandCursor);
     m_submitBtn->setStyleSheet(
-        "QPushButton { background: #00bcd4; color: #1a1d23; font-size: 12px;"
+        "QPushButton { background: #217346; color: #F3F5F4; font-size: 12px;"
         " padding: 8px 24px; border: none; border-radius: 4px; font-weight: bold; }"
-        "QPushButton:hover { background: #4dd0e1; }"
-        "QPushButton:disabled { background: #45505e; color: #8a9bb0; }");
+        "QPushButton:hover { background: #185C37; }"
+        "QPushButton:disabled { background: #90A398; color: #607368; }");
     auto *closeBtn = new QPushButton(QStringLiteral("关闭"), this);
     closeBtn->setStyleSheet(
-        "QPushButton { background: transparent; color: #8a9bb0; font-size: 12px;"
-        " padding: 8px 16px; border: 1px solid #3a4050; border-radius: 4px; }"
-        "QPushButton:hover { color: #e0e6ed; }");
+        "QPushButton { background: transparent; color: #607368; font-size: 12px;"
+        " padding: 8px 16px; border: 1px solid #D3DDD6; border-radius: 4px; }"
+        "QPushButton:hover { color: #24362B; }");
     btnLayout->addWidget(m_submitBtn);
     btnLayout->addStretch();
     btnLayout->addWidget(closeBtn);

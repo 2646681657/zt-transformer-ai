@@ -8,6 +8,8 @@
 #include "PrintTableWidget.h"
 #include "EmResultPanel.h"
 #include "GridOptimizer.h"
+#include "RoundWireSearch.h"
+#include "SteelGradeSearch.h"
 #include "SchemeConstraints.h"
 #include "SchemeStore.h"
 #include "RecommendSchemes.h"
@@ -15,7 +17,11 @@
 #include "SelfLearnDialog.h"
 #include "AiAnalysisDialog.h"
 #include "QuoteCalculator.h"
+#include "CostBasisNotes.h"
 #include "ParamTableWidget.h"
+#include "SchemeCalculationSheet.h"
+#include "CalculationApplicability.h"
+#include "../SearchCoverageSettings.h"
 #include <QDateTime>
 #include <QDir>
 #include <algorithm>
@@ -33,6 +39,7 @@
 #include <QMessageBox>
 #include <QFileDialog>
 #include <QFile>
+#include <QSaveFile>
 #include <QTextStream>
 #include <QInputDialog>
 #include <QDoubleSpinBox>
@@ -49,6 +56,11 @@
 #include <QPainter>
 #include <QFormLayout>
 #include <QPlainTextEdit>
+#include <QScreen>
+#include <QTimer>
+#include <QScopedValueRollback>
+#include <QListWidget>
+#include <memory>
 
 EnterCalcPage::EnterCalcPage(QWidget *parent)
     : QWidget(parent)
@@ -70,15 +82,15 @@ EnterCalcPage::EnterCalcPage(QWidget *parent)
     auto *backBtn = new QPushButton(QStringLiteral("< 返回"), titleWidget);
     backBtn->setFlat(true);
     backBtn->setCursor(Qt::PointingHandCursor);
-    backBtn->setStyleSheet("QPushButton { color: #8a9bb0; font-size: 11px; border: none; padding: 2px 8px; }"
-                           "QPushButton:hover { background: rgba(0,188,212,0.2); border-radius: 3px; color: #4dd0e1; }");
+    backBtn->setStyleSheet("QPushButton { color: #FFFFFF; background: transparent; font-size: 11px; border: none; padding: 2px 8px; }"
+                           "QPushButton:hover { background: rgba(255,255,255,0.15); border-radius: 3px; color: #FFFFFF; }");
     connect(backBtn, &QPushButton::clicked, this, &EnterCalcPage::navigateBack);
     titleLayout->addWidget(backBtn);
 
     auto *titleLabel = new QLabel(
         QStringLiteral("中天伯乐达变压器电磁计算AI寻优软件 V2.0"), titleWidget);
     titleLabel->setAlignment(Qt::AlignCenter);
-    titleLabel->setStyleSheet("color: #e0e6ed; font-size: 12px;");
+    titleLabel->setStyleSheet("color: #FFFFFF; background: transparent; font-size: 12px;");
     titleLayout->addWidget(titleLabel, 1);
 
     mainLayout->addWidget(titleWidget);
@@ -92,13 +104,13 @@ EnterCalcPage::EnterCalcPage(QWidget *parent)
     m_tabBar->setDrawBase(false);
     m_tabBar->setFixedHeight(30);
     m_tabBar->setStyleSheet(
-        "QTabBar { background: #22262e; border-bottom: 1px solid #3a4050; }"
+        "QTabBar { background: #FFFFFF; border-bottom: 1px solid #D3DDD6; }"
         "QTabBar::pane { border: none; }"
-        "QTabBar::tab { background: #2a2f38; color: #8a9bb0; border: 1px solid #3a4050;"
+        "QTabBar::tab { background: #EDF3EF; color: #607368; border: 1px solid #D3DDD6;"
         "border-bottom: none; padding: 6px 18px; margin-right: 2px; font-size: 12px; }"
-        "QTabBar::tab:selected { background: #0d1117; color: #4dd0e1;"
-        "border-color: #00bcd4; border-bottom: 2px solid #00bcd4; }"
-        "QTabBar::tab:hover:!selected { background: #3a4050; color: #e0e6ed; }");
+        "QTabBar::tab:selected { background: #FFFFFF; color: #185C37;"
+        "border-color: #217346; border-bottom: 2px solid #217346; }"
+        "QTabBar::tab:hover:!selected { background: #D3DDD6; color: #24362B; }");
     mainLayout->addWidget(m_tabBar);
 
     // Ribbon stack (shows different ribbon per tab)
@@ -129,16 +141,24 @@ EnterCalcPage::EnterCalcPage(QWidget *parent)
     // Status bar
     m_statusBar = new QLabel(QStringLiteral("就绪"), this);
     m_statusBar->setFixedHeight(22);
-    m_statusBar->setStyleSheet("background: #22262e; padding-left: 8px; font-size: 11px;"
-                               "color: #8a9bb0; border-top: 1px solid #3a4050;");
+    m_statusBar->setStyleSheet("background: #FFFFFF; padding-left: 8px; font-size: 11px;"
+                               "color: #607368; border-top: 1px solid #D3DDD6;");
     mainLayout->addWidget(m_statusBar);
 
     // 网格寻优器（后台线程执行，候选方案与进度经信号回主线程）
     m_optimizer = new GridOptimizer(this);
     connect(m_optimizer, &IOptimizer::progressUpdated,
             this, &EnterCalcPage::onOptimizeProgress);
+    connect(m_optimizer, &IOptimizer::stageChanged, this, [this](int stage, int planned) {
+        if (m_discardOptimizationResults) return;
+        m_optStage = stage;
+        m_optStagePlanned = planned;
+        onOptimizeProgress(m_runningOptSettings.enhancedCoverage ? m_optProgressPercent : 0);
+    });
     connect(m_optimizer, &IOptimizer::candidateReady,
             this, &EnterCalcPage::onOptimizeCandidate);
+    connect(m_optimizer, &IOptimizer::candidatesReady,
+            this, &EnterCalcPage::onOptimizeCandidates);
     connect(m_optimizer, &IOptimizer::finished,
             this, &EnterCalcPage::onOptimizeFinished);
 }
@@ -163,6 +183,7 @@ void EnterCalcPage::buildOptimizeRibbon()
                 QStringLiteral("请先执行快速计算或寻优计算，再使用 AI 解读"));
             return;
         }
+        const TransformerParams resultParams = currentResultParams();
         const QString data = QStringLiteral(
             "变压器电磁计算结果（引擎输出）：\n"
             "容量: %1 kVA；高压/低压: %2/%3 kV\n"
@@ -172,11 +193,11 @@ void EnterCalcPage::buildOptimizeRibbon()
             "硅钢片总重: %10 kg；导线总重: %11 kg\n"
             "油面温升: %12 K；高压绕组温升: %13 K；低压绕组温升: %14 K\n"
             "高压电密: %15 A/mm²；低压电密: %16 A/mm²\n"
-            "变压器总重: %17 kg；材料成本: %18 元\n"
+            "变压器总重: %17 kg；本方案材料合计: %18 元\n"
             "性能标准：空载损耗标准 %19 W，负载损耗标准 %20 W，"
             "阻抗电压标准 %21%，空载电流标准 %22%\n"
             "约束校验：%23")
-            .arg(m_params.capacity_kVA).arg(m_params.hvRatedVoltage_kV).arg(m_params.lvRatedVoltage_kV)
+            .arg(resultParams.capacity_kVA).arg(resultParams.hvRatedVoltage_kV).arg(resultParams.lvRatedVoltage_kV)
             .arg(m_emResult.core.noLoadLoss_W, 0, 'f', 0)
             .arg(m_emResult.winding.loadLoss_W, 0, 'f', 0)
             .arg(m_emResult.impedance.impedance_pct, 0, 'f', 2)
@@ -192,14 +213,17 @@ void EnterCalcPage::buildOptimizeRibbon()
             .arg(m_emResult.winding.lvCurrentDensity, 0, 'f', 2)
             .arg(m_emResult.mass.totalWeight_kg, 0, 'f', 0)
             .arg(m_emResult.cost.materialCost, 0, 'f', 0)
-            .arg(m_params.noLoadLossStd_W, 0, 'f', 0)
-            .arg(m_params.loadLossStd_W, 0, 'f', 0)
-            .arg(m_params.impedanceVoltageStd_pct, 0, 'f', 2)
-            .arg(m_params.noLoadCurrentStd_pct, 0, 'f', 2)
+            .arg(resultParams.noLoadLossStd_W, 0, 'f', 0)
+            .arg(resultParams.loadLossStd_W, 0, 'f', 0)
+            .arg(resultParams.impedanceVoltageStd_pct, 0, 'f', 2)
+            .arg(resultParams.noLoadCurrentStd_pct, 0, 'f', 2)
             .arg([&]() {
-                const auto check = checkSchemeConstraints(m_params, m_emResult);
-                return check.passed ? QStringLiteral("全部通过")
-                                    : check.violations.join(QStringLiteral("；"));
+                const auto check = checkSchemeConstraints(resultParams, m_emResult);
+                QString text = check.passed ? QStringLiteral("已启用指标通过")
+                                            : check.violations.join(QStringLiteral("；"));
+                if (!check.skippedChecks.isEmpty())
+                    text += QStringLiteral("；未校核：") + check.skippedChecks.join(QStringLiteral("、"));
+                return text;
             }());
         AiAnalysisDialog dlg(QStringLiteral("AI 计算结果解读"),
             QStringLiteral("任务：解读该电磁计算结果，评估各项指标是否达标、"
@@ -215,17 +239,23 @@ void EnterCalcPage::buildOptimizeRibbon()
     auto *loopBtn = new RibbonButton(QStringLiteral("循环参数设置"), ":/icons/loop_param.svg", gLoop);
     loopBtn->setCheckable(false);
     connect(loopBtn, &QToolButton::clicked, this, [this]() {
+        if (m_optRunning) {
+            QMessageBox::information(this, QStringLiteral("寻优进行中"),
+                QStringLiteral("本轮订单与搜索设置已冻结。请在寻优结束后修改循环参数。"));
+            return;
+        }
         if (const auto settings = showLoopParamsDialog()) {
             m_optSettings = *settings;
             m_statusBar->setText(QStringLiteral(
-                "循环参数已更新：%1 组合，点击「开始运行计算」生效")
-                .arg(QString::number((2 * settings->diaRange + 1)
-                                     * (2 * settings->straightRange + 1)
-                                     * (2 * settings->lvTurnsRange + 1)
-                                     * (2 * settings->hvTplRange + 1))));
+                "循环参数已更新：首轮%1组合，总处理预算%2组合，点击「开始运行计算」生效")
+                .arg(settings->plannedCount()).arg(settings->combinationBudget));
         }
     });
     gLoop->addButton(loopBtn);
+    auto *statsBtn = new RibbonButton(QStringLiteral("寻优统计"), ":/icons/init_info.svg", gLoop);
+    statsBtn->setCheckable(false);
+    connect(statsBtn, &QToolButton::clicked, this, &EnterCalcPage::showOptimizationSummary);
+    gLoop->addButton(statsBtn);
     m_optimizeRibbon->addSeparator();
 
     auto *g1 = m_optimizeRibbon->addGroup(QStringLiteral("初始化设置(从左到右顺序查看)"));
@@ -264,8 +294,7 @@ void EnterCalcPage::buildOptimizeRibbon()
         SchemePickDialog dlg(QStringLiteral("从记忆库中选择"), entries,
                              SchemeStore::memorySchemesPath(), this);
         if (dlg.exec() == QDialog::Accepted && dlg.hasSelection()) {
-            m_calcInput = dlg.selectedEntry().input;
-            onRunEmCalc();
+            runEmCalcInput(dlg.selectedEntry().input);
         }
     });
     gMem->addButton(memBtn);
@@ -308,7 +337,7 @@ void EnterCalcPage::buildOptimizeRibbon()
 // 显示选项 | 排序与筛选 | 合并模式 | 方案库比较 | 方案选择
 void EnterCalcPage::buildSchemeRibbon()
 {
-    const QString chkStyle = QStringLiteral("QCheckBox { color: #e0e6ed; font-size: 11px; spacing: 4px; }");
+    const QString chkStyle = QStringLiteral("QCheckBox { color: #24362B; font-size: 11px; spacing: 4px; }");
 
     // ---- 组1 显示选项：两行（勾选+标签+控件）----
     auto *g1 = m_schemeRibbon->addGroup(QStringLiteral("显示选项"));
@@ -346,8 +375,9 @@ void EnterCalcPage::buildSchemeRibbon()
     row2->addWidget(m_observeChk);
     row2->addWidget(new QLabel(QStringLiteral("显示方式:"), rows));
     m_showModeCombo = new QComboBox(rows);
-    m_showModeCombo->addItems({QStringLiteral("主材成本"), QStringLiteral("铜铁"),
+    m_showModeCombo->addItems({QStringLiteral("材料合计"), QStringLiteral("铁芯导线"),
                                QStringLiteral("铁芯直径"), QStringLiteral("低压匝数")});
+    m_showModeCombo->setToolTip(CostBasisNotes::engine());
     m_showModeCombo->setFixedWidth(90);
     connect(m_showModeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
             this, &EnterCalcPage::onShowModeChanged);
@@ -458,7 +488,7 @@ void EnterCalcPage::buildSchemeRibbon()
             const auto &c = m_schemeData.value(idx);
             const auto &r = c.result;
             data += QStringLiteral(
-                "方案%1：主材成本 %2 元；空载损耗 %3 W；负载损耗 %4 W；"
+                "方案%1：本方案材料合计 %2 元；空载损耗 %3 W；负载损耗 %4 W；"
                 "阻抗电压 %5%；心柱磁密 %6 T；油面温升 %7 K；"
                 "铁芯直径 %8 mm；低压匝数 %9\n")
                 .arg(idx)
@@ -547,7 +577,8 @@ void EnterCalcPage::buildPrintRibbon()
     b3->setCheckable(false);
     connect(b3, &QToolButton::clicked, this, &EnterCalcPage::onPrintPreview);
     g1->addButton(b3);
-    auto *quoteBtn = new RibbonButton(QStringLiteral("打开报价单"), ":/icons/quote_open.svg", g1);
+    auto *quoteBtn = new RibbonButton(QStringLiteral("材料成本明细"), ":/icons/quote_open.svg", g1);
+    quoteBtn->setToolTip(CostBasisNotes::engine());
     quoteBtn->setCheckable(false);
     connect(quoteBtn, &QToolButton::clicked, this, &EnterCalcPage::onOpenQuote);
     g1->addButton(quoteBtn);
@@ -681,9 +712,9 @@ void EnterCalcPage::showInitInfoDialog(int index)
         auto *closeBtn = new QPushButton(QStringLiteral("关闭"), dlg);
         closeBtn->setCursor(Qt::PointingHandCursor);
         closeBtn->setStyleSheet(
-            "QPushButton { background: #00bcd4; color: #1a1d23; font-size: 12px;"
+            "QPushButton { background: #217346; color: #F3F5F4; font-size: 12px;"
             " padding: 6px 20px; border: none; border-radius: 4px; font-weight: bold; }"
-            "QPushButton:hover { background: #4dd0e1; }");
+            "QPushButton:hover { background: #185C37; }");
         connect(closeBtn, &QPushButton::clicked, dlg, &QDialog::accept);
         layout->addWidget(closeBtn, 0, Qt::AlignCenter);
         dlg->exec();
@@ -715,7 +746,7 @@ void EnterCalcPage::showInitInfoDialog(int index)
     };
     const auto hvCoilStr = [this]() {
         return m_config.hvCoilStructure == StructureConfig::TwoSegCylinder
-                   ? QStringLiteral("两段圆筒式") : QStringLiteral("多层圆筒式");
+                   ? QStringLiteral("分段圆筒式（两段串联）") : QStringLiteral("多层圆筒式");
     };
 
     switch (index) {
@@ -742,8 +773,10 @@ void EnterCalcPage::showInitInfoDialog(int index)
             { QStringLiteral("硅钢片牌号"), m_calcInput.steelGrade },
             { QStringLiteral("硅钢片厚度(mm)"),
               QString::number(m_calcInput.steelThickness_mm) },
-            { QStringLiteral("低压线圈材料"), QStringLiteral("铜（箔绕）") },
-            { QStringLiteral("高压线圈材料"), QStringLiteral("铜") },
+            { QStringLiteral("低压线圈材料"), m_calcInput.lvCopperFoil
+                  ? QStringLiteral("铜箔") : QStringLiteral("铝箔") },
+            { QStringLiteral("高压线圈材料"), m_calcInput.hvCopperWire
+                  ? QStringLiteral("铜导线") : QStringLiteral("铝导线") },
             { QStringLiteral("材料单价"),
               QStringLiteral("见系统设置页「报价参数」") },
         });
@@ -756,7 +789,7 @@ void EnterCalcPage::showInitInfoDialog(int index)
             { QStringLiteral("直线段长(mm)"),
               QString::number(m_calcInput.coreStraight_mm) },
             { QStringLiteral("低压匝数"), QString::number(m_calcInput.lvTurns) },
-            { QStringLiteral("高压每层匝数"),
+            { QStringLiteral("高压总层数 W12"),
               QString::number(m_calcInput.hvTurnsPerLayer) },
             { QStringLiteral("主空道宽(mm)"),
               QString::number(m_calcInput.mainDuctWidth_mm) },
@@ -790,7 +823,7 @@ void EnterCalcPage::showInitInfoDialog(int index)
             { QStringLiteral("空载电流允许偏差(%)"),
               QString::number(m_params.noLoadCurrentMaxDev_pct) },
             { QStringLiteral("温升限值(K)"),
-              QStringLiteral("油面 %1 / 高压 %2 / 低压 %3")
+              QStringLiteral("油顶层 %1 / 高压 %2 / 低压 %3")
                   .arg(QString::number(m_params.oilTopTempRise_K),
                        QString::number(m_params.hvCoilTempRise_K),
                        QString::number(m_params.lvCoilTempRise_K)) },
@@ -828,16 +861,104 @@ std::optional<OptimizationSettings> EnterCalcPage::showLoopParamsDialog()
     auto *dlg = new QDialog(this);
     dlg->setWindowTitle(QStringLiteral("循环参数 - 寻优计算设置"));
     dlg->setModal(true);
+    dlg->resize(950, 680);
     auto *layout = new QVBoxLayout(dlg);
     layout->setContentsMargins(12, 12, 12, 12);
 
-    // 参数表（每行：标签 + 步长编辑 + 范围编辑）
-    auto *form = new QTableWidget(4, 3, dlg);
+    auto *notes = new QLabel(QStringLiteral("目标：在已启用约束通过的候选中，使本轮价格口径下材料合计最低。\n")
+        + CostBasisNotes::engine()
+        + QStringLiteral("\n订单容量、电压、联结组别、性能标准与偏差保持不变；保留单轮及一轮细搜，新增多轮细化。"
+                         "\n低压箔尺寸及高压扁线宽/厚为设计尺寸搜索，非库存选型，制造规格仍需核对。"
+                         "\n扁线宽=厚组合预检剔除。圆线请关闭高压宽/厚参与，使用圆线规格按表内相邻档搜索，表端不补档。"), dlg);
+    notes->setWordWrap(true);
+    layout->addWidget(notes);
+    auto *mode = new QComboBox(dlg);
+    mode->addItem(QStringLiteral("单轮网格（原模式）"), int(OptimizationSettings::Exhaustive));
+    mode->addItem(QStringLiteral("粗搜＋一轮细搜（最低成本3个可行中心）"), int(OptimizationSettings::CoarseFine));
+    mode->addItem(QStringLiteral("粗搜＋多轮细化（逐轮选取最低成本3个可行中心）"), int(OptimizationSettings::MultiRound));
+    const int modeIndex = mode->findData(int(cur.method));
+    if (modeIndex < 0) {
+        mode->addItem(QStringLiteral("无效历史模式，请重新选择"), int(cur.method));
+        mode->setCurrentIndex(mode->count() - 1);
+    } else mode->setCurrentIndex(modeIndex);
+    layout->addWidget(mode);
+    auto *roundsLayout = new QHBoxLayout;
+    auto *roundLabel = new QLabel(QStringLiteral("最大细搜轮数（不含粗搜）："), dlg);
+    roundsLayout->addWidget(roundLabel);
+    auto *roundSpin = new QSpinBox(dlg);
+    roundSpin->setRange(1, OptimizationSettings::maximumFineRounds);
+    roundSpin->setValue(cur.maxFineRounds);
+    roundSpin->setSuffix(QStringLiteral(" 轮"));
+    roundsLayout->addWidget(roundSpin);
+    roundsLayout->addStretch();
+    layout->addLayout(roundsLayout);
+    auto coverage = std::make_shared<OptimizationSettings>(cur);
+    auto *coverageLayout = new QHBoxLayout;
+    auto *budgetSpin = new QSpinBox(dlg);
+    budgetSpin->setRange(1000, 1000000);
+    budgetSpin->setSingleStep(10000);
+    budgetSpin->setValue(cur.combinationBudget);
+    budgetSpin->setGroupSeparatorShown(true);
+    coverageLayout->addWidget(new QLabel(QStringLiteral("总处理预算："), dlg));
+    coverageLayout->addWidget(budgetSpin);
+    auto *enhancedCheck = new QCheckBox(QStringLiteral("增强搜索覆盖"), dlg);
+    enhancedCheck->setChecked(cur.enhancedCoverage);
+    coverageLayout->addWidget(enhancedCheck);
+    auto *coverageButton = new QPushButton(QStringLiteral("中心／扩展硬边界／企业工艺…"), dlg);
+    coverageLayout->addWidget(coverageButton);
+    coverageLayout->addStretch();
+    layout->addLayout(coverageLayout);
+    auto *fineNotes = new QLabel(QStringLiteral("细搜：连续尺寸步长减半、中心左右各1档；匝数/层数仍为整数1档，圆线仅表内相邻1档。"
+        "不超出原边界，固定量不变，跨轮重复不重算。多轮模式每轮再减半；连续2轮改善不足0.01%或无新增组合时停止。"
+        "无粗搜可行方案不进入细搜；局部细化不保证全局最优。"), dlg);
+    fineNotes->setWordWrap(true);
+    layout->addWidget(fineNotes);
+    const CalcInput base = m_calcInput;
+    auto *steelLayout = new QHBoxLayout;
+    auto *steelCheck = new QCheckBox(QStringLiteral("硅钢牌号参与寻优"), dlg);
+    steelCheck->setChecked(cur.searchSteelGrade);
+    auto *steelButton = new QPushButton(QStringLiteral("候选牌号及单价…"), dlg);
+    auto *steelLabel = new QLabel(dlg);
+    steelLabel->setWordWrap(true);
+    steelLayout->addWidget(steelCheck);
+    steelLayout->addWidget(steelButton);
+    steelLayout->addWidget(steelLabel, 1);
+    layout->addLayout(steelLayout);
+    auto *priceMode = new QComboBox(dlg);
+    priceMode->addItem(QStringLiteral("计算单内置基价（硅钢17元/kg）"), int(OptimizationSettings::BuiltInSteelPrice));
+    priceMode->addItem(QStringLiteral("按牌号自定义硅钢价（其他材料定价独立设置）"), int(OptimizationSettings::CustomSteelPrices));
+    int priceIndex = priceMode->findData(int(cur.steelPricing));
+    if (priceIndex < 0) {
+        priceMode->addItem(QStringLiteral("无效价格模式，请重新选择"), int(cur.steelPricing));
+        priceIndex = priceMode->count() - 1;
+    }
+    priceMode->setCurrentIndex(priceIndex);
+    layout->addWidget(priceMode);
+    auto *steelNote = new QLabel(QStringLiteral("自定义模式需显式填写每个参与牌号价格；价格随候选冻结，报价页仍独立、不自动同步。片厚随牌号联动；细搜为全体最低成本3中心，不保证每个牌号都细搜。"), dlg);
+    steelNote->setWordWrap(true);
+    layout->addWidget(steelNote);
+    auto gradeChoices = std::make_shared<QStringList>(cur.selectedSteelGrades);
+    auto priceTexts = std::make_shared<QMap<QString, QString>>(cur.steelGradePriceTexts);
+    auto materialTexts = std::make_shared<QStringList>(cur.materialPriceTexts);
+    auto *materialLayout = new QHBoxLayout;
+    auto *materialCheck = new QCheckBox(QStringLiteral("自定义铜/铝/油/油箱基价"), dlg);
+    materialCheck->setChecked(cur.materialPrices.custom);
+    auto *materialButton = new QPushButton(QStringLiteral("其他材料基价…"), dlg);
+    auto *materialLabel = new QLabel(dlg);
+    materialLayout->addWidget(materialCheck);
+    materialLayout->addWidget(materialButton);
+    materialLayout->addWidget(materialLabel, 1);
+    layout->addLayout(materialLayout);
+    auto *form = new QTableWidget(10, 5, dlg);
     form->setHorizontalHeaderLabels({QStringLiteral("搜索变量"),
-                                     QStringLiteral("步长"), QStringLiteral("范围(±N步)")});
+        QStringLiteral("参与寻优"), QStringLiteral("步长"), QStringLiteral("范围(±N步)"),
+        QStringLiteral("实际下界 ～ 上界")});
     form->verticalHeader()->setVisible(false);
     form->horizontalHeader()->setStretchLastSection(true);
     form->setColumnWidth(0, 130);
+    form->setColumnWidth(1, 90);
+    form->setColumnWidth(2, 120);
+    form->setColumnWidth(3, 110);
     form->setEditTriggers(QAbstractItemView::NoEditTriggers);
     form->setSelectionBehavior(QAbstractItemView::SelectRows);
     form->setAlternatingRowColors(true);
@@ -850,44 +971,316 @@ std::optional<OptimizationSettings> EnterCalcPage::showLoopParamsDialog()
         { "铁芯直径(mm)", cur.diaStep_mm, cur.diaRange },
         { "直线段长(mm)", cur.straightStep_mm, cur.straightRange },
         { "低压匝数", 1.0, cur.lvTurnsRange },
-        { "高压每层匝数", 1.0, cur.hvTplRange },
+        { "高压总层数 W12", 1.0, cur.hvTplRange },
+        { "低压箔厚(mm)", cur.lvFoilThickStep_mm, cur.lvFoilThickRange },
+        { "低压箔宽(mm)", cur.lvFoilWidthStep_mm, cur.lvFoilWidthRange },
+        { "高压裸线宽(mm)", cur.hvBareWidthStep_mm, cur.hvBareWidthRange },
+        { "高压裸线厚(mm)", cur.hvBareThickStep_mm, cur.hvBareThickRange },
+        { "高压圆线规格", 1.0, cur.hvRoundWireRange },
+        { "主油道宽(mm)", cur.mainDuctStep_mm, cur.mainDuctRange },
     };
-    QVector<QDoubleSpinBox *> stepSpins;
+    QVector<QDoubleSpinBox *> stepSpins(10, nullptr);
     QVector<QSpinBox *> rangeSpins;
-    for (int i = 0; i < 4; ++i) {
+    QVector<QCheckBox *> searchChecks;
+    const bool enabled[] = {cur.searchDiameter, cur.searchStraight, cur.searchLvTurns, cur.searchHvLayers,
+                            cur.searchLvFoilThick, cur.searchLvFoilWidth, cur.searchHvBareWidth, cur.searchHvBareThick,
+                            cur.searchHvRoundWire, cur.searchMainDuct};
+    for (int i = 0; i < 10; ++i) {
         form->setItem(i, 0, new QTableWidgetItem(QString::fromUtf8(rows[i].label)));
+        auto *check = new QCheckBox(QStringLiteral("参与"), dlg);
+        check->setChecked(enabled[i]);
+        form->setCellWidget(i, 1, check);
+        searchChecks.append(check);
+        form->setItem(i, 4, new QTableWidgetItem());
 
-        if (i < 2) {   // 尺寸类步长可编辑
+        if (i < 2 || (i >= 4 && i < 8) || i == 9) {   // 尺寸类步长可编辑；圆线仅按表内档
             auto *stepSpin = new QDoubleSpinBox(dlg);
-            stepSpin->setDecimals(1);
-            stepSpin->setRange(1.0, 50.0);
-            stepSpin->setSingleStep(0.5);
+            const bool fineStep = i == 4 || i == 6 || i == 7;
+            stepSpin->setDecimals(fineStep ? 2 : 1);
+            stepSpin->setRange(i == 9 ? 0.1 : (fineStep ? 0.01 : 1.0), i == 9 ? 5.0 : (fineStep ? 1.0 : 50.0));
+            stepSpin->setSingleStep(i == 9 ? 0.1 : (fineStep ? 0.01 : 0.5));
             stepSpin->setValue(rows[i].stepValue);
             stepSpin->setSuffix(QStringLiteral(" mm"));
-            form->setCellWidget(i, 1, stepSpin);
-            stepSpins.append(stepSpin);
+            form->setCellWidget(i, 2, stepSpin);
+            stepSpins[i] = stepSpin;
         } else {       // 匝数步长固定为 1（文本展示）
-            form->setItem(i, 1, new QTableWidgetItem(QStringLiteral("1")));
+            form->setItem(i, 2, new QTableWidgetItem(i == 8 ? QStringLiteral("表内相邻1档") : QStringLiteral("1")));
         }
 
         auto *rangeSpin = new QSpinBox(dlg);
         rangeSpin->setRange(0, 5);
+        if (i == 8) rangeSpin->setSuffix(QStringLiteral(" 档"));
         rangeSpin->setValue(rows[i].rangeValue);
-        form->setCellWidget(i, 2, rangeSpin);
+        form->setCellWidget(i, 3, rangeSpin);
         rangeSpins.append(rangeSpin);
     }
     layout->addWidget(form, 1);
 
     // 组合数实时预览
     auto *comboLabel = new QLabel(dlg);
-    const auto updateCombo = [comboLabel, rangeSpins]() {
-        const int total = (2 * rangeSpins[0]->value() + 1) * (2 * rangeSpins[1]->value() + 1)
-                          * (2 * rangeSpins[2]->value() + 1) * (2 * rangeSpins[3]->value() + 1);
-        comboLabel->setText(QStringLiteral("网格组合数：%1（范围越大寻优越慢）").arg(total));
+    const auto gather = [cur, coverage, budgetSpin, enhancedCheck, base, mode, roundSpin, steelCheck, gradeChoices, priceMode, priceTexts,
+                         materialCheck, materialTexts, stepSpins, rangeSpins, searchChecks]() {
+        OptimizationSettings s = cur;
+        s.combinationBudget = budgetSpin->value();
+        s.enhancedCoverage = enhancedCheck->isChecked();
+        s.centerLimit = coverage->centerLimit;
+        s.expandCoverage = coverage->expandCoverage;
+        s.maxExpansionRounds = coverage->maxExpansionRounds;
+        s.hardMinimumTexts = coverage->hardMinimumTexts;
+        s.hardMaximumTexts = coverage->hardMaximumTexts;
+        s.craftConstraints = coverage->craftConstraints;
+        s.method = static_cast<OptimizationSettings::Method>(mode->currentData().toInt());
+        s.maxFineRounds = roundSpin->value();
+        s.searchSteelGrade = steelCheck->isChecked();
+        s.selectedSteelGrades = *gradeChoices;
+        s.steelPricing = static_cast<OptimizationSettings::SteelPricing>(priceMode->currentData().toInt());
+        s.steelGradePriceTexts = *priceTexts;
+        s.materialPriceTexts = *materialTexts;
+        s.materialPrices = MaterialPrices::fromTexts(materialCheck->isChecked(), *materialTexts);
+        s.steelGradePrices.clear();
+        for (auto it = priceTexts->cbegin(); it != priceTexts->cend(); ++it) {
+            bool ok = false;
+            const double price = it.value().trimmed().toDouble(&ok);
+            s.steelGradePrices[it.key()] = ok ? price : std::numeric_limits<double>::quiet_NaN();
+        }
+        s.diaStep_mm = stepSpins[0]->value();
+        s.straightStep_mm = stepSpins[1]->value();
+        s.diaRange = rangeSpins[0]->value();
+        s.straightRange = rangeSpins[1]->value();
+        s.lvTurnsRange = rangeSpins[2]->value();
+        s.hvTplRange = rangeSpins[3]->value();
+        s.searchDiameter = searchChecks[0]->isChecked();
+        s.searchStraight = searchChecks[1]->isChecked();
+        s.searchLvTurns = searchChecks[2]->isChecked();
+        s.searchHvLayers = searchChecks[3]->isChecked();
+        s.lvFoilThickStep_mm = stepSpins[4]->value();
+        s.lvFoilWidthStep_mm = stepSpins[5]->value();
+        s.lvFoilThickRange = rangeSpins[4]->value();
+        s.lvFoilWidthRange = rangeSpins[5]->value();
+        s.searchLvFoilThick = searchChecks[4]->isChecked();
+        s.searchLvFoilWidth = searchChecks[5]->isChecked();
+        s.hvBareWidthStep_mm = stepSpins[6]->value();
+        s.hvBareThickStep_mm = stepSpins[7]->value();
+        s.hvBareWidthRange = rangeSpins[6]->value();
+        s.hvBareThickRange = rangeSpins[7]->value();
+        s.searchHvBareWidth = searchChecks[6]->isChecked();
+        s.searchHvBareThick = searchChecks[7]->isChecked();
+        s.searchHvRoundWire = searchChecks[8]->isChecked();
+        s.hvRoundWireRange = rangeSpins[8]->value();
+        s.searchMainDuct = searchChecks[9]->isChecked();
+        s.mainDuctStep_mm = stepSpins[9]->value();
+        s.mainDuctRange = rangeSpins[9]->value();
+        prepareRoundWireSearch(s, base);
+        prepareSteelGradeSearch(s);
+        return s;
+    };
+    const auto updateCombo = [comboLabel, form, base, gather, roundSpin, roundLabel, steelButton, steelLabel, fineNotes, steelNote,
+                              materialButton, materialLabel, rangeSpins, stepSpins, searchChecks]() {
+        const auto s = gather();
+        roundLabel->setText(s.enhancedCoverage ? QStringLiteral("每个区域最大细搜轮数（不含粗搜／扩展）：")
+                                               : QStringLiteral("最大细搜轮数（不含粗搜）："));
+        fineNotes->setText(s.enhancedCoverage
+            ? QStringLiteral("增强：中心池与展示池分离；连续尺寸局部细化，整数／圆线不插值。每次扩展后重新局部细化（至少一轮），轮数按每个区域计。只有开启扩展并填写硬边界才探索触边方向；局部低改善不取消允许的后续扩展，不证明全局最优。")
+            : QStringLiteral("细搜：连续尺寸逐轮减半，中心左右各1档；匝数／层数仍整数1档，圆线仅表内相邻档。不超原范围，跨轮不重算；连续2轮改善不足0.01%或无新增点停止，不保证全局最优。"));
+        steelNote->setText(s.enhancedCoverage
+            ? QStringLiteral("价格与片厚按牌号冻结；增强细搜先覆盖可行牌号代表，再补尺寸区域。中心池每牌号上限256；未获中心和池裁剪见报告，不宣称全部区域均已覆盖。")
+            : QStringLiteral("自定义模式须填写参与牌号价格；价格随候选冻结，报价页独立。片厚随牌号联动；原细搜取全体最低成本3个中心，不保证每个牌号均细搜。"));
+        materialButton->setEnabled(s.materialPrices.custom);
+        materialLabel->setText(s.materialPrices.custom
+            ? QStringLiteral("自定义（元/kg）：铜%1 / 铝%2 / 油%3 / 油箱%4")
+                .arg(s.materialPriceTexts.value(0), s.materialPriceTexts.value(1),
+                     s.materialPriceTexts.value(2), s.materialPriceTexts.value(3))
+            : QStringLiteral("内置基价：60 / 60 / 10 / 9元/kg"));
+        materialLabel->setToolTip(s.materialPrices.description());
+        steelButton->setEnabled(s.searchSteelGrade || s.steelPricing == OptimizationSettings::CustomSteelPrices);
+        steelLabel->setText(s.searchSteelGrade
+            ? QStringLiteral("已选%1个；有效参与%2个").arg(s.selectedSteelGrades.size()).arg(s.steelGrades.size())
+            : QStringLiteral("固定：%1（片厚%2 mm）").arg(base.steelGrade).arg(CalcInput::thicknessFromSteelGrade(base.steelGrade)));
+        steelLabel->setToolTip(s.selectedSteelGrades.join(QStringLiteral("、")));
+        roundSpin->setEnabled(s.method == OptimizationSettings::MultiRound);
+        const double values[] = {base.coreDiameter_mm, base.coreStraight_mm,
+                                double(base.lvTurns), double(base.hvTurnsPerLayer), base.lvFoilThick_mm, base.lvFoilWidth_mm,
+                                base.hvBareWidth_mm, base.hvBareThick_mm};
+        const double steps[] = {s.diaStep_mm, s.straightStep_mm, 1.0, 1.0, s.lvFoilThickStep_mm, s.lvFoilWidthStep_mm,
+                               s.hvBareWidthStep_mm, s.hvBareThickStep_mm};
+        for (int i = 0; i < 8; ++i) {
+            const bool search = searchChecks[i]->isChecked();
+            rangeSpins[i]->setEnabled(search);
+            if (stepSpins[i]) stepSpins[i]->setEnabled(search);
+            const double span = search ? rangeSpins[i]->value() * steps[i] : 0.0;
+            form->item(i, 4)->setText(QStringLiteral("%1 ～ %2%3")
+                .arg(QString::number(values[i] - span, 'g', 12),
+                     QString::number(values[i] + span, 'g', 12), search ? QString() : QStringLiteral("（固定）")));
+            if (i >= 6 && s.searchHvRoundWire && !s.hvRoundWireDiameters.isEmpty())
+                form->item(i, 4)->setText(QStringLiteral("由圆线规格同步直径"));
+        }
+        rangeSpins[8]->setEnabled(searchChecks[8]->isChecked());
+        QStringList roundNames;
+        for (double diameter : s.hvRoundWireDiameters)
+            roundNames << PerformanceCriteria::valueText(diameter);
+        form->item(8, 4)->setText(s.searchHvRoundWire
+            ? (roundNames.isEmpty() ? QStringLiteral("无有效规格")
+                                   : QStringLiteral("%1 ～ %2（%3档）").arg(roundNames.first(), roundNames.last()).arg(roundNames.size()))
+            : (base.isRoundHighVoltageWire() ? QStringLiteral("%1（固定）").arg(base.hvBareWidth_mm) : QStringLiteral("仅圆线基准可参与")));
+        form->item(8, 4)->setToolTip(roundNames.join(QStringLiteral("、")));
+        const bool duct = s.searchMainDuct;
+        rangeSpins[9]->setEnabled(duct);
+        stepSpins[9]->setEnabled(duct);
+        const double ductSpan = duct ? s.mainDuctRange * s.mainDuctStep_mm : 0.0;
+        form->item(9, 4)->setText(QStringLiteral("%1 ～ %2%3")
+            .arg(base.mainDuctWidth_mm - ductSpan).arg(base.mainDuctWidth_mm + ductSpan)
+            .arg(duct ? QString() : QStringLiteral("（固定）")));
+        const QString error = s.validationError(base);
+        comboLabel->setText(QStringLiteral("首轮计划：%1；处理预算%2；%5；不勾选即固定。%3%4")
+            .arg(s.plannedCount()).arg(s.combinationBudget)
+            .arg(roundNames.isEmpty() ? QString() : QStringLiteral("\n圆线实际直径(mm)：") + roundNames.join(QStringLiteral("、")))
+            .arg(error.isEmpty() ? QString() : QStringLiteral("\n") + error)
+            .arg(s.enhancedCoverage ? QStringLiteral("增强：实际处理达到预算即停止，保留最低成本5000个")
+                : QStringLiteral("原模式保守计划≤%1，未扣重复与裁剪").arg(s.runUpperBound())));
+        if (s.searchSteelGrade && !s.steelGrades.isEmpty())
+            comboLabel->setText(comboLabel->text() + QStringLiteral("\n冻结候选牌号：") + s.steelGrades.join(QStringLiteral("、")));
+        comboLabel->setText(comboLabel->text() + (s.steelPricing == OptimizationSettings::CustomSteelPrices
+            ? QStringLiteral("\n本轮将冻结各牌号自定义硅钢价。")
+            : QStringLiteral("\n本轮硅钢仍统一17元/kg；已填自定义价仅保留，不参与本轮。")));
+        comboLabel->setToolTip(s.materialPrices.description());
+        comboLabel->setText(comboLabel->text() + QLatin1Char('\n') + s.craftConstraints.description());
     };
     for (auto *spin : rangeSpins) {
         connect(spin, &QSpinBox::valueChanged, updateCombo);
     }
+    for (auto *spin : stepSpins) if (spin) connect(spin, &QDoubleSpinBox::valueChanged, updateCombo);
+    for (auto *check : searchChecks) connect(check, &QCheckBox::toggled, updateCombo);
+    connect(mode, &QComboBox::currentIndexChanged, updateCombo);
+    connect(roundSpin, &QSpinBox::valueChanged, updateCombo);
+    connect(budgetSpin, &QSpinBox::valueChanged, updateCombo);
+    connect(enhancedCheck, &QCheckBox::toggled, updateCombo);
+    connect(coverageButton, &QPushButton::clicked, dlg, [=]() {
+        const auto result = SearchCoverageSettings::edit(dlg, gather(), base);
+        if (result) { *coverage = *result; updateCombo(); }
+    });
+    connect(steelCheck, &QCheckBox::toggled, updateCombo);
+    connect(priceMode, &QComboBox::currentIndexChanged, updateCombo);
+    connect(materialCheck, &QCheckBox::toggled, updateCombo);
+    connect(materialButton, &QPushButton::clicked, dlg, [dlg, materialTexts, updateCombo]() {
+        QDialog selector(dlg);
+        selector.setWindowTitle(QStringLiteral("寻优其他材料基价（非报价）"));
+        auto *priceLayout = new QVBoxLayout(&selector);
+        auto *hint = new QLabel(QStringLiteral("四项均须为大于0、不超过99999元/kg的有效数值。首次60/60/10/9是原计算单基价，不是市场价格。\n"
+            "铜、铝输入基价，不是成品导线价：原加工加价、损耗系数和舍入继续保留。报价页独立，不自动同步。"), &selector);
+        hint->setWordWrap(true);
+        priceLayout->addWidget(hint);
+        auto *priceForm = new QFormLayout;
+        const QStringList names{QStringLiteral("铜基价（元/kg）："), QStringLiteral("铝基价（元/kg）："),
+                                QStringLiteral("绝缘油单价（元/kg）："), QStringLiteral("油箱钢材单价（元/kg）：")};
+        QVector<QLineEdit *> edits;
+        for (int i = 0; i < 4; ++i) {
+            auto *edit = new QLineEdit(materialTexts->value(i), &selector);
+            edit->setPlaceholderText(QStringLiteral("必填，不自动回退"));
+            priceForm->addRow(names[i], edit);
+            edits.append(edit);
+        }
+        priceLayout->addLayout(priceForm);
+        auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &selector);
+        priceLayout->addWidget(buttons);
+        connect(buttons, &QDialogButtonBox::accepted, &selector, [&selector, materialTexts, edits]() {
+            QStringList texts;
+            for (auto *edit : edits) texts.append(edit->text());
+            const auto error = MaterialPrices::fromTexts(true, texts).validationError();
+            if (!error.isEmpty()) {
+                QMessageBox::warning(&selector, QStringLiteral("材料基价无效"), error);
+                return;
+            }
+            *materialTexts = texts;
+            selector.accept();
+        });
+        connect(buttons, &QDialogButtonBox::rejected, &selector, &QDialog::reject);
+        selector.resize(560, 280);
+        if (selector.exec() == QDialog::Accepted) updateCombo();
+    });
+    connect(steelButton, &QPushButton::clicked, dlg, [dlg, base, steelCheck, priceMode, gradeChoices, priceTexts, updateCombo]() {
+        auto &db = DesignDatabase::instance();
+        if (!db.isLoaded() && !db.load()) {
+            QMessageBox::warning(dlg, QStringLiteral("硅钢曲线加载失败"), db.lastError());
+            return;
+        }
+        QDialog selector(dlg);
+        selector.setWindowTitle(QStringLiteral("候选硅钢牌号及寻优单价"));
+        selector.resize(740, 460);
+        QVBoxLayout selectorLayout(&selector);
+        const bool search = steelCheck->isChecked();
+        const bool custom = priceMode->currentData().toInt() == int(OptimizationSettings::CustomSteelPrices);
+        auto *hint = new QLabel(search
+            ? QStringLiteral("显式勾选候选，失效旧选择需取消。自定义模式填写正单价（元/kg），空值不自动套17。")
+            : QStringLiteral("牌号搜索关闭，仅固定当前设计牌号；可填写当前牌号单价，不改原候选选择。"), &selector);
+        hint->setWordWrap(true);
+        selectorLayout.addWidget(hint);
+        auto *list = new QTableWidget(0, 3, &selector);
+        list->setHorizontalHeaderLabels({QStringLiteral("参与牌号"), QStringLiteral("片厚/曲线范围"), QStringLiteral("自定义单价(元/kg)")});
+        list->verticalHeader()->hide();
+        list->horizontalHeader()->setStretchLastSection(true);
+        list->setColumnWidth(0, 210);
+        list->setColumnWidth(1, 240);
+        list->setEditTriggers(QAbstractItemView::NoEditTriggers);
+        const auto addEntry = [list, search, custom, base, gradeChoices, priceTexts](const QString &name, const QString &detail) {
+            const int row = list->rowCount();
+            list->insertRow(row);
+            auto *entry = new QTableWidgetItem(name);
+            entry->setData(Qt::UserRole, name);
+            entry->setFlags(Qt::ItemIsEnabled | Qt::ItemIsSelectable | (search ? Qt::ItemIsUserCheckable : Qt::NoItemFlags));
+            const bool checked = search
+                ? std::any_of(gradeChoices->cbegin(), gradeChoices->cend(), [&name](const QString &choice) {
+                    return choice.trimmed().compare(name.trimmed(), Qt::CaseInsensitive) == 0;
+                }) : name.trimmed().compare(base.steelGrade.trimmed(), Qt::CaseInsensitive) == 0;
+            entry->setCheckState(checked ? Qt::Checked : Qt::Unchecked);
+            list->setItem(row, 0, entry);
+            list->setItem(row, 1, new QTableWidgetItem(detail));
+            auto *edit = new QLineEdit(list);
+            edit->setPlaceholderText(QStringLiteral("未填，自定义模式必填"));
+            edit->setText(priceTexts->value(name.trimmed().toUpper()));
+            edit->setEnabled(custom && checked);
+            list->setCellWidget(row, 2, edit);
+        };
+        QSet<QString> displayed;
+        for (const auto &curve : db.steelCurves()) {
+            QString canonical;
+            if (!steelGradeSearchError(db, curve.grade, &canonical).isEmpty()) continue;
+            if (displayed.contains(canonical.toUpper())) continue;
+            displayed.insert(canonical.toUpper());
+            double minT = 0.0, maxT = 0.0;
+            db.steelCurveRange(canonical, minT, maxT);
+            addEntry(canonical, QStringLiteral("%1 mm | %2～%3 T")
+                .arg(CalcInput::thicknessFromSteelGrade(canonical)).arg(minT).arg(maxT));
+        }
+        for (const auto &old : *gradeChoices) {
+            if (displayed.contains(old.trimmed().toUpper())) continue;
+            displayed.insert(old.trimmed().toUpper());
+            addEntry(old, QStringLiteral("失效选择，请取消勾选"));
+            list->item(list->rowCount() - 1, 0)->setToolTip(steelGradeSearchError(db, old));
+        }
+        if (!search && !displayed.contains(base.steelGrade.trimmed().toUpper()))
+            addEntry(base.steelGrade, QStringLiteral("当前固定牌号，仍须通过计算入口校验"));
+        connect(list, &QTableWidget::itemChanged, list, [list, custom](QTableWidgetItem *entry) {
+            if (entry->column() != 0) return;
+            if (auto *edit = qobject_cast<QLineEdit *>(list->cellWidget(entry->row(), 2)))
+                edit->setEnabled(custom && entry->checkState() == Qt::Checked);
+        });
+        selectorLayout.addWidget(list, 1);
+        auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &selector);
+        connect(buttons, &QDialogButtonBox::accepted, &selector, &QDialog::accept);
+        connect(buttons, &QDialogButtonBox::rejected, &selector, &QDialog::reject);
+        selectorLayout.addWidget(buttons);
+        if (selector.exec() == QDialog::Accepted) {
+            if (search) gradeChoices->clear();
+            for (int i = 0; i < list->rowCount(); ++i) {
+                const QString name = list->item(i, 0)->data(Qt::UserRole).toString();
+                if (search && list->item(i, 0)->checkState() == Qt::Checked) gradeChoices->append(name);
+                const auto *edit = qobject_cast<QLineEdit *>(list->cellWidget(i, 2));
+                if (edit) (*priceTexts)[name.trimmed().toUpper()] = edit->text();
+            }
+            updateCombo();
+        }
+    });
+    comboLabel->setWordWrap(true);
     updateCombo();
     layout->addWidget(comboLabel, 0, Qt::AlignCenter);
 
@@ -896,20 +1289,36 @@ std::optional<OptimizationSettings> EnterCalcPage::showLoopParamsDialog()
         QDialogButtonBox::Ok | QDialogButtonBox::Cancel, dlg);
     btnBox->button(QDialogButtonBox::Ok)->setText(QStringLiteral("保存"));
     btnBox->button(QDialogButtonBox::Cancel)->setText(QStringLiteral("取消"));
-    connect(btnBox, &QDialogButtonBox::accepted, dlg, &QDialog::accept);
+    connect(btnBox, &QDialogButtonBox::accepted, dlg, [this, dlg, base, gather, budgetSpin, roundSpin, stepSpins, rangeSpins, searchChecks]() {
+        if (!budgetSpin->hasAcceptableInput()) {
+            QMessageBox::warning(dlg, QStringLiteral("搜索设置无效"), QStringLiteral("请完整输入1000至1000000的总处理预算。"));
+            return;
+        }
+        if (gather().method == OptimizationSettings::MultiRound && !roundSpin->hasAcceptableInput()) {
+            QMessageBox::warning(dlg, QStringLiteral("搜索设置无效"), QStringLiteral("请完整输入1至5的最大细搜轮数。"));
+            return;
+        }
+        for (int i = 0; i < 10; ++i) {
+            if (searchChecks[i]->isChecked() && (!rangeSpins[i]->hasAcceptableInput()
+                    || (stepSpins[i] && !stepSpins[i]->hasAcceptableInput()))) {
+                QMessageBox::warning(dlg, QStringLiteral("搜索设置无效"), QStringLiteral("请完整输入有效步长和范围。"));
+                return;
+            }
+        }
+        const QString error = gather().validationError(base);
+        if (!error.isEmpty()) {
+            QMessageBox::warning(dlg, QStringLiteral("搜索设置无效"), error);
+            return;
+        }
+        dlg->accept();
+    });
     connect(btnBox, &QDialogButtonBox::rejected, dlg, &QDialog::reject);
     layout->addWidget(btnBox);
 
     const int rc = dlg->exec();
     std::optional<OptimizationSettings> result;
     if (rc == QDialog::Accepted) {
-        OptimizationSettings s = cur;
-        s.diaStep_mm = qobject_cast<QDoubleSpinBox *>(form->cellWidget(0, 1))->value();
-        s.diaRange = rangeSpins[0]->value();
-        s.straightStep_mm = qobject_cast<QDoubleSpinBox *>(form->cellWidget(1, 1))->value();
-        s.straightRange = rangeSpins[1]->value();
-        s.lvTurnsRange = rangeSpins[2]->value();
-        s.hvTplRange = rangeSpins[3]->value();
+        const OptimizationSettings s = gather();
         saveOptimizeSettings(s);
         result = s;
     }
@@ -921,24 +1330,117 @@ OptimizationSettings EnterCalcPage::loadOptimizeSettings() const
 {
     OptimizationSettings s;   // 默认值即历史硬编码行为
     QSettings settings("ZTF", "Designer");
+    s.combinationBudget = settings.value("optimize/combinationBudget", s.combinationBudget).toInt();
+    s.enhancedCoverage = settings.value("optimize/enhancedCoverage", false).toBool();
+    s.centerLimit = settings.value("optimize/centerLimit", s.centerLimit).toInt();
+    s.expandCoverage = settings.value("optimize/expandCoverage", false).toBool();
+    s.maxExpansionRounds = settings.value("optimize/maxExpansionRounds", s.maxExpansionRounds).toInt();
+    s.searchMainDuct = settings.value("optimize/searchMainDuct", false).toBool();
+    s.mainDuctStep_mm = settings.value("optimize/mainDuctStep", s.mainDuctStep_mm).toDouble();
+    s.mainDuctRange = settings.value("optimize/mainDuctRange", s.mainDuctRange).toInt();
+    for (int i = 0; i < 9; ++i) {
+        s.hardMinimumTexts[i] = settings.value(QStringLiteral("optimize/hardMinimum/%1").arg(i)).toString();
+        s.hardMaximumTexts[i] = settings.value(QStringLiteral("optimize/hardMaximum/%1").arg(i)).toString();
+    }
+    s.craftConstraints.enabled = settings.value("optimize/craftEnabled", false).toBool();
+    s.craftConstraints.minimumMainDuct_mm = settings.value("optimize/craftMinimumMainDuct", 0.0).toDouble();
+    s.craftConstraints.source = settings.value("optimize/craftSource").toString();
+    s.method = static_cast<OptimizationSettings::Method>(settings.value("optimize/searchMethod", int(s.method)).toInt());
+    s.maxFineRounds = settings.value("optimize/maxFineRounds", s.maxFineRounds).toInt();
     s.diaStep_mm = settings.value("optimize/diaStep", s.diaStep_mm).toDouble();
     s.diaRange = settings.value("optimize/diaRange", s.diaRange).toInt();
     s.straightStep_mm = settings.value("optimize/straightStep", s.straightStep_mm).toDouble();
     s.straightRange = settings.value("optimize/straightRange", s.straightRange).toInt();
     s.lvTurnsRange = settings.value("optimize/lvTurnsRange", s.lvTurnsRange).toInt();
     s.hvTplRange = settings.value("optimize/hvTplRange", s.hvTplRange).toInt();
+    s.searchDiameter = settings.value("optimize/searchDiameter", true).toBool();
+    s.searchStraight = settings.value("optimize/searchStraight", true).toBool();
+    s.searchLvTurns = settings.value("optimize/searchLvTurns", true).toBool();
+    s.searchHvLayers = settings.value("optimize/searchHvLayers", true).toBool();
+    s.lvFoilThickStep_mm = settings.value("optimize/lvFoilThickStep", s.lvFoilThickStep_mm).toDouble();
+    s.lvFoilWidthStep_mm = settings.value("optimize/lvFoilWidthStep", s.lvFoilWidthStep_mm).toDouble();
+    s.lvFoilThickRange = settings.value("optimize/lvFoilThickRange", s.lvFoilThickRange).toInt();
+    s.lvFoilWidthRange = settings.value("optimize/lvFoilWidthRange", s.lvFoilWidthRange).toInt();
+    s.searchLvFoilThick = settings.value("optimize/searchLvFoilThick", false).toBool();
+    s.searchLvFoilWidth = settings.value("optimize/searchLvFoilWidth", false).toBool();
+    s.hvBareWidthStep_mm = settings.value("optimize/hvBareWidthStep", s.hvBareWidthStep_mm).toDouble();
+    s.hvBareThickStep_mm = settings.value("optimize/hvBareThickStep", s.hvBareThickStep_mm).toDouble();
+    s.hvBareWidthRange = settings.value("optimize/hvBareWidthRange", s.hvBareWidthRange).toInt();
+    s.hvBareThickRange = settings.value("optimize/hvBareThickRange", s.hvBareThickRange).toInt();
+    s.searchHvBareWidth = settings.value("optimize/searchHvBareWidth", false).toBool();
+    s.searchHvBareThick = settings.value("optimize/searchHvBareThick", false).toBool();
+    s.searchHvRoundWire = settings.value("optimize/searchHvRoundWire", false).toBool();
+    s.hvRoundWireRange = settings.value("optimize/hvRoundWireRange", s.hvRoundWireRange).toInt();
+    s.searchSteelGrade = settings.value("optimize/searchSteelGrade", false).toBool();
+    s.selectedSteelGrades = settings.value("optimize/selectedSteelGrades", QStringList{}).toStringList();
+    s.steelPricing = static_cast<OptimizationSettings::SteelPricing>(settings.value("optimize/steelPricing", int(s.steelPricing)).toInt());
+    const auto prices = settings.value("optimize/steelGradePriceTexts").toMap();
+    s.materialPriceTexts = settings.value("optimize/materialPriceTexts", s.materialPriceTexts).toStringList();
+    s.materialPrices = MaterialPrices::fromTexts(settings.value("optimize/customMaterialPrices", false).toBool(),
+                                                s.materialPriceTexts);
+    for (auto it = prices.cbegin(); it != prices.cend(); ++it) {
+        const QString key = it.key().trimmed().toUpper();
+        s.steelGradePriceTexts[key] = it.value().toString();
+        bool ok = false;
+        const double value = it.value().toString().trimmed().toDouble(&ok);
+        s.steelGradePrices[key] = ok ? value : std::numeric_limits<double>::quiet_NaN();
+    }
     return s;
 }
 
 void EnterCalcPage::saveOptimizeSettings(const OptimizationSettings &s) const
 {
     QSettings settings("ZTF", "Designer");
+    settings.setValue("optimize/combinationBudget", s.combinationBudget);
+    settings.setValue("optimize/enhancedCoverage", s.enhancedCoverage);
+    settings.setValue("optimize/centerLimit", s.centerLimit);
+    settings.setValue("optimize/expandCoverage", s.expandCoverage);
+    settings.setValue("optimize/maxExpansionRounds", s.maxExpansionRounds);
+    settings.setValue("optimize/searchMainDuct", s.searchMainDuct);
+    settings.setValue("optimize/mainDuctStep", s.mainDuctStep_mm);
+    settings.setValue("optimize/mainDuctRange", s.mainDuctRange);
+    for (int i = 0; i < 9; ++i) {
+        settings.setValue(QStringLiteral("optimize/hardMinimum/%1").arg(i), s.hardMinimumTexts[i]);
+        settings.setValue(QStringLiteral("optimize/hardMaximum/%1").arg(i), s.hardMaximumTexts[i]);
+    }
+    settings.setValue("optimize/craftEnabled", s.craftConstraints.enabled);
+    settings.setValue("optimize/craftMinimumMainDuct", s.craftConstraints.minimumMainDuct_mm);
+    settings.setValue("optimize/craftSource", s.craftConstraints.source);
+    settings.setValue("optimize/searchMethod", int(s.method));
+    settings.setValue("optimize/maxFineRounds", s.maxFineRounds);
     settings.setValue("optimize/diaStep", s.diaStep_mm);
     settings.setValue("optimize/diaRange", s.diaRange);
     settings.setValue("optimize/straightStep", s.straightStep_mm);
     settings.setValue("optimize/straightRange", s.straightRange);
     settings.setValue("optimize/lvTurnsRange", s.lvTurnsRange);
     settings.setValue("optimize/hvTplRange", s.hvTplRange);
+    settings.setValue("optimize/searchDiameter", s.searchDiameter);
+    settings.setValue("optimize/searchStraight", s.searchStraight);
+    settings.setValue("optimize/searchLvTurns", s.searchLvTurns);
+    settings.setValue("optimize/searchHvLayers", s.searchHvLayers);
+    settings.setValue("optimize/lvFoilThickStep", s.lvFoilThickStep_mm);
+    settings.setValue("optimize/lvFoilWidthStep", s.lvFoilWidthStep_mm);
+    settings.setValue("optimize/lvFoilThickRange", s.lvFoilThickRange);
+    settings.setValue("optimize/lvFoilWidthRange", s.lvFoilWidthRange);
+    settings.setValue("optimize/searchLvFoilThick", s.searchLvFoilThick);
+    settings.setValue("optimize/searchLvFoilWidth", s.searchLvFoilWidth);
+    settings.setValue("optimize/hvBareWidthStep", s.hvBareWidthStep_mm);
+    settings.setValue("optimize/hvBareThickStep", s.hvBareThickStep_mm);
+    settings.setValue("optimize/hvBareWidthRange", s.hvBareWidthRange);
+    settings.setValue("optimize/hvBareThickRange", s.hvBareThickRange);
+    settings.setValue("optimize/searchHvBareWidth", s.searchHvBareWidth);
+    settings.setValue("optimize/searchHvBareThick", s.searchHvBareThick);
+    settings.setValue("optimize/searchHvRoundWire", s.searchHvRoundWire);
+    settings.setValue("optimize/hvRoundWireRange", s.hvRoundWireRange);
+    settings.setValue("optimize/searchSteelGrade", s.searchSteelGrade);
+    settings.setValue("optimize/selectedSteelGrades", s.selectedSteelGrades);
+    settings.setValue("optimize/steelPricing", int(s.steelPricing));
+    QVariantMap prices;
+    for (auto it = s.steelGradePriceTexts.cbegin(); it != s.steelGradePriceTexts.cend(); ++it)
+        prices.insert(it.key(), it.value());
+    settings.setValue("optimize/steelGradePriceTexts", prices);
+    settings.setValue("optimize/customMaterialPrices", s.materialPrices.custom);
+    settings.setValue("optimize/materialPriceTexts", s.materialPriceTexts);
 }
 
 // 竖排"程序选择"导航按钮（点击返回主界面），三个 Tab 各自调用创建
@@ -949,10 +1451,10 @@ QPushButton *EnterCalcPage::createNavButton(QWidget *parent)
     btn->setToolTip(QStringLiteral("返回主界面"));
     btn->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Expanding);
     btn->setStyleSheet(
-        "QPushButton { background: rgba(0,188,212,0.15); color: #4dd0e1;"
-        "border: none; border-right: 1px solid #3a4050; border-radius: 0px;"
+        "QPushButton { background: rgba(33, 115, 70,0.15); color: #185C37;"
+        "border: none; border-right: 1px solid #D3DDD6; border-radius: 0px;"
         "font-size: 12px; padding: 4px; }"
-        "QPushButton:hover { background: #00bcd4; color: #0d1117; }");
+        "QPushButton:hover { background: #217346; color: #FFFFFF; }");
     connect(btn, &QPushButton::clicked, this, &EnterCalcPage::dashboardRequested);
     return btn;
 }
@@ -999,7 +1501,7 @@ void EnterCalcPage::setupOptimizeTab()
     QStringList sections = {"变压器类型选择", "一 铁芯结构", "二 线圈结构", "三 装配结构", "四 工艺方案", "五 其他参数"};
     QVector<QStringList> items = {
         {"变压器类型:配电变压器"},
-        {"铁芯结构形式:类椭圆形", "铁扼结构形式:D形扼", "铁芯轭截面放大系数:1.0",
+        {"铁芯结构形式:椭圆形", "铁扼结构形式:D形扼", "铁芯轭截面放大系数:1.0",
          "铁芯柱截面放大系数:1.0", "铁芯有效截面积系数:0.97"},
         {"绕组形式:双绕组", "低压线圈结构形式:箔绕", "高压线圈结构形式:多层圆筒",
          "低压线圈材料:铜", "高压线圈材料:铜", "线圈绝缘类型:标准绝缘"},
@@ -1015,7 +1517,7 @@ void EnterCalcPage::setupOptimizeTab()
         table->setItem(row, 0, new QTableWidgetItem(QString::number(row + 1)));
         auto *hdr = new QTableWidgetItem(sections[s]);
         QFont f = hdr->font(); f.setBold(true); hdr->setFont(f);
-        hdr->setBackground(QColor("#1a3a4a"));
+        hdr->setBackground(QColor("#DCEEDF"));
         table->setItem(row, 1, hdr);
         table->setSpan(row, 1, 1, 3);
         row++;
@@ -1078,12 +1580,30 @@ void EnterCalcPage::setupPrintTab()
 
 void EnterCalcPage::setCalcInput(const CalcInput &input)
 {
+    m_optSummaryAvailable = false;
+    if (m_optRunning) {
+        m_discardOptimizationResults = true;
+        m_optimizer->stop();
+    }
     m_calcInput = input;
+    m_lastInput = CalcInput{};
+    m_lastParams = m_params;
+    m_emResult = CalcResult{};
+    m_hasResult = false;
+    m_confirmedSchemeIdx = -1;
+    m_schemeData.clear();
+    m_schemeParams.clear();
+    m_schemeTable->clearResults();
+    m_emResultPanel->clearResult();
+    m_statusBar->setText(QStringLiteral("已加载新参数，请重新计算"));
     // 进入计算页时刷新打印表初始计算单（当前设计变量的计算结果；
     // 快速计算/寻优完成后会由 onRunEmCalc 等用最新结果覆盖）
     if (!m_printTable) {
         return;   // 构造期间 Tab 未建完（正常流程不会发生）
     }
+    m_printTable->setRowCount(0);
+    if (!calculationScopeError(m_config, m_params, m_calcInput).isEmpty())
+        return;
     CalcResult initResult;
     if (m_engine.calcElectromagnetic(m_calcInput, initResult) && initResult.valid) {
         m_printTable->loadData(
@@ -1101,24 +1621,63 @@ void EnterCalcPage::onTabChanged(int index)
 
 void EnterCalcPage::onRunEmCalc()
 {
-    CalcInput input = m_calcInput;   // 参数设置页编辑的设计变量（默认 SB20-M-630-10）
-    m_lastInput = input;
-    if (!m_engine.calcElectromagnetic(input, m_emResult) || !m_emResult.valid) {
-        m_statusBar->setText(QStringLiteral("电磁计算失败: %1").arg(m_emResult.error));
-        QMessageBox::warning(this, QStringLiteral("电磁计算"),
-                             QStringLiteral("计算失败: %1").arg(m_emResult.error));
+    runEmCalcInput(m_calcInput);
+}
+
+void EnterCalcPage::runEmCalcInput(const CalcInput &candidate)
+{
+    if (m_optRunning) {
+        QMessageBox::information(this, QStringLiteral("寻优进行中"),
+            QStringLiteral("请先结束或停止本轮寻优，再快速计算或应用其他方案，避免混入本轮候选。"));
         return;
     }
+    CalcInput input = candidate;
+    const auto reportFailure = [this](const QString &title, const QString &reason) {
+        const QString state = m_hasResult && m_emResult.valid
+            ? QStringLiteral("本次未更新；仍保留上一次成功方案的结果、指标及打印数据。")
+            : QStringLiteral("当前没有成功计算结果，本次未生成结果。 ");
+        m_statusBar->setText(QStringLiteral("本次计算失败：%1 ｜ %2").arg(reason, state));
+        QMessageBox::warning(this, title, reason + QStringLiteral("\n\n") + state);
+    };
+    // 侧栏方案库也走同一标准匹配/输入校验入口，不能绕过设计页。
+    ParamTableWidget inputTable(this);
+    inputTable.loadParamsForConfig(ParamTableWidget::paramsForInput(m_params, input),
+        m_config, input, m_config.calcMode == StructureConfig::Professional);
+    TransformerParams resultParams;
+    QString inputError;
+    if (!inputTable.collectForCalculation(resultParams, input, inputError)) {
+        reportFailure(QStringLiteral("方案输入不可用"), inputError);
+        return;
+    }
+    const QString scopeError = calculationScopeError(m_config, resultParams, input);
+    if (!scopeError.isEmpty()) {
+        reportFailure(QStringLiteral("当前配置暂不支持"), scopeError);
+        return;
+    }
+    CalcResult result;
+    if (!m_engine.calcElectromagnetic(input, result) || !result.valid) {
+        reportFailure(QStringLiteral("电磁计算"), result.error.isEmpty()
+            ? QStringLiteral("电磁计算未成功，请核对设计参数。") : result.error);
+        return;
+    }
+    // 成功前不修改任何已显示结果的来源；输入、指标、结果一起提交。
+    m_confirmedSchemeIdx = -1;
+    m_lastInput = input;
+    m_emResult = result;
     m_hasResult = true;
+    m_lastParams = resultParams;
+    m_calcInput = input;
+    m_params = resultParams;
 
     // 结果面板 + 打印表 + 方案入库
     m_emResultPanel->loadResult(m_emResult);
     m_printTable->loadData(ElectromagneticEngine::buildPrintOutput(input, m_emResult));
-    appendScheme(input, m_emResult);
+    const int schemeIdx = appendScheme(input, m_emResult);
+    m_schemeParams.insert(schemeIdx, resultParams);
 
     QString status = QStringLiteral(
         "电磁计算完成：空载损耗 %1 W | 负载损耗 %2 W | 阻抗电压 %3% | "
-        "油面温升 %4 K | 总重 %5 kg | 材料成本 %6 元")
+        "油面温升 %4 K | 总重 %5 kg | 本方案材料合计 %6 元")
         .arg(QString::number(m_emResult.core.noLoadLoss_W, 'f', 0),
              QString::number(m_emResult.winding.loadLoss_W, 'f', 0),
              QString::number(m_emResult.impedance.impedance_pct, 'f', 2),
@@ -1127,10 +1686,12 @@ void EnterCalcPage::onRunEmCalc()
              QString::number(m_emResult.cost.materialCost, 'f', 0));
 
     // 约束校验：超差项追加提示（快速计算结果仍展示，仅提示不拦截）
-    const SchemeConstraintsResult check = checkSchemeConstraints(m_params, m_emResult);
+    const SchemeConstraintsResult check = checkSchemeConstraints(resultParams, m_emResult);
     if (!check.passed) {
         status += QStringLiteral(" ｜ 注意：%1").arg(check.violations.join(QStringLiteral("，")));
     }
+    if (!check.skippedChecks.isEmpty())
+        status += QStringLiteral(" ｜ 未校核：") + check.skippedChecks.join(QStringLiteral("、"));
     m_statusBar->setText(status);
 }
 
@@ -1148,8 +1709,7 @@ void EnterCalcPage::onSchemeButtonClicked(int index)
         }
         SchemePickDialog dlg(QStringLiteral("选用推荐方案"), entries, QString(), this);
         if (dlg.exec() == QDialog::Accepted && dlg.hasSelection()) {
-            m_calcInput = dlg.selectedEntry().input;
-            onRunEmCalc();
+            runEmCalcInput(dlg.selectedEntry().input);
         }
         break;
     }
@@ -1200,8 +1760,7 @@ void EnterCalcPage::onSchemeButtonClicked(int index)
         SchemePickDialog dlg(QStringLiteral("从方案库中选择"), entries,
                              SchemeStore::mySchemesPath(), this);
         if (dlg.exec() == QDialog::Accepted && dlg.hasSelection()) {
-            m_calcInput = dlg.selectedEntry().input;
-            onRunEmCalc();
+            runEmCalcInput(dlg.selectedEntry().input);
         }
         break;
     }
@@ -1211,8 +1770,7 @@ void EnterCalcPage::onSchemeButtonClicked(int index)
                 QStringLiteral("还没有计算记录，请先执行计算"));
             return;
         }
-        m_calcInput = m_lastInput;
-        onRunEmCalc();
+        runEmCalcInput(m_lastInput);
         break;
     }
     default:
@@ -1228,27 +1786,53 @@ void EnterCalcPage::onOptimizeStart()
         m_statusBar->setText(QStringLiteral("寻优正在进行中"));
         return;
     }
+    CalcInput checkedInput = m_calcInput;
+    TransformerParams checkedParams;
+    ParamTableWidget inputTable(this);
+    inputTable.loadParamsForConfig(ParamTableWidget::paramsForInput(m_params, checkedInput),
+        m_config, checkedInput, m_config.calcMode == StructureConfig::Professional);
+    QString inputError;
+    if (!inputTable.collectForCalculation(checkedParams, checkedInput, inputError, false)) {
+        QMessageBox::warning(this, QStringLiteral("寻优输入需核对"), inputError);
+        return;
+    }
+    m_calcInput = checkedInput;
+    m_params = checkedParams;
+    const QString scopeError = calculationScopeError(m_config, m_params, m_calcInput);
+    if (!scopeError.isEmpty()) {
+        QMessageBox::warning(this, QStringLiteral("当前配置暂不支持"), scopeError);
+        return;
+    }
+    OptimizationSettings preparedSettings = m_optSettings;
+    prepareRoundWireSearch(preparedSettings, m_calcInput);
+    prepareSteelGradeSearch(preparedSettings);
+    const QString searchError = preparedSettings.validationError(m_calcInput);
+    if (!searchError.isEmpty()) {
+        QMessageBox::warning(this, QStringLiteral("搜索设置无效"), searchError);
+        return;
+    }
     // 新一轮寻优：清空方案表与方案数据缓存，从当前设计变量（参数设置页传入）出发网格搜索
     m_schemeTable->clearResults();
     m_schemeData.clear();
+    m_schemeParams.clear();
     m_confirmedSchemeIdx = -1;
     m_optRunning = true;
     if (m_pauseBtn) {
         m_pauseBtn->setText(QStringLiteral("暂停计算"));
     }
-    OptimizationSettings settings = m_optSettings;
-    m_optimizer->start(m_params, m_config, m_calcInput, settings);
-    const int total = (2 * settings.diaRange + 1) * (2 * settings.straightRange + 1)
-                      * (2 * settings.lvTurnsRange + 1) * (2 * settings.hvTplRange + 1);
+    m_runningOptSettings = preparedSettings;
+    m_runningOptInput = m_calcInput;
+    m_runningOptParams = m_params;
+    m_optSummaryAvailable = false;
+    m_optSummary = {};
+    m_optStage = 1;
+    m_optProgressPercent = 0;
+    m_optStagePlanned = m_runningOptSettings.plannedCount();
+    m_optimizer->start(m_runningOptParams, m_config, m_runningOptInput, m_runningOptSettings);
     m_statusBar->setText(
-        QStringLiteral("寻优已启动：围绕当前设计变量网格搜索（直径±%1mm/%2档、直线段±%3mm、"
-                       "低压匝数±%4、高压每层匝数±%5，共%6组合），损耗/阻抗/温升超差方案自动剔除")
-            .arg(QString::number(settings.diaRange * settings.diaStep_mm),
-                 QString::number(2 * settings.diaRange + 1),
-                 QString::number(settings.straightRange * settings.straightStep_mm),
-                 QString::number(settings.lvTurnsRange),
-                 QString::number(settings.hvTplRange),
-                 QString::number(total)));
+        QStringLiteral("寻优已启动：订单与搜索设置已冻结，首轮共%1组合；"
+                       "按已启用约束过滤，以本轮价格口径下材料合计最低选优（含油箱）。")
+            .arg(m_runningOptSettings.plannedCount()));
 }
 
 void EnterCalcPage::onOptimizePause()
@@ -1280,11 +1864,27 @@ void EnterCalcPage::onOptimizeStop()
 
 void EnterCalcPage::onOptimizeProgress(int percent)
 {
-    m_statusBar->setText(QStringLiteral("寻优进行中：%1%").arg(percent));
+    if (m_discardOptimizationResults) {
+        return;
+    }
+    m_optProgressPercent = percent;
+    if (m_runningOptSettings.enhancedCoverage) {
+        m_statusBar->setText(QStringLiteral("增强覆盖阶段%1：总预算进度%2%（本阶段计划%3，总处理预算%4）；局部结束可能早于预算用完。")
+            .arg(m_optStage).arg(percent).arg(m_optStagePlanned).arg(m_runningOptSettings.combinationBudget));
+        return;
+    }
+    const QString phase = m_runningOptSettings.hasRefinement()
+        ? (m_optStage > 1 ? QStringLiteral("细搜第%1/%2轮").arg(m_optStage - 1).arg(m_runningOptSettings.fineRoundCount())
+                          : QStringLiteral("粗搜")) : QStringLiteral("单轮网格");
+    m_statusBar->setText(QStringLiteral("%1进行中：%2%（本阶段计划%3组合）")
+        .arg(phase).arg(percent).arg(m_optStagePlanned));
 }
 
 void EnterCalcPage::onOptimizeCandidate(const OptimizeCandidate &candidate)
 {
+    if (m_discardOptimizationResults) {
+        return;
+    }
     OptimizationResult scheme = candidate.scheme;
     scheme.schemeIdx = m_schemeTable->rowCount() + 1;   // 序号按入库顺序编排
     m_schemeTable->addResult(scheme);
@@ -1292,38 +1892,350 @@ void EnterCalcPage::onOptimizeCandidate(const OptimizeCandidate &candidate)
     OptimizeCandidate saved = candidate;
     saved.scheme = scheme;
     m_schemeData.insert(scheme.schemeIdx, saved);
+    m_schemeParams.insert(scheme.schemeIdx, m_runningOptParams);
+}
+
+void EnterCalcPage::onOptimizeCandidates(const QVector<OptimizeCandidate> &candidates)
+{
+    if (m_discardOptimizationResults || !m_optRunning) return;
+    const bool sorting = m_schemeTable->isSortingEnabled();
+    m_schemeTable->setUpdatesEnabled(false);
+    m_schemeTable->setSortingEnabled(false);
+    m_schemeTable->clearResults();
+    m_schemeData.clear();
+    m_schemeParams.clear();
+    m_confirmedSchemeIdx = -1;
+    for (const auto &candidate : candidates) onOptimizeCandidate(candidate);
+    m_schemeTable->setSortingEnabled(sorting);
+    m_schemeTable->setUpdatesEnabled(true);
 }
 
 void EnterCalcPage::onOptimizeFinished(bool stopped, const OptimizeCandidate &best,
-                                       int total, int valid)
+                                       const OptimizationRunSummary &summary)
 {
     m_optRunning = false;
+    if (m_discardOptimizationResults) {
+        m_discardOptimizationResults = false;
+        m_pauseBtn->setText(QStringLiteral("暂停计算"));
+        m_statusBar->setText(QStringLiteral("旧参数寻优已停止，可按新参数重新运行"));
+        return;
+    }
     if (m_pauseBtn) {
         m_pauseBtn->setText(QStringLiteral("暂停计算"));
     }
-    if (valid > 0) {
+    m_optSummary = summary;
+    m_optSummaryAvailable = true;
+    m_optStopped = stopped;
+    m_optBestCost = summary.accepted > 0 ? optimizationMaterialCost(best.result) : 0.0;
+    if (summary.accepted > 0) {
         // 最优（材料成本最低）方案加载到结果面板与打印/保存链路
+        m_confirmedSchemeIdx = -1;
         m_lastInput = best.input;
+        m_lastParams = m_runningOptParams;
         m_emResult = best.result;
         m_hasResult = true;
         m_emResultPanel->loadResult(m_emResult);
         m_printTable->loadData(ElectromagneticEngine::buildPrintOutput(best.input, best.result));
     }
-    const int rejected = total - valid;   // 计算失败或约束超差被剔除的组合数
-    if (stopped) {
-        m_statusBar->setText(QStringLiteral("寻优已停止：评估 %1 个组合，%2 个通过约束，"
-                                            "%3 个剔除").arg(total).arg(valid).arg(rejected));
-    } else if (valid > 0) {
-        m_statusBar->setText(
-            QStringLiteral("寻优完成：评估 %1 个组合，%2 个通过约束（剔除 %3 个），"
-                           "最优材料成本 %4 元")
-                .arg(total).arg(valid).arg(rejected)
-                .arg(QString::number(best.result.cost.materialCost, 'f', 0)));
-    } else {
-        m_statusBar->setText(QStringLiteral(
-            "寻优完成：评估 %1 个组合，全部被约束剔除——请在参数设置页核对"
-            "性能标准值与允许偏差").arg(total));
+    QString text = QStringLiteral("寻优%1：实际计算%2/%3组合，可行%4，计算失败%5，约束剔除%6。")
+        .arg(stopped ? QStringLiteral("已停止") : QStringLiteral("完成"))
+        .arg(summary.evaluated).arg(summary.planned).arg(summary.accepted)
+        .arg(summary.invalid).arg(summary.constraintRejected);
+    text += QStringLiteral("保留%1，未保留%2，工艺预检剔除%3。 ")
+        .arg(summary.retained).arg(summary.omitted).arg(summary.craftRejected);
+    if (summary.accepted > 0)
+        text += QStringLiteral("已评估最优材料合计%1元。 ").arg(m_optBestCost, 0, 'f', 2);
+    if (summary.wireFormRejected > 0)
+        text += QStringLiteral("另有%1组合因扁线宽=厚预检剔除，未调用引擎。 ").arg(summary.wireFormRejected);
+    if (!summary.error.isEmpty()) text += summary.error;
+    if (!summary.skippedChecks.isEmpty()) text += QStringLiteral("部分指标未校核。 ");
+    if (m_runningOptSettings.hasRefinement()) {
+        text += QStringLiteral("粗搜/细搜引擎调用%1/%2，去重%3。 ")
+            .arg(summary.coarse.evaluated).arg(summary.fine.evaluated).arg(summary.duplicateSkipped);
     }
+    if (!summary.stopReason.isEmpty()) text += summary.stopReason + QLatin1Char(' ');
+    text += QStringLiteral("详见「寻优统计」。");
+    m_statusBar->setText(text);
+}
+
+void EnterCalcPage::showOptimizationSummary()
+{
+    if (m_optRunning || !m_optSummaryAvailable) {
+        QMessageBox::information(this, QStringLiteral("寻优统计"),
+            m_optRunning ? QStringLiteral("本轮寻优进行中，结束或停止后查看统计。")
+                         : QStringLiteral("尚无本轮寻优统计，请先运行寻优。"));
+        return;
+    }
+    const auto &s = m_optSummary;
+    const bool twoStages = m_runningOptSettings.hasRefinement();
+    const bool multiRound = m_runningOptSettings.method == OptimizationSettings::MultiRound;
+    QString text = QStringLiteral("本轮：%1；%10，单后台计算线程。\n目标：已启用约束通过的候选中，本轮价格口径下材料合计最低。\n%2\n\n"
+        "计划组合：%3\n实际引擎计算：%4\n全部可行候选：%5\n计算失败或成本无效：%6\n性能约束剔除：%7\n未评估：%8\n耗时：%9秒（含暂停）\n")
+        .arg(m_optStopped ? QStringLiteral("已停止") : QStringLiteral("已结束"), CostBasisNotes::engine())
+        .arg(s.planned).arg(s.evaluated).arg(s.accepted).arg(s.invalid)
+        .arg(s.constraintRejected).arg(s.planned - s.processedCount()).arg(s.elapsed_ms / 1000.0, 0, 'f', 3)
+        .arg(m_runningOptSettings.enhancedCoverage ? QStringLiteral("增强覆盖（%1，方向扩展%2）")
+                 .arg(multiRound ? QStringLiteral("多轮细化") : (twoStages ? QStringLiteral("一轮细搜") : QStringLiteral("单轮网格")),
+                      m_runningOptSettings.expandCoverage ? QStringLiteral("开启") : QStringLiteral("关闭"))
+             : multiRound ? QStringLiteral("粗搜＋多轮细化")
+                       : (twoStages ? QStringLiteral("粗搜＋一轮细搜") : QStringLiteral("单轮网格搜索")));
+    text += QStringLiteral("总处理预算：%1；已消耗%2，剩余%3。\n保留展示：%4；未保留：%5（仅展示裁剪，不是计算失败）。\n企业工艺预检剔除：%6（未调用引擎）。\n%7\n")
+        .arg(m_runningOptSettings.combinationBudget).arg(s.processedCount())
+        .arg(qMax(0, m_runningOptSettings.combinationBudget - s.processedCount()))
+        .arg(s.retained).arg(s.omitted).arg(s.craftRejected)
+        .arg(m_runningOptSettings.craftConstraints.description());
+    if (m_runningOptSettings.enhancedCoverage) {
+        const auto phaseText = [](const QString &name, const OptimizationStageSummary &stage) {
+            return QStringLiteral("%1：计划%2，处理%3，引擎%4，可行%5，失败%6，性能剔除%7，线型预检%8，工艺预检%9，未处理%10，耗时%11秒。\n")
+                .arg(name).arg(stage.planned).arg(stage.processedCount()).arg(stage.evaluated)
+                .arg(stage.accepted).arg(stage.invalid).arg(stage.constraintRejected)
+                .arg(stage.wireFormRejected).arg(stage.craftRejected)
+                .arg(stage.planned - stage.processedCount()).arg(stage.elapsed_ms / 1000.0, 0, 'f', 3);
+        };
+        text += QStringLiteral("\n增强覆盖分阶段（真实计划与处理量；未生成阶段不计入计划）：\n") + phaseText(QStringLiteral("初始粗搜"), s.coarse);
+        const auto appendStages = [&](const QVector<OptimizationRefinementSummary> &stages, const QString &fallback) {
+            for (const auto &stage : stages) {
+                text += phaseText(stage.phaseLabel.isEmpty() ? fallback + QString::number(stage.round) : stage.phaseLabel, stage);
+                text += QStringLiteral("  中心%1，提议%2，重复%3，%4；最低成本%5 → %6元，改善%7%。\n")
+                    .arg(stage.seedCount).arg(stage.generated).arg(stage.duplicateSkipped)
+                    .arg(stage.completed ? QStringLiteral("已完成") : QStringLiteral("未完成或无新增点"))
+                    .arg(stage.bestCostBefore, 0, 'f', 2).arg(stage.bestCostAfter, 0, 'f', 2)
+                    .arg(stage.improvement_pct, 0, 'f', 6);
+            }
+        };
+        appendStages(s.refinements, QStringLiteral("局部细化"));
+        appendStages(s.expansions, QStringLiteral("方向扩展"));
+        text += QStringLiteral("停止原因：%1\n中心与区域覆盖：\n%2\n初始／实际探索／用户硬边界：\n%3\n")
+            .arg(s.stopReason, s.centerDetails.join(QLatin1Char('\n')), s.coverageDetails.join(QLatin1Char('\n')));
+        text += QStringLiteral("报告中极值仅表示已处理点的包围范围，不等于其中全部网格已穷举。局部细化和资源裁剪不证明全局最优。\n");
+    } else if (twoStages) {
+        const auto phaseText = [](const QString &name, const OptimizationStageSummary &stage) {
+            return QStringLiteral("%1：计划%2，已处理%3，引擎调用%4，可行%5，失败%6，约束剔除%7，线型预检%8，未处理%9，耗时%10秒，工艺预检%11。\n")
+                .arg(name).arg(stage.planned).arg(stage.processedCount()).arg(stage.evaluated)
+                .arg(stage.accepted).arg(stage.invalid).arg(stage.constraintRejected).arg(stage.wireFormRejected)
+                .arg(stage.planned - stage.processedCount()).arg(stage.elapsed_ms / 1000.0, 0, 'f', 3).arg(stage.craftRejected);
+        };
+        text += QStringLiteral("\n分轮统计（总量=粗搜+全部细搜轮的对应数量）：\n")
+            + phaseText(QStringLiteral("粗搜"), s.coarse);
+        int completedRounds = 0;
+        for (const auto &round : s.refinements) {
+            if (round.completed) ++completedRounds;
+            text += phaseText(QStringLiteral("细搜第%1轮%2").arg(round.round)
+                .arg(round.planned == 0 ? QStringLiteral("（无新增组合）")
+                                      : (round.completed ? QStringLiteral("（已完成）") : QStringLiteral("（未完成）"))), round);
+            text += QStringLiteral("  中心%1个，提议%2，重复跳过%3；连续尺寸为原步长的1/%4。\n"
+                "  轮前最低%5元 → 轮后已评估最低%6元；改善%7元（%8%）%9。\n")
+                .arg(round.seedCount).arg(round.generated).arg(round.duplicateSkipped).arg(1 << round.round)
+                .arg(round.bestCostBefore, 0, 'f', 2).arg(round.bestCostAfter, 0, 'f', 2)
+                .arg(round.bestCostBefore - round.bestCostAfter, 0, 'f', 2).arg(round.improvement_pct, 0, 'f', 6)
+                .arg(round.completed ? QString() : QStringLiteral("；不用于低改善判定"));
+        }
+        text += phaseText(QStringLiteral("全部细搜合计（不是额外一轮）"), s.fine);
+        text += QStringLiteral("最大细搜轮数%1；完整完成%2轮；保守总预算≤%3。\n")
+            .arg(m_runningOptSettings.fineRoundCount()).arg(completedRounds).arg(m_runningOptSettings.runUpperBound());
+        if (multiRound) text += QStringLiteral("停止判定：连续2个完整细搜轮的未舍入成本改善均<0.01%，或无新增组合；整数/圆线始终1档。\n");
+        text += QStringLiteral("各轮中心次数累计%1；邻域原始提议合计%2，重复跳过%3，唯一新增计划%4。\n"
+            "重复提议不调用引擎、不重复入库、不计入计算失败。\n")
+            .arg(s.fineSeedCount).arg(s.fineGenerated).arg(s.duplicateSkipped).arg(s.fine.planned);
+        if (!s.stopReason.isEmpty()) text += QStringLiteral("停止原因：") + s.stopReason + QLatin1Char('\n');
+        if (s.coarseHasBest) {
+            const double saving = s.coarseBestCost - m_optBestCost;
+            text += QStringLiteral("粗搜已评估最低成本%1元；最终已评估最低成本%2元；改善%3元（%4%）。\n")
+                .arg(s.coarseBestCost, 0, 'f', 2).arg(m_optBestCost, 0, 'f', 2).arg(saving, 0, 'f', 2)
+                .arg(s.coarseBestCost > 0.0 ? saving * 100.0 / s.coarseBestCost : 0.0, 0, 'f', 3);
+        }
+        text += QStringLiteral("连续尺寸逐轮减半，中心左右各1档；整数及圆线保持1档，原边界和固定量不变。\n"
+            "本批为有停止条件的局部细化，不保证严格改善、不代表全局最优；人工停止时仅报告已处理范围，未生成轮次不计入计划。\n\n");
+    }
+    text += QStringLiteral("尺寸预检剔除（扁线宽=厚，未调用引擎）：%1\n已处理组合：%2\n"
+                           "已处理=实际引擎计算+尺寸预检剔除+工艺预检剔除；计划=已处理+未评估。\n")
+        .arg(s.wireFormRejected).arg(s.processedCount());
+    if (!s.error.isEmpty()) text += QStringLiteral("启动错误：") + s.error + QLatin1Char('\n');
+    if (s.accepted > 0)
+        text += QStringLiteral("已评估候选最低材料合计：%1元%2\n")
+            .arg(m_optBestCost, 0, 'f', 2)
+            .arg(m_optStopped ? QStringLiteral("（仅本次已算范围，不代表全部网格最优）") : QString());
+    else text += QStringLiteral("无入库候选，本轮没有最优方案。\n");
+    text += QStringLiteral("\n最低成本可行方案性能裕量（本轮冻结标准及允许偏差）：\n");
+    if (!s.hasBest) {
+        text += QStringLiteral("没有已评估可行方案，不报告性能裕量；不能用0值或失败候选代替。\n");
+    } else {
+        text += s.bestPerformanceMargins.join(QLatin1Char('\n')) + QLatin1Char('\n');
+    }
+    text += QStringLiteral("上限裕量=允许上限－实际值；区间余量分别为实际值－下限、上限－实际值。\n"
+        "限值沿用本轮实际筛选公式（已含允许偏差）；正值表示有余量、0表示贴限、负值表示越限，不截断或按显示舍入判定。\n"
+        "仅供该候选对照已启用指标，不是制造安全保证或综合安全评分，也不改变成本选优。人工停止/提前结束仅报告已评估候选。\n");
+    text += QStringLiteral("\n最低成本可行方案触边提示（相对初始冻结范围；增强探索极值另列）：\n");
+    if (!s.hasBest) {
+        text += QStringLiteral("没有已评估可行方案，不判断触边；不能记为未触边。\n");
+    } else if (s.boundarySearchDimensions == 0) {
+        text += QStringLiteral("无可判断的尺寸/规格搜索方向：尺寸固定或范围为0，圆线固定或只有1档；不判断触边。\n");
+    } else if (s.bestBoundaryHits.isEmpty()) {
+        text += QStringLiteral("当前最低成本可行方案未达到参与搜索的尺寸/规格端点；不代表全局最优。\n");
+    } else {
+        text += s.bestBoundaryHits.join(QLatin1Char('\n')) + QLatin1Char('\n');
+        text += m_runningOptSettings.enhancedCoverage && m_runningOptSettings.expandCoverage
+            ? QStringLiteral("仅在用户已填写的硬边界内受控扩展，见扩展阶段与探索范围；触边不说明范围外一定更优，不放宽性能约束。\n")
+            : QStringLiteral("可人工核对是否需要扩大范围；触边不说明范围外一定更优。本轮未授权自动扩展，不放宽性能约束。\n");
+    }
+    text += QStringLiteral("仅针对本轮已评估可行方案中的最低材料成本候选；同成本取遍历中先遇到的方案，不汇总全部并列方案。\n"
+        "人工停止或提前结束时未评估区域不作推断；固定项和零范围不计触边，硅钢牌号是分类变量、不判断上下限。\n");
+    text += QStringLiteral("\n硅钢牌号：%1\n")
+        .arg(m_runningOptSettings.searchSteelGrade
+            ? QStringLiteral("联合寻优，冻结参与清单：") + m_runningOptSettings.steelGrades.join(QStringLiteral("、"))
+            : QStringLiteral("固定基准：") + m_runningOptInput.steelGrade);
+    if (m_runningOptSettings.steelPricing == OptimizationSettings::CustomSteelPrices) {
+        text += QStringLiteral("冻结硅钢价格：按牌号自定义，报价页独立。\n");
+        const QStringList grades = m_runningOptSettings.searchSteelGrade
+            ? m_runningOptSettings.steelGrades : QStringList{m_runningOptInput.steelGrade};
+        for (const auto &grade : grades)
+            text += QStringLiteral("  %1：%2元/kg\n").arg(grade)
+                .arg(m_runningOptSettings.steelGradePrices.value(grade.trimmed().toUpper()), 0, 'g', 15);
+    } else {
+        text += QStringLiteral("冻结价格：各牌号统一采用17元/kg计算单内置基价。\n");
+    }
+    text += m_runningOptSettings.materialPrices.description() + QLatin1Char('\n');
+    text += QStringLiteral("仅本轮价格口径下比较，不等于实际采购全成本最优。\n");
+    if (m_runningOptSettings.searchSteelGrade && twoStages && !m_runningOptSettings.enhancedCoverage)
+        text += QStringLiteral("粗搜计划覆盖全部勾选牌号，实际处理量见下表；细搜按全体可行方案最低成本3中心，仅保持中心牌号，不保证各牌号都有细搜中心。\n");
+    text += QStringLiteral("按牌号统计（粗搜、细搜及扩展的唯一新增计划/实际处理量，暂停或提前停止不补算）：\n");
+    for (auto it = s.steelSummaries.cbegin(); it != s.steelSummaries.cend(); ++it) {
+        const auto &grade = it.value();
+        text += QStringLiteral("%1（片厚%2 mm）：计划%3，已处理%4，引擎调用%5，可行%6，失败%7，约束剔除%8，线型预检%9，未处理%10，工艺预检%11。\n")
+            .arg(it.key()).arg(CalcInput::thicknessFromSteelGrade(it.key())).arg(grade.planned)
+            .arg(grade.processedCount()).arg(grade.evaluated).arg(grade.accepted).arg(grade.invalid)
+            .arg(grade.constraintRejected).arg(grade.wireFormRejected).arg(grade.planned - grade.processedCount()).arg(grade.craftRejected);
+        text += grade.hasBest
+            ? QStringLiteral("  已评估可行候选最低材料合计：%1元。\n").arg(grade.bestCost, 0, 'f', 2)
+            : QStringLiteral("  无已评估可行候选，不报告最低成本。\n");
+    }
+    text += QStringLiteral("牌号各项数量相加应等于本次总量；未处理或不合格牌号不能当作零成本方案。\n");
+    text += QStringLiteral("\n冻结订单：%1\n容量%2 kVA；高压%3 kV；低压%4 kV；联结组别%5\n")
+        .arg(m_runningOptParams.productModel).arg(m_runningOptInput.capacity_kVA)
+        .arg(m_runningOptInput.hvRated_kV).arg(m_runningOptInput.lvRated_kV)
+        .arg(m_runningOptParams.connectionGroup);
+    const auto &p = m_runningOptParams;
+    text += QStringLiteral("冻结标准：%1\n空载损耗%2 W，最大偏差%3%；负载损耗%4 W，最大偏差%5%；\n"
+        "总损耗%6 W，最大偏差%7%；空载电流%8%，最大偏差%9%；\n")
+        .arg(p.standardMode == TransformerParams::StandardMode::BuiltIn ? QStringLiteral("内置") : QStringLiteral("自定义"))
+        .arg(p.noLoadLossStd_W).arg(p.noLoadLossMaxDev_pct).arg(p.loadLossStd_W)
+        .arg(p.loadLossMaxDev_pct).arg(p.totalLossStd_W).arg(p.totalLossMaxDev_pct)
+        .arg(p.noLoadCurrentStd_pct).arg(p.noLoadCurrentMaxDev_pct);
+    text += QStringLiteral("阻抗电压%1%，允许偏差[%2%，%3%]；\n油顶层温升%4 K；高压绕组温升%5 K；低压绕组温升%6 K。\n")
+        .arg(p.impedanceVoltageStd_pct).arg(p.impedanceVoltageMinDev_pct).arg(p.impedanceVoltageMaxDev_pct)
+        .arg(p.oilTopTempRise_K).arg(p.hvCoilTempRise_K).arg(p.lvCoilTempRise_K);
+    text += QStringLiteral("\n搜索边界（基准 ± 步数×步长）：\n");
+    const auto &settings = m_runningOptSettings;
+    const double bases[] = {m_runningOptInput.coreDiameter_mm, m_runningOptInput.coreStraight_mm,
+                           double(m_runningOptInput.lvTurns), double(m_runningOptInput.hvTurnsPerLayer),
+                           m_runningOptInput.lvFoilThick_mm, m_runningOptInput.lvFoilWidth_mm,
+                           m_runningOptInput.hvBareWidth_mm, m_runningOptInput.hvBareThick_mm,
+                           m_runningOptInput.mainDuctWidth_mm};
+    const int ranges[] = {settings.diameterRadius(), settings.straightRadius(), settings.lvTurnsRadius(), settings.hvLayersRadius(),
+                          settings.lvFoilThickRadius(), settings.lvFoilWidthRadius(), settings.hvBareWidthRadius(), settings.hvBareThickRadius(),
+                          settings.searchMainDuct ? settings.mainDuctRange : 0};
+    const double steps[] = {settings.searchDiameter ? settings.diaStep_mm : 0.0,
+                           settings.searchStraight ? settings.straightStep_mm : 0.0, 1.0, 1.0,
+                           settings.searchLvFoilThick ? settings.lvFoilThickStep_mm : 0.0,
+                           settings.searchLvFoilWidth ? settings.lvFoilWidthStep_mm : 0.0,
+                           settings.searchHvBareWidth ? settings.hvBareWidthStep_mm : 0.0,
+                           settings.searchHvBareThick ? settings.hvBareThickStep_mm : 0.0,
+                           settings.searchMainDuct ? settings.mainDuctStep_mm : 0.0};
+    const bool enabled[] = {settings.searchDiameter, settings.searchStraight, settings.searchLvTurns, settings.searchHvLayers,
+                           settings.searchLvFoilThick, settings.searchLvFoilWidth, settings.searchHvBareWidth, settings.searchHvBareThick,
+                           settings.searchMainDuct};
+    const QStringList names = {QStringLiteral("铁芯直径mm"), QStringLiteral("直线段长mm"),
+                              QStringLiteral("低压匝数"), QStringLiteral("高压总层数W12"),
+                              QStringLiteral("低压箔厚mm"), QStringLiteral("低压箔宽mm"),
+                              QStringLiteral("高压裸线宽mm"), QStringLiteral("高压裸线厚mm"), QStringLiteral("主油道宽mm")};
+    for (int i = 0; i < 9; ++i) {
+        if ((i == 6 || i == 7) && settings.searchHvRoundWire) {
+            text += names[i] + QStringLiteral("：不独立搜索，由圆线表内直径同步。\n");
+            continue;
+        }
+        text += QStringLiteral("%1：%2 ～ %3；%4；步长%5，±%6步\n").arg(names[i])
+            .arg(bases[i] - ranges[i] * steps[i]).arg(bases[i] + ranges[i] * steps[i])
+            .arg(enabled[i] ? QStringLiteral("参与") : QStringLiteral("固定")).arg(steps[i]).arg(ranges[i]);
+        if (twoStages && !settings.enhancedCoverage && ranges[i] > 0 && i != 2 && i != 3) {
+            for (const auto &round : s.refinements)
+                text += QStringLiteral("  第%1轮细搜步长：%2 mm（仍裁剪到上述边界）\n")
+                    .arg(round.round).arg(std::ldexp(steps[i], -round.round), 0, 'g', 12);
+        }
+    }
+    if (settings.searchHvRoundWire) {
+        QStringList diameters;
+        for (double diameter : settings.hvRoundWireDiameters)
+            diameters << PerformanceCriteria::valueText(diameter);
+        text += QStringLiteral("圆线表内相邻±%1档；实际%2档，冻结参与直径(mm)：%3\n表端只取已有档，不插值、不越界；宽厚同步。\n")
+            .arg(settings.hvRoundWireRange).arg(diameters.size()).arg(diameters.join(QStringLiteral("、")));
+    } else {
+        text += QStringLiteral("圆线规格：固定／不参与。\n");
+    }
+    text += QStringLiteral("低压箔尺寸及高压扁线宽/厚为设计尺寸搜索，非库存选型；制造规格仍需核对。\n");
+    text += QStringLiteral("冻结高压线型：%1；绝缘：%2。扁线宽=厚的组合预检剔除，不切换圆线。\n")
+        .arg(m_runningOptInput.isRoundHighVoltageWire() ? QStringLiteral("圆线（表内规格）") : QStringLiteral("扁线"),
+             m_runningOptInput.resolvedInsulationType());
+    text += QStringLiteral("\n未校核指标（标准值≤0）：")
+        + (s.skippedChecks.isEmpty() ? QStringLiteral("无") : s.skippedChecks.join(QStringLiteral("、")))
+        + QStringLiteral("\n这里只检查引擎现有损耗、空载电流、阻抗、温升指标，不等于所有制造与试验校核。\n\n淘汰原因次数（同一组合可违反多项，不能相加作为剔除组合数）：\n");
+    for (auto it = s.rejectionReasons.cbegin(); it != s.rejectionReasons.cend(); ++it)
+        text += QStringLiteral("%1：%2\n").arg(it.key()).arg(it.value());
+    if (s.rejectionReasons.isEmpty()) text += QStringLiteral("无\n");
+    if (!s.calculationErrors.isEmpty()) {
+        text += QStringLiteral("\n引擎失败详情（最多20种，其余合并）：\n");
+        for (auto it = s.calculationErrors.cbegin(); it != s.calculationErrors.cend(); ++it)
+            text += QStringLiteral("%1：%2\n").arg(it.key()).arg(it.value());
+    }
+    QDialog dlg(this);
+    dlg.setWindowTitle(QStringLiteral("寻优统计 - 本轮冻结输入与实际评估"));
+    dlg.resize(780, 640);
+    QVBoxLayout layout(&dlg);
+    auto *report = new QPlainTextEdit(&dlg);
+    report->setReadOnly(true);
+    report->setPlainText(text);
+    layout.addWidget(report);
+    auto *buttons = new QDialogButtonBox(QDialogButtonBox::Close, &dlg);
+    auto *exportReport = buttons->addButton(QStringLiteral("导出报告…"), QDialogButtonBox::ActionRole);
+    exportReport->setToolTip(QStringLiteral("保存当前显示的本轮统计为UTF-8文本，仅供留档，不能恢复或重放计算。"));
+    connect(exportReport, &QPushButton::clicked, &dlg, [this, &dlg, text]() {
+        QFileDialog fileDialog(&dlg, QStringLiteral("导出本轮寻优报告"));
+        fileDialog.setAcceptMode(QFileDialog::AcceptSave);
+        fileDialog.setFileMode(QFileDialog::AnyFile);
+        fileDialog.setNameFilter(QStringLiteral("文本报告 (*.txt)"));
+        fileDialog.setDefaultSuffix(QStringLiteral("txt"));
+        fileDialog.selectFile(QStringLiteral("寻优报告_%1.txt")
+            .arg(QDateTime::currentDateTime().toString(QStringLiteral("yyyyMMdd-HHmmss"))));
+        if (fileDialog.exec() != QDialog::Accepted) return;
+        const QString path = fileDialog.selectedFiles().value(0);
+        if (path.isEmpty()) return;
+        // 原子写入：失败时不损坏已存在的报告，不退回直接截断写入。
+        QSaveFile file(path);
+        file.setDirectWriteFallback(false);
+        if (!file.open(QIODevice::WriteOnly)) {
+            QMessageBox::warning(&dlg, QStringLiteral("报告保存失败"),
+                QStringLiteral("无法保存到%1：\n%2").arg(path, file.errorString()));
+            return;
+        }
+        const QByteArray data = text.toUtf8();
+        if (file.write(data) != data.size()) {
+            const QString error = file.errorString();
+            file.cancelWriting();
+            QMessageBox::warning(&dlg, QStringLiteral("报告保存失败"),
+                QStringLiteral("报告写入不完整：%1\n%2").arg(path, error));
+            return;
+        }
+        if (!file.commit()) {
+            QMessageBox::warning(&dlg, QStringLiteral("报告保存失败"),
+                QStringLiteral("无法完成报告保存：%1\n%2").arg(path, file.errorString()));
+            return;
+        }
+        m_statusBar->setText(QStringLiteral("本轮寻优报告已导出（UTF-8文本）：%1").arg(path));
+        QMessageBox::information(&dlg, QStringLiteral("报告已保存"),
+            QStringLiteral("已保存当前显示的统计：\n%1\n此文件仅供留档，不能恢复或重放计算。").arg(path));
+    });
+    connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+    layout.addWidget(buttons);
+    dlg.exec();
 }
 
 void EnterCalcPage::onSelfTest()
@@ -1490,7 +2402,7 @@ void EnterCalcPage::onFilterSchemes()
     bool ok = false;
     const double limit = QInputDialog::getDouble(
         this, QStringLiteral("筛选方案"),
-        QStringLiteral("主材成本上限（元，取消则清除筛选）："),
+        QStringLiteral("本方案材料合计上限（元，取消则清除筛选）："),
         0.0, 0.0, 1e9, 1, &ok);
     int shown = 0;
     for (int r = 0; r < m_schemeTable->rowCount(); ++r) {
@@ -1503,7 +2415,7 @@ void EnterCalcPage::onFilterSchemes()
         }
     }
     m_statusBar->setText(ok
-        ? QStringLiteral("筛选：主材成本 ≤ %1，共 %2/%3 个方案")
+        ? QStringLiteral("筛选：本方案材料合计 ≤ %1，共 %2/%3 个方案")
               .arg(QString::number(limit, 'f', 1)).arg(shown)
               .arg(m_schemeTable->rowCount())
         : QStringLiteral("已清除方案筛选"));
@@ -1545,6 +2457,11 @@ void EnterCalcPage::onConfirmScheme()
 
 void EnterCalcPage::onSchemeSelected(int row)
 {
+    if (m_optRunning) {
+        QMessageBox::information(this, QStringLiteral("寻优进行中"),
+            QStringLiteral("请先结束或停止本轮寻优，再打开方案修改弹窗。"));
+        return;
+    }
     if (row < 0 || row >= m_schemeTable->rowCount()) {
         return;
     }
@@ -1559,28 +2476,35 @@ void EnterCalcPage::onSchemeSelected(int row)
     // 寻优基准 m_calcInput/参数设置页不受影响）；确认后返回本页并点亮行内按钮
     const OptimizeCandidate original = it.value();
     QDialog dlg(this);
-    dlg.setWindowTitle(QStringLiteral("方案参数 - 方案 %1").arg(schemeIdx));
+    dlg.setWindowTitle(QStringLiteral("方案计算单 - 方案 %1").arg(schemeIdx));
     dlg.setModal(true);
-    dlg.resize(720, 620);
+    dlg.setWindowFlags(dlg.windowFlags() | Qt::WindowMinMaxButtonsHint);
+    const QSize available = dlg.screen()->availableGeometry().size();
+    dlg.resize(qMin(1400, qMax(640, available.width() - 80)),
+               qMin(860, qMax(480, available.height() - 100)));
     auto *layout = new QVBoxLayout(&dlg);
     layout->setContentsMargins(12, 12, 12, 12);
 
-    auto *table = new ParamTableWidget(&dlg);
     const bool proMode = m_config.calcMode == StructureConfig::Professional;
-    table->loadParamsForConfig(m_params, m_config, original.input, proMode);
-    layout->addWidget(table, 1);
+    const TransformerParams originalParams = ParamTableWidget::paramsForInput(
+        m_schemeParams.value(schemeIdx, m_params), original.input);
+    auto *sheet = new SchemeCalculationSheet(originalParams, m_config, original.input,
+                                             original.result, proMode, &dlg);
+    auto *table = sheet->inputTable();
+    layout->addWidget(sheet, 1);
 
     // 工作副本：弹窗内的编辑与重算不直接写回，确认时统一提交
     CalcInput working = original.input;
     CalcResult pendingResult = original.result;
+    TransformerParams pendingParams = originalParams;
 
     // 结果摘要（计算/确认后刷新）
     const auto summaryText = [](const CalcResult &r) {
         if (!r.valid) {
-            return QStringLiteral("尚未计算——点击\"计算\"按钮重算该方案");
+            return QStringLiteral("尚未计算，修改参数后自动更新");
         }
         return QStringLiteral(
-                   "主材成本 %1 元 | 空载损耗 %2 W | 负载损耗 %3 W | 阻抗电压 %4 % "
+                   "本方案材料合计 %1 元 | 空载损耗 %2 W | 负载损耗 %3 W | 阻抗电压 %4 % "
                    "| 油顶层温升 %5 K")
             .arg(QString::number(r.cost.materialCost, 'f', 0),
                  QString::number(r.core.noLoadLoss_W, 'f', 1),
@@ -1590,62 +2514,74 @@ void EnterCalcPage::onSchemeSelected(int row)
     };
     auto *summary = new QLabel(summaryText(pendingResult), &dlg);
     summary->setWordWrap(true);
-    summary->setStyleSheet("color: #8a9bb0; font-size: 12px;");
+    summary->setStyleSheet("color: #607368; font-size: 12px;");
     layout->addWidget(summary);
 
-    // 表格编辑跟踪（loadParamsForConfig 之后连接，避免初始化误报）
-    bool dirty = false;
-    connect(table, &QTableWidget::itemChanged, table,
-            [&dirty](QTableWidgetItem *) { dirty = true; });
-
-    // 表格当前值重算（计算/确认共用）：失败返回 false 并提示
-    const auto recalc = [&]() -> bool {
-        CalcInput in = working;   // 未绑定/非法输入的域保持原值
-        table->saveToInput(in);
+    QTimer autoCalcTimer(&dlg);
+    autoCalcTimer.setSingleShot(true);
+    autoCalcTimer.setInterval(150); // 合并同一次编辑触发的多个联动，不要求额外点击。
+    bool recalculating = false;
+    // 自动预览无模态警告；确认仍执行完整校验及原人工核对规则。
+    const auto recalc = [&](bool interactive) -> bool {
+        autoCalcTimer.stop();
+        const QScopedValueRollback<bool> guard(recalculating, true);
+        sheet->markPending();
+        CalcInput in = working;
+        TransformerParams params;
+        QString inputError;
+        const bool collected = sheet->inputsReady(inputError)
+            && table->collectForCalculation(params, in, inputError, interactive);
+        sheet->refreshInputValues(); // 完整型号提交时的屏蔽信号联动也要回显，失败时同样同步。
+        if (!collected) {
+            sheet->showCalculationError(inputError);
+            summary->setText(QStringLiteral("当前参数未完成有效计算：") + inputError);
+            if (interactive) QMessageBox::warning(&dlg, QStringLiteral("方案输入不可用"), inputError);
+            return false;
+        }
         CalcResult res;
-        if (!m_engine.calcElectromagnetic(in, res) || !res.valid) {
-            QMessageBox::warning(&dlg, QStringLiteral("方案计算"),
-                                 QStringLiteral("计算失败: %1").arg(res.error));
+        if (!m_engine.calcElectromagnetic(in, res, true) || !res.valid) {
+            sheet->showCalculationError(res.error);
+            summary->setText(QStringLiteral("当前参数计算失败：") + res.error);
+            if (interactive) QMessageBox::warning(&dlg, QStringLiteral("方案计算"), QStringLiteral("计算失败: %1").arg(res.error));
             return false;
         }
         working = in;
         pendingResult = res;
-        dirty = false;
+        pendingParams = params;
+        sheet->refreshResult(pendingResult);
         summary->setText(summaryText(pendingResult));
         return true;
     };
 
     auto *btnRow = new QHBoxLayout;
-    auto *calcBtn = new QPushButton(QStringLiteral("计算"), &dlg);
     auto *okBtn = new QPushButton(QStringLiteral("确认"), &dlg);
     auto *cancelBtn = new QPushButton(QStringLiteral("取消"), &dlg);
-    calcBtn->setCursor(Qt::PointingHandCursor);
+    okBtn->setAutoDefault(false);
+    cancelBtn->setAutoDefault(false); // 在型号或单元格内按回车不意外提交方案。
     okBtn->setCursor(Qt::PointingHandCursor);
     cancelBtn->setCursor(Qt::PointingHandCursor);
-    calcBtn->setStyleSheet(
-        "QPushButton { background: #00bcd4; color: #1a1d23; font-size: 12px;"
-        " padding: 5px 18px; border: none; border-radius: 4px; font-weight: bold; }"
-        "QPushButton:hover { background: #4dd0e1; }");
     okBtn->setStyleSheet(
-        "QPushButton { background: #2e75b6; color: #ffffff; font-size: 12px;"
+        "QPushButton { background: #217346; color: #ffffff; font-size: 12px;"
         " padding: 5px 18px; border: none; border-radius: 4px; font-weight: bold; }"
-        "QPushButton:hover { background: #3f8ad0; }");
+        "QPushButton:hover { background: #217346; }");
     cancelBtn->setStyleSheet(
-        "QPushButton { background: rgba(255,255,255,0.08); color: #8a9bb0;"
-        " font-size: 12px; padding: 5px 18px; border: 1px solid #3a4050;"
+        "QPushButton { background: rgba(255,255,255,0.08); color: #607368;"
+        " font-size: 12px; padding: 5px 18px; border: 1px solid #D3DDD6;"
         " border-radius: 4px; }"
         "QPushButton:hover { background: rgba(255,255,255,0.15); }");
-    btnRow->addWidget(calcBtn);
     btnRow->addStretch(1);
     btnRow->addWidget(okBtn);
     btnRow->addWidget(cancelBtn);
     layout->addLayout(btnRow);
 
-    connect(calcBtn, &QPushButton::clicked, this, [&]() { recalc(); });
+    connect(sheet, &SchemeCalculationSheet::inputEdited, &dlg, [&]() {
+        if (!recalculating) autoCalcTimer.start();
+    });
+    connect(&autoCalcTimer, &QTimer::timeout, &dlg, [&]() { recalc(false); });
 
     connect(okBtn, &QPushButton::clicked, this, [&]() {
-        // 有未重算的编辑时先重算，保证确认提交的是当前输入的结果
-        if (dirty && !recalc()) {
+        // 子控件未必发出 itemChanged：确认时始终收集、校验并重算。
+        if (!recalc(true)) {
             return;
         }
         OptimizeCandidate updated = original;
@@ -1653,23 +2589,35 @@ void EnterCalcPage::onSchemeSelected(int row)
         updated.result = pendingResult;
         updated.scheme = makeScheme(schemeIdx, working, pendingResult);
         m_schemeData.insert(schemeIdx, updated);
+        m_schemeParams.insert(schemeIdx, pendingParams);
         m_schemeTable->updateResult(row, updated.scheme);
         m_schemeTable->markRow(row);
         m_schemeTable->selectRow(row);
         m_statusBar->setText(
-            QStringLiteral("已选择方案 %1（主材成本 %2 元），点击\"方案确认\"进入输出打印")
+            QStringLiteral("已选择方案 %1（本方案材料合计 %2 元），点击\"方案确认\"进入输出打印")
                 .arg(schemeIdx)
                 .arg(QString::number(pendingResult.cost.materialCost, 'f', 0)));
         dlg.accept();
     });
 
     connect(cancelBtn, &QPushButton::clicked, &dlg, &QDialog::reject);
+    connect(&dlg, &QDialog::finished, &autoCalcTimer, &QTimer::stop);
+    if (!pendingResult.valid || !pendingResult.linkageSnapshotAvailable || !pendingResult.sheetLayoutSnapshotAvailable
+        || !pendingResult.sheetDetailsSnapshotAvailable
+        || pendingResult.calculationSheetDetailVersion < ElectromagneticEngine::SheetDetailVersion) autoCalcTimer.start(0);
 
+    // 默认占满屏幕工作区，保留标题栏、关闭按钮和还原能力。
+    dlg.showMaximized();
     dlg.exec();
 }
 
 void EnterCalcPage::onSaveSchemes()
 {
+    if (m_optRunning) {
+        QMessageBox::information(this, QStringLiteral("寻优进行中"),
+            QStringLiteral("请先结束或停止本轮寻优，再保存当前保留的候选方案。"));
+        return;
+    }
     if (m_schemeData.isEmpty()) {
         QMessageBox::information(this, QStringLiteral("保存方案库"),
                                  QStringLiteral("当前没有可保存的方案，请先执行快速计算或寻优计算"));
@@ -1708,6 +2656,11 @@ void EnterCalcPage::onSaveSchemes()
 
 void EnterCalcPage::onLoadSchemes()
 {
+    if (m_optRunning) {
+        QMessageBox::information(this, QStringLiteral("寻优进行中"),
+            QStringLiteral("请先结束或停止本轮寻优，再打开方案库，避免替换本轮候选。"));
+        return;
+    }
     const QString path = QFileDialog::getOpenFileName(
         this, QStringLiteral("打开方案库"), QString(),
         QStringLiteral("方案库文件 (*.json)"));
@@ -1721,6 +2674,19 @@ void EnterCalcPage::onLoadSchemes()
                              QStringLiteral("加载失败：文件不存在或不是有效的方案库文件"));
         return;
     }
+    for (const CalcInput &in : inputs) {
+        if (!in.hasPerformanceCriteria || in.performanceCriteria.standardMode == TransformerParams::StandardMode::Unconfirmed) {
+            QMessageBox::warning(this, QStringLiteral("方案指标来源待确认"),
+                QStringLiteral("文件中有旧方案或缺少完整指标来源的方案。当前方案表未替换；请先在设计输入页载入并核对来源，再保存新版方案。"));
+            return;
+        }
+        const QString reason = calculationScopeError(m_config, ParamTableWidget::paramsForInput(m_params, in), in);
+        if (!reason.isEmpty()) {
+            QMessageBox::warning(this, QStringLiteral("方案库包含不支持的配置"),
+                reason + QStringLiteral("。本次未替换当前方案表，请先在设计输入页调整方案。"));
+            return;
+        }
+    }
     if (!m_schemeData.isEmpty()
             && QMessageBox::question(
                    this, QStringLiteral("打开方案库"),
@@ -1733,12 +2699,22 @@ void EnterCalcPage::onLoadSchemes()
     // 清空当前方案，逐个重算恢复（引擎确定性，结果与保存时一致）
     m_schemeTable->clearResults();
     m_schemeData.clear();
+    m_schemeParams.clear();
     m_confirmedSchemeIdx = -1;
     int loaded = 0;
     for (const CalcInput &in : inputs) {
+        CalcInput checkedInput = in;
+        ParamTableWidget inputTable(this);
+        inputTable.loadParamsForConfig(ParamTableWidget::paramsForInput(m_params, in),
+            m_config, in, m_config.calcMode == StructureConfig::Professional);
+        TransformerParams checkedParams;
+        QString error;
+        if (!inputTable.collectForCalculation(checkedParams, checkedInput, error))
+            continue;
         CalcResult r;
-        if (m_engine.calcElectromagnetic(in, r) && r.valid) {
-            appendScheme(in, r);
+        if (m_engine.calcElectromagnetic(checkedInput, r) && r.valid) {
+            const int schemeIdx = appendScheme(checkedInput, r);
+            m_schemeParams.insert(schemeIdx, checkedParams);
             ++loaded;
         }
     }
@@ -1747,8 +2723,19 @@ void EnterCalcPage::onLoadSchemes()
                              .arg(loaded).arg(inputs.size()));
 }
 
+TransformerParams EnterCalcPage::currentResultParams() const
+{
+    return ParamTableWidget::paramsForInput(
+        m_schemeParams.value(m_confirmedSchemeIdx, m_lastParams), m_lastInput);
+}
+
 void EnterCalcPage::confirmSchemeAt(int row)
 {
+    if (m_optRunning) {
+        QMessageBox::information(this, QStringLiteral("寻优进行中"),
+            QStringLiteral("请先结束或停止寻优，再确认方案；增强模式会按阶段替换候选表。"));
+        return;
+    }
     const int schemeIdx = m_schemeTable->item(row, 1)
                               ? m_schemeTable->item(row, 1)->text().toInt() : -1;
     m_confirmedSchemeIdx = schemeIdx;
@@ -1764,7 +2751,7 @@ void EnterCalcPage::confirmSchemeAt(int row)
         m_emResultPanel->loadResult(m_emResult);
         m_printTable->loadData(ElectromagneticEngine::buildPrintOutput(it->input, it->result));
         // 通知主界面：已确认方案数据同步到产品报价页
-        emit schemeConfirmed(m_params, m_lastInput, m_emResult);
+        emit schemeConfirmed(currentResultParams(), m_lastInput, m_emResult);
     }
 
     if (m_schemeIndexSpin) {
@@ -1773,7 +2760,7 @@ void EnterCalcPage::confirmSchemeAt(int row)
         m_schemeIndexSpin->blockSignals(false);
     }
     m_statusBar->setText(
-        QStringLiteral("已确认方案 %1（主材成本 %2 元），输出打印已更新")
+        QStringLiteral("已确认方案 %1（本方案材料合计 %2 元），输出打印已更新")
             .arg(schemeIdx)
             .arg(QString::number(m_emResult.cost.materialCost, 'f', 0)));
     m_tabBar->setCurrentIndex(2);
@@ -1793,7 +2780,7 @@ void EnterCalcPage::onFilterAdvanced()
     costSpin->setDecimals(1);
     costSpin->setSuffix(QStringLiteral(" 元"));
     costSpin->setValue(0.0);
-    form->addWidget(new QLabel(QStringLiteral("主材成本上限（0=不限）："), &dlg));
+    form->addWidget(new QLabel(QStringLiteral("本方案材料合计上限（0=不限）："), &dlg));
     form->addWidget(costSpin);
     auto *dMinSpin = new QDoubleSpinBox(&dlg);
     dMinSpin->setRange(0.0, 2000.0);
@@ -1979,17 +2966,20 @@ void EnterCalcPage::onCompareLibrary()
     };
     QString text = QStringLiteral("【待比较】方案 %1  vs  【已确认】方案 %2\n\n")
                        .arg(curIdx).arg(m_confirmedSchemeIdx);
-    text += line(QStringLiteral("主材成本（铜铁油）"), a.costCuFeOil, b.costCuFeOil,
+    text += QStringLiteral("待比较价格口径：") + a.costBasis + QLatin1Char('\n');
+    text += QStringLiteral("已确认价格口径：") + b.costBasis + QLatin1Char('\n');
+    text += QStringLiteral("若两方案采用不同单价，以下成本差额同时包含价格影响，不能只归因于设计改善。\n");
+    text += line(QStringLiteral("材料合计（含油箱，本方案口径）"), a.costCuFeOil, b.costCuFeOil,
                  QStringLiteral("元"), 0);
-    text += line(QStringLiteral("铜铁成本"), a.costCuFe, b.costCuFe, QStringLiteral("元"), 0);
+    text += line(QStringLiteral("铁芯导线成本（本方案口径）"), a.costCuFe, b.costCuFe, QStringLiteral("元"), 0);
     text += line(QStringLiteral("铁芯直径"), a.coreD, b.coreD, QStringLiteral("mm"));
     text += line(QStringLiteral("铁芯长轴"), a.coreL, b.coreL, QStringLiteral("mm"));
     text += line(QStringLiteral("低压匝数"), double(a.lvTurns), double(b.lvTurns), QString(), 0);
-    text += line(QStringLiteral("高压线圈层数"), double(a.hvLayers), double(b.hvLayers),
+    text += line(QStringLiteral("高压每层匝数 Y9"), double(a.hvLayers), double(b.hvLayers),
                  QString(), 0);
     text += line(QStringLiteral("主空道尺寸"), a.mainDuct, b.mainDuct, QStringLiteral("mm"));
     const double diff = a.costCuFeOil - b.costCuFeOil;
-    text += QStringLiteral("\n结论：待比较方案主材成本比已确认方案%1 %2 元")
+    text += QStringLiteral("\n结论：待比较方案材料合计比已确认方案%1 %2 元（各自保存的价格口径）")
                 .arg(diff <= 0 ? QStringLiteral("低") : QStringLiteral("高"))
                 .arg(QString::number(qAbs(diff), 'f', 0));
     QMessageBox::information(this, QStringLiteral("方案库比较"), text);
@@ -2186,7 +3176,8 @@ void EnterCalcPage::onOpenQuote()
         }
     }
     const auto &c = m_emResult.cost;
-    QString text = QStringLiteral("======== 报价单（材料成本明细） ========\n");
+    QString text = QStringLiteral("======== 材料成本明细（本方案口径，非报价） ========\n");
+    text += CostBasisNotes::engine(c.useCustomSteelPrice, c.steelPricePerKg, c.steelPriceGrade, c.materialPrices) + QLatin1Char('\n');
     text += QStringLiteral("硅钢片成本: %1 元\n").arg(QString::number(c.steelCost, 'f', 1));
     text += QStringLiteral("高压导线成本: %1 元\n").arg(QString::number(c.hvWireCost, 'f', 1));
     text += QStringLiteral("低压箔成本: %1 元\n").arg(QString::number(c.lvWireCost, 'f', 1));
@@ -2195,12 +3186,12 @@ void EnterCalcPage::onOpenQuote()
     text += QStringLiteral("----------------------------------------\n");
     text += QStringLiteral("材料成本合计: %1 元\n").arg(QString::number(c.materialCost, 'f', 1));
     QMessageBox box(this);
-    box.setWindowTitle(QStringLiteral("报价单"));
+    box.setWindowTitle(QStringLiteral("材料成本明细（本方案口径）"));
     box.setText(text);
     box.setTextFormat(Qt::PlainText);
     box.setFont(QFont(QStringLiteral("Consolas")));
     box.exec();
-    m_statusBar->setText(QStringLiteral("报价单已打开"));
+    m_statusBar->setText(QStringLiteral("本方案材料成本明细已打开"));
 }
 
 void EnterCalcPage::onOpenCalcSheet()
@@ -2293,7 +3284,7 @@ void EnterCalcPage::onOpenPerfCompareTable()
         }
     }
     const auto &r = m_emResult;
-    const auto &p = m_params;
+    const auto p = currentResultParams();
     QString text = QStringLiteral("项目\t标准值\t计算值\t判定\n");
     const auto line = [&text](const QString &name, double std, double calc,
                               double maxDevPct, double minDevPct, const QString &unit) {
@@ -2390,16 +3381,17 @@ void EnterCalcPage::onCalcSheetConfig()
                 .arg(in.lvTurns)
                 .arg(QString::number(in.lvFoilThick_mm, 'f', 2),
                      QString::number(in.lvFoilWidth_mm, 'f', 0));
-    text += QStringLiteral("高压: 裸线 %1×%2 mm / 每层 %3 匝\n")
+    text += QStringLiteral("高压: 裸线 %1×%2 mm / 总层数 W12: %3 层\n")
                 .arg(QString::number(in.hvBareThick_mm, 'f', 2),
                      QString::number(in.hvBareWidth_mm, 'f', 2))
                 .arg(in.hvTurnsPerLayer);
     text += QStringLiteral("主空道: %1 mm（纸板 %2 mm）\n")
                 .arg(QString::number(in.mainDuctWidth_mm, 'f', 1),
                      QString::number(in.mainDuctInsul_mm, 'f', 1));
-    text += QStringLiteral("叠片系数: %1 / 工艺系数: %2\n")
+    text += QStringLiteral("叠片系数: %1 / 心柱工艺系数: %2 / 铁轭工艺系数: %3\n")
                 .arg(QString::number(in.stackFactor, 'f', 2),
-                     QString::number(in.coreLossCraftCoef, 'f', 2));
+                     QString::number(in.coreLossCraftCoef, 'g', 15),
+                     QString::number(in.yokeLossCraftCoef, 'g', 15));
     QMessageBox box(this);
     box.setWindowTitle(QStringLiteral("计算单配置关联"));
     box.setText(text);
@@ -2433,11 +3425,8 @@ void EnterCalcPage::onExportDocuments()
     auto *drawingNoEdit = new QLineEdit(&dlg);
     drawingNoEdit->setPlaceholderText(QStringLiteral("如 1BT.520.0001"));
     auto *modelEdit = new QLineEdit(&dlg);
-    // 型号默认取当前方案规格（产品大类-容量/电压等级）
-    modelEdit->setText(QStringLiteral("%1-M-%2-%3")
-                           .arg(m_params.productModel,
-                                QString::number(m_params.capacity_kVA, 'f', 0),
-                                QString::number(m_params.hvRatedVoltage_kV, 'f', 0)));
+    // 型号取确认方案，不再拼接寻优基准型号或重复的 -M 后缀。
+    modelEdit->setText(currentResultParams().productModel);
     auto *dirEdit = new QLineEdit(&dlg);
     dirEdit->setReadOnly(true);
     dirEdit->setText(QDir::homePath());
@@ -2496,8 +3485,10 @@ void EnterCalcPage::onExportDocuments()
     const QuoteParams quoteParams =
         QuoteParams::loadFromFile(QuoteCalculator::defaultParamsPath(), &paramOk);
     const QuoteResult quote =
-        QuoteCalculator::calculate(m_params, m_emResult, paramOk ? quoteParams : QuoteParams{});
-    QString costText = QStringLiteral("材料成本清单\n");
+        QuoteCalculator::calculate(currentResultParams(), m_lastInput, m_emResult,
+                                   paramOk ? quoteParams : QuoteParams{});
+    QString costText = QStringLiteral("材料成本清单（报价参数口径）\n");
+    costText += CostBasisNotes::quote() + QLatin1Char('\n');
     costText += QStringLiteral("========================================\n");
     costText += QStringLiteral("图号：%1　型号：%2\n").arg(drawingNo, model);
     costText += QStringLiteral("导出时间：%1\n").arg(stamp);
@@ -2584,7 +3575,7 @@ void EnterCalcPage::onSaveCustomSheet()
     m_statusBar->setText(QStringLiteral("自定义计算单已保存: %1").arg(path));
 }
 
-void EnterCalcPage::appendScheme(const CalcInput &input, const CalcResult &result)
+int EnterCalcPage::appendScheme(const CalcInput &input, const CalcResult &result)
 {
     const OptimizationResult scheme = makeScheme(m_schemeTable->rowCount() + 1, input, result);
     m_schemeTable->addResult(scheme);
@@ -2594,4 +3585,5 @@ void EnterCalcPage::appendScheme(const CalcInput &input, const CalcResult &resul
     saved.result = result;
     saved.scheme = scheme;
     m_schemeData.insert(scheme.schemeIdx, saved);
+    return scheme.schemeIdx;
 }

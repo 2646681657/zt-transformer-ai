@@ -19,11 +19,11 @@ struct StructureConfig {
 
     // 变压器结构（铁芯类型）
     enum CoreType { StackedSilicon, StereoscopicRoll, PlanarAmorphous };
-    CoreType coreType = PlanarAmorphous;
+    CoreType coreType = StackedSilicon;
 
     // 铁芯截面形状
     enum CoreShape { Circle, LongRound, Ellipse, HalfEllipse, EllipseLike };
-    CoreShape coreShape = EllipseLike;
+    CoreShape coreShape = Ellipse;
 
     // 绕组方式
     enum WindingForm { Dual, DualSplit };
@@ -31,6 +31,7 @@ struct StructureConfig {
 
     // 高压线圈结构
     enum HvCoilStructure { MultiLayerCylinder, TwoSegCylinder };
+    // TwoSegCylinder保留原枚举值；原表分段圆筒式（两段串联），尚未开放计算。
     HvCoilStructure hvCoilStructure = MultiLayerCylinder;
 };
 

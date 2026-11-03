@@ -35,28 +35,28 @@ void LossCalcPage::setupUi()
     // 工具栏
     auto *toolbar = new QWidget(this);
     toolbar->setFixedHeight(34);
-    toolbar->setStyleSheet("background: #2a2f38; border-bottom: 1px solid #3a4050;");
+    toolbar->setStyleSheet("background: #EDF3EF; border-bottom: 1px solid #D3DDD6;");
     auto *toolLayout = new QHBoxLayout(toolbar);
     toolLayout->setContentsMargins(8, 4, 8, 4);
     auto *pageLabel = new QLabel(QStringLiteral("损耗计算器"), toolbar);
-    pageLabel->setStyleSheet("color: #4dd0e1; font-size: 12px; font-weight: bold;");
+    pageLabel->setStyleSheet("color: #185C37; font-size: 12px; font-weight: bold;");
     toolLayout->addWidget(pageLabel);
     toolLayout->addStretch();
     mainLayout->addWidget(toolbar);
 
     // Tab 页：空载损耗 / 负载损耗
     auto *content = new QWidget(this);
-    content->setStyleSheet("background: #1a1d23;");
+    content->setStyleSheet("background: #F3F5F4;");
     auto *contentLayout = new QVBoxLayout(content);
     contentLayout->setContentsMargins(16, 16, 16, 16);
 
     auto *tabs = new QTabWidget(content);
     tabs->setStyleSheet(
-        "QTabWidget::pane { border: 1px solid #3a4050; background: #1a1d23; }"
-        "QTabBar::tab { background: #22262e; color: #8a9bb0; padding: 6px 16px;"
-        " border: 1px solid #3a4050; border-bottom: none; border-top-left-radius: 4px;"
+        "QTabWidget::pane { border: 1px solid #D3DDD6; background: #F3F5F4; }"
+        "QTabBar::tab { background: #FFFFFF; color: #607368; padding: 6px 16px;"
+        " border: 1px solid #D3DDD6; border-bottom: none; border-top-left-radius: 4px;"
         " border-top-right-radius: 4px; font-size: 12px; }"
-        "QTabBar::tab:selected { background: #2a2f38; color: #4dd0e1; }");
+        "QTabBar::tab:selected { background: #EDF3EF; color: #185C37; }");
 
     tabs->addTab(createNoLoadTab(), QStringLiteral("空载损耗"));
     tabs->addTab(createLoadLossTab(), QStringLiteral("负载损耗"));
@@ -75,7 +75,7 @@ QWidget *LossCalcPage::createNoLoadTab()
     // 输入
     auto *paramGroup = new QGroupBox(QStringLiteral("输入参数"), page);
     paramGroup->setStyleSheet(
-        "QGroupBox { color: #c0c8d0; font-size: 12px; border: 1px solid #3a4050;"
+        "QGroupBox { color: #42584A; font-size: 12px; border: 1px solid #D3DDD6;"
         " border-radius: 4px; margin-top: 10px; padding-top: 6px; }"
         "QGroupBox::title { subcontrol-origin: margin; left: 8px; padding: 0 3px; }");
     auto *form = new QFormLayout(paramGroup);
@@ -101,8 +101,8 @@ QWidget *LossCalcPage::createNoLoadTab()
         f.setPointSize(8);
         spin->setFont(f);
         if (auto *le = spin->findChild<QLineEdit*>()) {
-            le->setStyleSheet("QLineEdit { background: #22262e; color: #e0e6ed;"
-                              " border: 1px solid #3a4050; border-radius: 3px; padding: 1px 4px; }");
+            le->setStyleSheet("QLineEdit { background: #FFFFFF; color: #24362B;"
+                              " border: 1px solid #D3DDD6; border-radius: 3px; padding: 1px 4px; }");
         }
         return spin;
     };
@@ -118,9 +118,9 @@ QWidget *LossCalcPage::createNoLoadTab()
     auto *calcBtn = new QPushButton(QStringLiteral("计算"), paramGroup);
     calcBtn->setCursor(Qt::PointingHandCursor);
     calcBtn->setStyleSheet(
-        "QPushButton { background: #00bcd4; color: #1a1d23; font-size: 12px;"
+        "QPushButton { background: #217346; color: #F3F5F4; font-size: 12px;"
         " padding: 6px 24px; border: none; border-radius: 4px; font-weight: bold; }"
-        "QPushButton:hover { background: #4dd0e1; }");
+        "QPushButton:hover { background: #185C37; }");
     form->addRow(QString(), calcBtn);
     connect(calcBtn, &QPushButton::clicked, this, &LossCalcPage::onCalcNoLoad);
 
@@ -133,7 +133,7 @@ QWidget *LossCalcPage::createNoLoadTab()
     auto *resultLayout = new QVBoxLayout(resultGroup);
     resultLayout->setContentsMargins(12, 8, 12, 12);
     m_noLoadResult = new QLabel(QStringLiteral("空载损耗：—"), resultGroup);
-    m_noLoadResult->setStyleSheet("color: #4dd0e1; font-size: 20px; font-weight: bold;");
+    m_noLoadResult->setStyleSheet("color: #185C37; font-size: 20px; font-weight: bold;");
     resultLayout->addWidget(m_noLoadResult);
     resultLayout->addStretch();
     layout->addWidget(resultGroup, 1);
@@ -150,7 +150,7 @@ QWidget *LossCalcPage::createLoadLossTab()
 
     auto *paramGroup = new QGroupBox(QStringLiteral("输入参数"), page);
     paramGroup->setStyleSheet(
-        "QGroupBox { color: #c0c8d0; font-size: 12px; border: 1px solid #3a4050;"
+        "QGroupBox { color: #42584A; font-size: 12px; border: 1px solid #D3DDD6;"
         " border-radius: 4px; margin-top: 10px; padding-top: 6px; }"
         "QGroupBox::title { subcontrol-origin: margin; left: 8px; padding: 0 3px; }");
     auto *form = new QFormLayout(paramGroup);
@@ -176,8 +176,8 @@ QWidget *LossCalcPage::createLoadLossTab()
         f.setPointSize(8);
         spin->setFont(f);
         if (auto *le = spin->findChild<QLineEdit*>()) {
-            le->setStyleSheet("QLineEdit { background: #22262e; color: #e0e6ed;"
-                              " border: 1px solid #3a4050; border-radius: 3px; padding: 1px 4px; }");
+            le->setStyleSheet("QLineEdit { background: #FFFFFF; color: #24362B;"
+                              " border: 1px solid #D3DDD6; border-radius: 3px; padding: 1px 4px; }");
         }
         return spin;
     };
@@ -201,9 +201,9 @@ QWidget *LossCalcPage::createLoadLossTab()
     auto *calcBtn = new QPushButton(QStringLiteral("计算"), paramGroup);
     calcBtn->setCursor(Qt::PointingHandCursor);
     calcBtn->setStyleSheet(
-        "QPushButton { background: #00bcd4; color: #1a1d23; font-size: 12px;"
+        "QPushButton { background: #217346; color: #F3F5F4; font-size: 12px;"
         " padding: 6px 24px; border: none; border-radius: 4px; font-weight: bold; }"
-        "QPushButton:hover { background: #4dd0e1; }");
+        "QPushButton:hover { background: #185C37; }");
     form->addRow(QString(), calcBtn);
     connect(calcBtn, &QPushButton::clicked, this, &LossCalcPage::onCalcLoadLoss);
 
@@ -215,7 +215,7 @@ QWidget *LossCalcPage::createLoadLossTab()
     auto *resultLayout = new QVBoxLayout(resultGroup);
     resultLayout->setContentsMargins(12, 8, 12, 12);
     m_loadLossResult = new QLabel(QStringLiteral("负载损耗：—"), resultGroup);
-    m_loadLossResult->setStyleSheet("color: #4dd0e1; font-size: 20px; font-weight: bold;");
+    m_loadLossResult->setStyleSheet("color: #185C37; font-size: 20px; font-weight: bold;");
     m_loadLossResult->setTextFormat(Qt::RichText);
     m_loadLossResult->setWordWrap(true);
     resultLayout->addWidget(m_loadLossResult);
@@ -265,8 +265,8 @@ void LossCalcPage::onCalcLoadLoss()
             "<tr><td>附加损耗:</td><td>%3 W</td></tr>"
             "<tr><td>杂散系数:</td><td>%4 %</td></tr>"
             "<tr><td colspan='2'>&nbsp;</td></tr>"
-            "<tr><td style='color:#4dd0e1; font-weight:bold;'>负载损耗:</td>"
-            "<td style='color:#4dd0e1; font-size:16px; font-weight:bold;'>%5 W</td></tr>"
+            "<tr><td style='color:#185C37; font-weight:bold;'>负载损耗:</td>"
+            "<td style='color:#185C37; font-size:16px; font-weight:bold;'>%5 W</td></tr>"
             "</table>")
             .arg(QString::number(hvCopperLoss, 'f', 0),
                  QString::number(lvCopperLoss, 'f', 0),

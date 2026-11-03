@@ -14,6 +14,10 @@
 #include <QFileInfo>
 #include <QStandardPaths>
 #include <QDir>
+#include <cmath>
+#include <algorithm>
+#include <numeric>
+#include <limits>
 #include "CalcInput.h"
 
 namespace SchemeStore {
@@ -22,10 +26,19 @@ namespace SchemeStore {
 inline QJsonObject toJson(const CalcInput &in)
 {
     QJsonObject o;
+    QJsonObject craft;
+    craft.insert(QStringLiteral("enabled"), in.craftConstraints.enabled);
+    craft.insert(QStringLiteral("minimumMainDuct_mm"), !in.craftConstraints.enabled
+        && !std::isfinite(in.craftConstraints.minimumMainDuct_mm) ? 0.0 : in.craftConstraints.minimumMainDuct_mm);
+    craft.insert(QStringLiteral("source"), in.craftConstraints.source);
+    o.insert(QStringLiteral("craftConstraints"), craft);
     // 额定值
     o.insert(QStringLiteral("capacity_kVA"), in.capacity_kVA);
     o.insert(QStringLiteral("hvRated_kV"), in.hvRated_kV);
     o.insert(QStringLiteral("lvRated_kV"), in.lvRated_kV);
+    o.insert(QStringLiteral("hvTapPlusSteps"), in.hvTapPlusSteps);
+    o.insert(QStringLiteral("hvTapMinusSteps"), in.hvTapMinusSteps);
+    o.insert(QStringLiteral("hvTapStep_pct"), in.hvTapStep_pct);
     o.insert(QStringLiteral("hvTapMax_pct"), in.hvTapMax_pct);
     o.insert(QStringLiteral("hvTapMin_pct"), in.hvTapMin_pct);
     o.insert(QStringLiteral("hvDeltaConnected"), in.hvDeltaConnected);
@@ -37,9 +50,25 @@ inline QJsonObject toJson(const CalcInput &in)
     o.insert(QStringLiteral("stackFactor"), in.stackFactor);
     o.insert(QStringLiteral("steelThickness_mm"), in.steelThickness_mm);
     o.insert(QStringLiteral("steelGrade"), in.steelGrade);
+    o.insert(QStringLiteral("useCustomSteelPrice"), in.useCustomSteelPrice);
+    // 两种模式均显式记录实际采用的价格；内置模式始终为17，不受闲置字段影响。
+    o.insert(QStringLiteral("steelPricePerKg"), in.useCustomSteelPrice ? in.steelPricePerKg : 17.0);
+    o.insert(QStringLiteral("steelPriceGrade"), in.useCustomSteelPrice ? in.steelPriceGrade : in.steelGrade.trimmed());
+    const auto prices = in.materialPrices.effective();
+    QJsonObject materialPrices;
+    materialPrices.insert(QStringLiteral("custom"), prices.custom);
+    materialPrices.insert(QStringLiteral("copper"), prices.copper);
+    materialPrices.insert(QStringLiteral("aluminum"), prices.aluminum);
+    materialPrices.insert(QStringLiteral("oil"), prices.oil);
+    materialPrices.insert(QStringLiteral("tank"), prices.tank);
+    o.insert(QStringLiteral("materialPrices"), materialPrices);
     o.insert(QStringLiteral("seamCount"), in.seamCount);
     o.insert(QStringLiteral("coreLossCraftCoef"), in.coreLossCraftCoef);
+    o.insert(QStringLiteral("legacyUnitLossRecordText"), in.legacyUnitLossRecordText);
+    o.insert(QStringLiteral("legacyCraftCoefRecordText"), in.legacyCraftCoefRecordText);
+    o.insert(QStringLiteral("yokeLossCraftCoef"), in.yokeLossCraftCoef);
     o.insert(QStringLiteral("yokePiece1Stack_mm"), in.yokePiece1Stack_mm);
+    o.insert(QStringLiteral("yokePiece1Auto"), in.yokePiece1Auto);
     o.insert(QStringLiteral("yokePiece2Stack_mm"), in.yokePiece2Stack_mm);
     o.insert(QStringLiteral("yokePiece3Stack_mm"), in.yokePiece3Stack_mm);
     o.insert(QStringLiteral("yokeWidenTo_mm"), in.yokeWidenTo_mm);
@@ -57,6 +86,8 @@ inline QJsonObject toJson(const CalcInput &in)
     o.insert(QStringLiteral("hvTurnsPerLayer"), in.hvTurnsPerLayer);
     o.insert(QStringLiteral("hvLayerInsul_mm"), in.hvLayerInsul_mm);
     o.insert(QStringLiteral("hvWireInsulAdd_mm"), in.hvWireInsulAdd_mm);
+    o.insert(QStringLiteral("hvWireInsulation"), in.resolvedInsulationType());
+    o.insert(QStringLiteral("hvCopperWire"), in.hvCopperWire);
     o.insert(QStringLiteral("hvCoilFormIdx"), in.hvCoilFormIdx);
     QJsonArray dws, dhs;
     for (double v : in.hvDuctWidthSide) {
@@ -74,6 +105,8 @@ inline QJsonObject toJson(const CalcInput &in)
     o.insert(QStringLiteral("lvLayerInsulCount"), in.lvLayerInsulCount);
     o.insert(QStringLiteral("lvLayerInsul_mm"), in.lvLayerInsul_mm);
     o.insert(QStringLiteral("lvEndInsul_mm"), in.lvEndInsul_mm);
+    o.insert(QStringLiteral("lvConnectionBarThicknessText"), in.lvConnectionBarThicknessText);
+    o.insert(QStringLiteral("lvConnectionBarWidthText"), in.lvConnectionBarWidthText);
     o.insert(QStringLiteral("lvCopperFoil"), in.lvCopperFoil);
     QJsonArray lws, lhs;
     for (double v : in.lvDuctWidthSide) {
@@ -100,6 +133,22 @@ inline QJsonObject toJson(const CalcInput &in)
     o.insert(QStringLiteral("wavePitch_mm"), in.wavePitch_mm);
     o.insert(QStringLiteral("phaseGapBase_mm"), in.phaseGapBase_mm);
     o.insert(QStringLiteral("refFluxDens_T"), in.refFluxDens_T);
+    if (in.hasPerformanceCriteria) {
+        const auto &p = in.performanceCriteria;
+        QJsonObject criteria;
+        criteria.insert(QStringLiteral("version"), 1);
+        criteria.insert(QStringLiteral("mode"), p.standardMode == TransformerParams::StandardMode::BuiltIn
+            ? QStringLiteral("builtin") : p.standardMode == TransformerParams::StandardMode::Custom
+            ? QStringLiteral("custom") : QStringLiteral("unconfirmed"));
+        criteria.insert(QStringLiteral("productModel"), p.productModel);
+        criteria.insert(QStringLiteral("lossStandardsKey"), p.lossStandardsKey);
+        criteria.insert(QStringLiteral("lossStandardsManual"), p.lossStandardsManual);
+        int count;
+        const auto *fields = PerformanceCriteria::fields(count);
+        for (int i = 0; i < count; ++i)
+            criteria.insert(QLatin1String(fields[i].key), p.*(fields[i].member));
+        o.insert(QStringLiteral("performanceCriteria"), criteria);
+    }
     return o;
 }
 
@@ -107,6 +156,45 @@ inline QJsonObject toJson(const CalcInput &in)
 inline CalcInput fromJson(const QJsonObject &o)
 {
     CalcInput in;
+    // Missing object is the legacy unchecked state. Explicit malformed data must fail recalc.
+    if (o.contains(QStringLiteral("craftConstraints"))) {
+        const auto value = o.value(QStringLiteral("craftConstraints"));
+        const auto craft = value.toObject();
+        const auto enabled = craft.value(QStringLiteral("enabled"));
+        const auto minimum = craft.value(QStringLiteral("minimumMainDuct_mm"));
+        const auto source = craft.value(QStringLiteral("source"));
+        const bool wellFormed = value.isObject() && enabled.isBool() && minimum.isDouble()
+            && std::isfinite(minimum.toDouble()) && source.isString();
+        in.craftConstraints.enabled = wellFormed ? enabled.toBool() : true;
+        in.craftConstraints.minimumMainDuct_mm = wellFormed ? minimum.toDouble()
+            : std::numeric_limits<double>::quiet_NaN();
+        in.craftConstraints.source = source.toString();
+    }
+    const auto criteria = o.value(QStringLiteral("performanceCriteria")).toObject();
+    const QString mode = criteria.value(QStringLiteral("mode")).toString();
+    bool criteriaValid = criteria.value(QStringLiteral("version")).isDouble()
+        && criteria.value(QStringLiteral("version")).toDouble() == 1.0
+        && (mode == QLatin1String("builtin") || mode == QLatin1String("custom") || mode == QLatin1String("unconfirmed"))
+        && criteria.value(QStringLiteral("productModel")).isString()
+        && PerformanceCriteria::validModel(criteria.value(QStringLiteral("productModel")).toString())
+        && criteria.value(QStringLiteral("lossStandardsKey")).isString()
+        && criteria.value(QStringLiteral("lossStandardsManual")).isBool();
+    int fieldCount;
+    const auto *fields = PerformanceCriteria::fields(fieldCount);
+    for (int i = 0; i < fieldCount; ++i) {
+        const auto value = criteria.value(QLatin1String(fields[i].key));
+        criteriaValid = criteriaValid && value.isDouble() && std::isfinite(value.toDouble());
+        if (value.isDouble()) in.performanceCriteria.*(fields[i].member) = value.toDouble();
+    }
+    in.hasPerformanceCriteria = criteriaValid;
+    in.performanceCriteria.standardMode = criteriaValid && mode == QLatin1String("builtin")
+        ? TransformerParams::StandardMode::BuiltIn : criteriaValid && mode == QLatin1String("custom")
+        ? TransformerParams::StandardMode::Custom : TransformerParams::StandardMode::Unconfirmed;
+    if (criteriaValid) {
+        in.performanceCriteria.productModel = criteria.value(QStringLiteral("productModel")).toString();
+        in.performanceCriteria.lossStandardsKey = criteria.value(QStringLiteral("lossStandardsKey")).toString();
+        in.performanceCriteria.lossStandardsManual = criteria.value(QStringLiteral("lossStandardsManual")).toBool();
+    }
     const auto num = [&o](const char *key, double dst) {
         const auto v = o.value(QLatin1String(key));
         return v.isDouble() ? v.toDouble() : dst;
@@ -121,6 +209,30 @@ inline CalcInput fromJson(const QJsonObject &o)
     in.lvRated_kV = num("lvRated_kV", in.lvRated_kV);
     in.hvTapMax_pct = num("hvTapMax_pct", in.hvTapMax_pct);
     in.hvTapMin_pct = num("hvTapMin_pct", in.hvTapMin_pct);
+    if (o.value(QStringLiteral("hvTapPlusSteps")).isDouble()
+        && o.value(QStringLiteral("hvTapMinusSteps")).isDouble()
+        && o.value(QStringLiteral("hvTapStep_pct")).isDouble()) {
+        in.hvTapPlusSteps = integ("hvTapPlusSteps", in.hvTapPlusSteps);
+        in.hvTapMinusSteps = integ("hvTapMinusSteps", in.hvTapMinusSteps);
+        in.hvTapStep_pct = num("hvTapStep_pct", in.hvTapStep_pct);
+    } else {
+        // 旧方案只保存调压上下限：优先按常用每级 2.5% 还原。
+        const double plus = std::max(0.0, in.hvTapMax_pct);
+        const double minus = std::max(0.0, -in.hvTapMin_pct);
+        const double step = in.hvTapStep_pct;
+        const bool standardStep = std::abs(std::round(plus / step) * step - plus) < 0.0005
+            && std::abs(std::round(minus / step) * step - minus) < 0.0005;
+        if (!standardStep) {
+            const auto plusUnits = std::llround(plus * 1000.0);
+            const auto minusUnits = std::llround(minus * 1000.0);
+            const auto commonUnits = std::gcd(plusUnits, minusUnits);
+            if (commonUnits > 0) {
+                in.hvTapStep_pct = double(commonUnits) / 1000.0;
+            }
+        }
+        in.hvTapPlusSteps = int(std::llround(plus / in.hvTapStep_pct));
+        in.hvTapMinusSteps = int(std::llround(minus / in.hvTapStep_pct));
+    }
     in.hvDeltaConnected = o.value(QStringLiteral("hvDeltaConnected")).toBool(in.hvDeltaConnected);
     in.lvStarConnected = o.value(QStringLiteral("lvStarConnected")).toBool(in.lvStarConnected);
 
@@ -130,9 +242,44 @@ inline CalcInput fromJson(const QJsonObject &o)
     in.stackFactor = num("stackFactor", in.stackFactor);
     in.steelThickness_mm = num("steelThickness_mm", in.steelThickness_mm);
     in.steelGrade = o.value(QStringLiteral("steelGrade")).toString(in.steelGrade);
+    const auto customSteel = o.value(QStringLiteral("useCustomSteelPrice"));
+    // 旧方案无字段时保持17基价；显式非法新字段不能静默按旧方案迁移。
+    in.useCustomSteelPrice = o.contains(QStringLiteral("useCustomSteelPrice"))
+        && (!customSteel.isBool() || customSteel.toBool());
+    if (in.useCustomSteelPrice) {
+        in.steelPricePerKg = customSteel.isBool()
+            ? num("steelPricePerKg", std::numeric_limits<double>::quiet_NaN())
+            : std::numeric_limits<double>::quiet_NaN();
+        in.steelPriceGrade = o.value(QStringLiteral("steelPriceGrade")).toString();
+    } else {
+        in.steelPricePerKg = 17.0;
+        in.steelPriceGrade = in.steelGrade.trimmed();
+    }
     in.seamCount = integ("seamCount", in.seamCount);
+    if (o.contains(QStringLiteral("materialPrices"))) {
+        const auto value = o.value(QStringLiteral("materialPrices"));
+        const auto prices = value.toObject();
+        const auto mode = prices.value(QStringLiteral("custom"));
+        // 缺整个对象的旧方案用原基价；显式损坏对象/模式不能按旧文件迁移。
+        in.materialPrices.custom = !value.isObject() || !mode.isBool() || mode.toBool();
+        if (in.materialPrices.custom) {
+            const auto price = [&prices, &mode](const char *key) {
+                const auto v = prices.value(QString::fromLatin1(key));
+                return mode.isBool() && v.isDouble() ? v.toDouble()
+                    : std::numeric_limits<double>::quiet_NaN();
+            };
+            in.materialPrices.copper = price("copper");
+            in.materialPrices.aluminum = price("aluminum");
+            in.materialPrices.oil = price("oil");
+            in.materialPrices.tank = price("tank");
+        }
+    }
     in.coreLossCraftCoef = num("coreLossCraftCoef", in.coreLossCraftCoef);
+    // 旧方案没有铁轭字段时沿用其原共同系数；显式非法新字段不能静默迁移。
+    in.yokeLossCraftCoef = !o.contains(QStringLiteral("yokeLossCraftCoef")) ? in.coreLossCraftCoef
+        : num("yokeLossCraftCoef", std::numeric_limits<double>::quiet_NaN());
     in.yokePiece1Stack_mm = num("yokePiece1Stack_mm", in.yokePiece1Stack_mm);
+    in.yokePiece1Auto = o.value(QStringLiteral("yokePiece1Auto")).toBool(false); // 旧方案保持手工
     in.yokePiece2Stack_mm = num("yokePiece2Stack_mm", in.yokePiece2Stack_mm);
     in.yokePiece3Stack_mm = num("yokePiece3Stack_mm", in.yokePiece3Stack_mm);
     in.yokeWidenTo_mm = num("yokeWidenTo_mm", in.yokeWidenTo_mm);
@@ -149,15 +296,25 @@ inline CalcInput fromJson(const QJsonObject &o)
     in.hvTurnsPerLayer = integ("hvTurnsPerLayer", in.hvTurnsPerLayer);
     in.hvLayerInsul_mm = num("hvLayerInsul_mm", in.hvLayerInsul_mm);
     in.hvWireInsulAdd_mm = num("hvWireInsulAdd_mm", in.hvWireInsulAdd_mm);
-    in.hvCoilFormIdx = integ("hvCoilFormIdx", in.hvCoilFormIdx);
+    // 旧文件没有型号证据，不按数值反推类型；未知类型/冲突值也保留为自定义。
+    in.hvWireInsulation = o.value(QStringLiteral("hvWireInsulation")).toString(QStringLiteral("Custom"));
+    in.hvWireInsulation = in.resolvedInsulationType();
+    // 仅缺失字段的旧方案沿用默认1；显式非法值不能截断或默认成可算单段。
+    const QString coilFormKey = QStringLiteral("hvCoilFormIdx");
+    if (o.contains(coilFormKey)) {
+        const auto coilForm = o.value(coilFormKey);
+        const double index = coilForm.toDouble(std::numeric_limits<double>::quiet_NaN());
+        in.hvCoilFormIdx = coilForm.isDouble() && (index == 1.0 || index == 2.0)
+            ? static_cast<int>(index) : 0; // 0为不支持标记，适用范围及引擎入口均拒绝
+    }
     const QJsonArray dws = o.value(QStringLiteral("hvDuctWidthSide")).toArray();
     const QJsonArray dhs = o.value(QStringLiteral("hvDuctHeightSide")).toArray();
     for (int i = 0; i < 5; ++i) {
         if (i < dws.size()) {
-            in.hvDuctWidthSide[i] = dws.at(i).toDouble(in.hvDuctWidthSide[i]);
+            in.hvDuctWidthSide[i] = dws.at(i).toDouble(std::numeric_limits<double>::quiet_NaN());
         }
         if (i < dhs.size()) {
-            in.hvDuctHeightSide[i] = dhs.at(i).toDouble(in.hvDuctHeightSide[i]);
+            in.hvDuctHeightSide[i] = dhs.at(i).toDouble(std::numeric_limits<double>::quiet_NaN());
         }
     }
 
@@ -167,17 +324,41 @@ inline CalcInput fromJson(const QJsonObject &o)
     in.lvLayerInsulCount = integ("lvLayerInsulCount", in.lvLayerInsulCount);
     in.lvLayerInsul_mm = num("lvLayerInsul_mm", in.lvLayerInsul_mm);
     in.lvEndInsul_mm = num("lvEndInsul_mm", in.lvEndInsul_mm);
+    // 可选记录缺失时保持空白，不引入原计算单示例值。
+    const auto optionalRecordText = [&o](const QString &key) {
+        const auto value = o.value(key);
+        if (value.isUndefined() || value.isNull()) return QString();
+        if (value.isString()) return value.toString();
+        // 保留非法外部记录的可见证据，不静默变成未录入或示例值。
+        return QStringLiteral("非法记录（需要文本）");
+    };
+    in.lvConnectionBarThicknessText = optionalRecordText(QStringLiteral("lvConnectionBarThicknessText"));
+    in.lvConnectionBarWidthText = optionalRecordText(QStringLiteral("lvConnectionBarWidthText"));
+    in.legacyUnitLossRecordText = optionalRecordText(QStringLiteral("legacyUnitLossRecordText"));
+    in.legacyCraftCoefRecordText = optionalRecordText(QStringLiteral("legacyCraftCoefRecordText"));
     in.lvCopperFoil = o.value(QStringLiteral("lvCopperFoil")).toBool(in.lvCopperFoil);
+    // 旧方案只有低压材料标志，旧版也用它控制高压导线重量；据此迁移高压材料。
+    in.hvCopperWire = o.value(QStringLiteral("hvCopperWire")).toBool(in.lvCopperFoil);
     const QJsonArray lws = o.value(QStringLiteral("lvDuctWidthSide")).toArray();
     const QJsonArray lhs = o.value(QStringLiteral("lvDuctHeightSide")).toArray();
     for (int i = 0; i < 5; ++i) {
         if (i < lws.size()) {
-            in.lvDuctWidthSide[i] = lws.at(i).toDouble(in.lvDuctWidthSide[i]);
+            in.lvDuctWidthSide[i] = lws.at(i).toDouble(std::numeric_limits<double>::quiet_NaN());
         }
         if (i < lhs.size()) {
-            in.lvDuctHeightSide[i] = lhs.at(i).toDouble(in.lvDuctHeightSide[i]);
+            in.lvDuctHeightSide[i] = lhs.at(i).toDouble(std::numeric_limits<double>::quiet_NaN());
         }
     }
+
+    // 缺失/短数组保留旧方案默认值；显式错误容器或多余元素不能静默回退。
+    const auto guardDuctArray = [&o](const QString &key, double *values) {
+        if (o.contains(key) && (!o.value(key).isArray() || o.value(key).toArray().size() > 5))
+            values[0] = std::numeric_limits<double>::quiet_NaN();
+    };
+    guardDuctArray(QStringLiteral("hvDuctWidthSide"), in.hvDuctWidthSide);
+    guardDuctArray(QStringLiteral("hvDuctHeightSide"), in.hvDuctHeightSide);
+    guardDuctArray(QStringLiteral("lvDuctWidthSide"), in.lvDuctWidthSide);
+    guardDuctArray(QStringLiteral("lvDuctHeightSide"), in.lvDuctHeightSide);
 
     in.mainDuctWidth_mm = num("mainDuctWidth_mm", in.mainDuctWidth_mm);
     in.mainDuctInsul_mm = num("mainDuctInsul_mm", in.mainDuctInsul_mm);
@@ -399,7 +580,7 @@ inline QVector<SchemeEntry> loadEntries(const QString &path)
     return entries;
 }
 
-// 设计变量是否完全一致（记忆库去重依据；借 JSON 序列化比较，免手写字段比对）
+// 设计变量及已保存指标是否完全一致（不同指标版本保留独立记录）。
 inline bool sameInput(const CalcInput &a, const CalcInput &b)
 {
     return toJson(a) == toJson(b);

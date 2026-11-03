@@ -9,7 +9,12 @@
 #include "StructureConfig.h"
 #include "CalcInput.h"
 
+class QLineEdit;
+class QSpinBox;
+class QDoubleSpinBox;
 class QComboBox;
+class QTimer;
+struct CalcResult;
 
 class ParamTableWidget : public QTableWidget {
     Q_OBJECT
@@ -19,22 +24,90 @@ public:
     // 设计变量节初值取自 input（默认即 SB20-M-630-10）；
     // proMode=true 时追加工艺/油道/损耗/油箱四节高级参数（专业模式）
     void loadParamsForConfig(const TransformerParams &params, const StructureConfig &config,
-                             const CalcInput &input, bool proMode = false);
+                             const CalcInput &input, bool proMode = false, bool designConnectionUi = false,
+                             bool sheetSelectionUi = false);
     TransformerParams getParams() const;
+    // 当前接法及指标来源是否允许计算；Dd/Yd仅限非标，不代表有内置标准列。
+    bool hasSupportedConnectionGroup() const;
+    bool hasValidSteelGrade() const;
     // 从表格设计变量节读回 CalcInput（未绑定或非法输入的域保持原值）
     void saveToInput(CalcInput &input) const;
-    // 公共入口：AI 助手/方案库等外部应用方案后，容量变化时可调用按
-    // GB 20052-2024 刷新损耗标准值（非标容量/非叠铁芯内部自动跳过）
-    void applyModelLinkage();
+    // 计算边界统一校验并提交完整型号；失败时不改变调用方输入。
+    bool collectForCalculation(TransformerParams &params, CalcInput &input, QString &error,
+                               bool interactive = true);
+    // 方案回显与输出元数据必须来自该方案，而不是寻优基准额定值。
+    static TransformerParams paramsForInput(const TransformerParams &base, const CalcInput &input);
+    QString standardStatus() const { return m_standardStatus; }
+    void setCalculationConfig(const StructureConfig &config) {
+        m_config = config;
+        applyModelLinkage();
+        updateHvCoilHints();
+    }
 
 signals:
-    // 型号/容量联动：按 GB 20052-2024 叠铁芯标准值自动覆盖损耗/阻抗标准值后发出
+    // 内置叠铁芯损耗标准表的适用状态；阻抗始终保留当前设置。
     void stdValuesUpdated(const QString &summary);
 
 private:
-    // 型号/容量联动实现：查表覆盖损耗标准值单元格（applyModelLinkage 为公共入口）
-    QComboBox *m_modelCombo = nullptr;   // 产品型号（叠铁芯：SB22/SB20/SB13-M，可输入非标）
-    QComboBox *m_capacityCombo = nullptr; // 容量（标准 19 档，非标容量追加为额外选项）
+    // 复合产品型号：型号-M-容量/高压额定电压-低压额定电压
+    bool parseCompositeModel(const QString &text, bool commitLowVoltage);
+    void applyModelLinkage();
+    void refreshStandardSelectorTip(); // Display-only, including incomplete model edits.
+    QString standardKey() const;
+    QString standardUnavailableReason() const;
+    QString connectionCalculationError() const;
+    QString selectedSteelGrade() const;
+    void updateSteelThickness();
+    void updateWireInsulation();
+    void updateWireForm();
+    void updateLvTurnsRecommendation();
+    void updateYokePiece1();
+    void updateTestVoltageHints();
+    void updateHvCoilHints(); // 只更新固定行说明与悬停提示，不重建表格或改数值
+    void updateDesignConnection(); // 仅设计输入页，联结组别与基础电量联动。
+    void scheduleDesignCore();
+    void updateDesignCore();
+    void showDesignCore(const CalcResult *result, const QString &reason);
+    QTimer *m_corePreviewTimer = nullptr;
+    int m_designCoreRow = -1;
+    bool m_designConnectionUi = false;
+    QComboBox *m_designConnectionCombo = nullptr;
+    int m_designConnectionRow = -1;
+    int m_designPhaseRow = -1;
+    int m_testVoltageRow = -1;
+    QComboBox *m_yokePiece1ModeCombo = nullptr;
+    double m_manualYokePiece1_mm = 4.0;
+    CalcInput m_recommendationBaseInput;
+    int m_recommendationRow = -1;
+    QComboBox *m_wireInsulationCombo = nullptr;
+    QComboBox *m_wireFormCombo = nullptr;
+    QComboBox *m_roundWireSpecCombo = nullptr;
+    bool m_roundWireActive = false;
+    double m_unlistedRoundDiameter_mm = 0.0; // 保留导入原值，不从格式化文本还原
+    QString m_flatWireWidth = QStringLiteral("2.05");
+    QString m_flatWireThick = QStringLiteral("5.52");
+    QString m_flatWireInsulation = QStringLiteral("QZB-2/130");
+    double m_customWireInsulAdd_mm = 0.15;
+    QLineEdit *m_productModelEdit = nullptr;
+    QSpinBox *m_tapPlusSpin = nullptr;
+    QSpinBox *m_tapMinusSpin = nullptr;
+    QDoubleSpinBox *m_tapStepSpin = nullptr;
+    QComboBox *m_steelGradeCombo = nullptr;
+    int m_steelCurveRangeRow = -1;
+    QComboBox *m_hvMaterialCombo = nullptr;
+    QComboBox *m_lvMaterialCombo = nullptr;
+    QString m_modelSeries;
+    double m_modelCapacity_kVA = 630.0;
+    double m_modelHvRated_kV = 10.0;
+    double m_modelLvRated_kV = 0.4;
+    QString m_lastLinkageKey;
+    TransformerParams m_baseParams;
+    StructureConfig m_config;
+    bool m_lossStandardsManual = false;
+    TransformerParams::StandardMode m_standardMode = TransformerParams::StandardMode::BuiltIn;
+    QComboBox *m_standardModeCombo = nullptr;
+    int m_standardModeRow = -1;
+    QString m_standardStatus;
     bool m_loading = false;               // 加载期间抑制联动信号
 
     void setupTable();

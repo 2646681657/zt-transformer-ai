@@ -32,37 +32,37 @@ void DataManagementPage::setupUi()
     // 工具栏
     auto *toolbar = new QWidget(this);
     toolbar->setFixedHeight(34);
-    toolbar->setStyleSheet("background: #2a2f38; border-bottom: 1px solid #3a4050;");
+    toolbar->setStyleSheet("background: #EDF3EF; border-bottom: 1px solid #D3DDD6;");
     auto *toolLayout = new QHBoxLayout(toolbar);
     toolLayout->setContentsMargins(8, 4, 8, 4);
     auto *pageLabel = new QLabel(QStringLiteral("数据管理"), toolbar);
-    pageLabel->setStyleSheet("color: #4dd0e1; font-size: 12px; font-weight: bold;");
+    pageLabel->setStyleSheet("color: #185C37; font-size: 12px; font-weight: bold;");
     toolLayout->addWidget(pageLabel);
     toolLayout->addStretch();
     mainLayout->addWidget(toolbar);
 
     // 内容区
     auto *content = new QWidget(this);
-    content->setStyleSheet("background: #1a1d23;");
+    content->setStyleSheet("background: #F3F5F4;");
     auto *contentLayout = new QVBoxLayout(content);
     contentLayout->setContentsMargins(16, 16, 16, 16);
     contentLayout->setSpacing(16);
 
     // 数据统计
     m_statsLabel = new QLabel(content);
-    m_statsLabel->setStyleSheet("color: #c0c8d0; font-size: 12px; padding: 8px 12px;"
-                               " background: #22262e; border-radius: 4px;");
+    m_statsLabel->setStyleSheet("color: #42584A; font-size: 12px; padding: 8px 12px;"
+                               " background: #FFFFFF; border-radius: 4px;");
     contentLayout->addWidget(m_statsLabel);
 
     // 按钮样式工厂
-    auto makeBtn = [](const QString &text, const QString &color = "#00bcd4") {
+    auto makeBtn = [](const QString &text, const QString &color = "#217346") {
         auto *btn = new QPushButton(text);
         btn->setCursor(Qt::PointingHandCursor);
         btn->setStyleSheet(
-            QString("QPushButton { background: %1; color: #1a1d23; font-size: 12px;"
+            QString("QPushButton { background: %1; color: #F3F5F4; font-size: 12px;"
                     " padding: 8px 20px; border: none; border-radius: 4px; font-weight: bold; }"
                     "QPushButton:hover { background: %2; }")
-                .arg(color, color == "#00bcd4" ? "#4dd0e1" : "#ef9a9a"));
+                .arg(color, color == "#217346" ? "#185C37" : "#C53030"));
         btn->setFixedWidth(200);
         return btn;
     };
@@ -70,7 +70,7 @@ void DataManagementPage::setupUi()
     // ---- 设计数据导出 ----
     auto *exportGroup = new QGroupBox(QStringLiteral("设计数据导出"), content);
     exportGroup->setStyleSheet(
-        "QGroupBox { color: #c0c8d0; font-size: 12px; border: 1px solid #3a4050;"
+        "QGroupBox { color: #42584A; font-size: 12px; border: 1px solid #D3DDD6;"
         " border-radius: 4px; margin-top: 10px; padding-top: 6px; }"
         "QGroupBox::title { subcontrol-origin: margin; left: 8px; padding: 0 3px; }");
     auto *exportLayout = new QHBoxLayout(exportGroup);
@@ -81,7 +81,7 @@ void DataManagementPage::setupUi()
     auto *exportCsvBtn = makeBtn(QStringLiteral("导出为 CSV"));
     auto *exportHint = new QLabel(QStringLiteral(
         "将硅钢曲线、性能标准、铁芯叠积、线规表、波纹油箱系数导出为文件"));
-    exportHint->setStyleSheet("color: #8a9bb0; font-size: 11px;");
+    exportHint->setStyleSheet("color: #607368; font-size: 11px;");
     exportHint->setWordWrap(true);
 
     exportLayout->addWidget(exportJsonBtn);
@@ -99,10 +99,10 @@ void DataManagementPage::setupUi()
     importLayout->setContentsMargins(12, 8, 12, 12);
     importLayout->setSpacing(12);
 
-    auto *importBtn = makeBtn(QStringLiteral("从 JSON 导入"), "#ff9800");
+    auto *importBtn = makeBtn(QStringLiteral("从 JSON 导入"), "#9A6500");
     auto *importHint = new QLabel(QStringLiteral(
         "从外部 JSON 文件导入设计数据，替换当前运行时数据（不影响内置资源）"));
-    importHint->setStyleSheet("color: #8a9bb0; font-size: 11px;");
+    importHint->setStyleSheet("color: #607368; font-size: 11px;");
     importHint->setWordWrap(true);
 
     importLayout->addWidget(importBtn);
@@ -118,11 +118,11 @@ void DataManagementPage::setupUi()
     backupLayout->setContentsMargins(12, 8, 12, 12);
     backupLayout->setSpacing(12);
 
-    auto *backupBtn = makeBtn(QStringLiteral("备份数据"), "#4caf50");
-    auto *restoreBtn = makeBtn(QStringLiteral("恢复数据"), "#2196f3");
+    auto *backupBtn = makeBtn(QStringLiteral("备份数据"), "#217346");
+    auto *restoreBtn = makeBtn(QStringLiteral("恢复数据"), "#217346");
     auto *backupHint = new QLabel(QStringLiteral(
         "备份/恢复报价参数和方案库文件到指定目录"));
-    backupHint->setStyleSheet("color: #8a9bb0; font-size: 11px;");
+    backupHint->setStyleSheet("color: #607368; font-size: 11px;");
     backupHint->setWordWrap(true);
 
     backupLayout->addWidget(backupBtn);

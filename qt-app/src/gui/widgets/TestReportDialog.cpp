@@ -63,7 +63,7 @@ void TestReportDialog::setupUi()
 
     auto *hint = new QLabel(
         QStringLiteral("提示：对照设计值可验证计算准确性，超差项将在自学习对比中高亮"), this);
-    hint->setStyleSheet("color: #8a9bb0; font-size: 11px;");
+    hint->setStyleSheet("color: #607368; font-size: 11px;");
     layout->addWidget(hint);
 
     auto *btnBox = new QDialogButtonBox(

@@ -1,4 +1,5 @@
 #include "SchemeTableWidget.h"
+#include "core/CostBasisNotes.h"
 #include <QHeaderView>
 #include <QPainter>
 #include <QPaintEvent>
@@ -6,11 +7,8 @@
 
 namespace {
 
-// 主材成本组：第 2 列（铜铁油）、第 3 列（铜铁）。
-// 默认（两列都可见）：两级表头——上半区「主材成本」横跨两列，
-// 下半区「铜铁油」「铜铁」两个子格；
-// 勾选「仅显示主要参数列」（铜铁列隐藏）：铜铁油列改为上下两格
-// （上「主材成本」下「铜铁油」），单列保留完整上下文。
+// 内置基价成本组：第2列为材料合计（含油箱），第3列为铁芯导线。
+// 两级表头保留原列索引、分组绘制和隐藏行为，不改变金额或排序。
 constexpr int kCostCol = 2;
 constexpr int kCuFeCol = 3;
 
@@ -27,17 +25,17 @@ protected:
             // 两列都可见：本列只画下半区子标题（上半区跨列标题在 paintEvent 里画）
             const int band = rect.height() / 2;
             paintThemeSection(p, QRect(rect.x(), rect.y() + band, rect.width(), rect.height() - band),
-                              (logicalIndex == kCostCol) ? QStringLiteral("铜铁油")
-                                                         : QStringLiteral("铜铁"));
+                              (logicalIndex == kCostCol) ? QStringLiteral("材料合计")
+                                                         : QStringLiteral("铁芯导线"));
             return;
         }
         if (logicalIndex == kCostCol && isSectionHidden(kCuFeCol)) {
-            // 铜铁列隐藏：上下两格（上=主材成本，下=铜铁油）
+            // 铁芯导线列隐藏：保留单列两级表头。
             const int band = rect.height() / 2;
             paintThemeSection(p, QRect(rect.x(), rect.y(), rect.width(), band),
-                              QStringLiteral("主材成本"));
+                              QStringLiteral("本方案材料成本"));
             paintThemeSection(p, QRect(rect.x(), rect.y() + band, rect.width(), rect.height() - band),
-                              QStringLiteral("铜铁油"));
+                              QStringLiteral("材料合计"));
             return;
         }
         QHeaderView::paintSection(p, rect, logicalIndex);
@@ -47,28 +45,28 @@ protected:
         QHeaderView::paintEvent(e);
         if (isSectionHidden(kCostCol) || isSectionHidden(kCuFeCol))
             return;
-        // 上半区：跨列组标题「主材成本」，在子列画完后覆盖绘制
+        // 上半区跨列标题，在子列画完后覆盖绘制。
         const int band = viewport()->height() / 2;
         const int x1 = sectionViewportPosition(kCostCol);
         const int x2 = sectionViewportPosition(kCuFeCol) + sectionSize(kCuFeCol);
         if (x2 <= x1 || x1 < 0)
             return;
         QPainter p(viewport());
-        paintThemeSection(&p, QRect(x1, 0, x2 - x1, band), QStringLiteral("主材成本"));
+        paintThemeSection(&p, QRect(x1, 0, x2 - x1, band), QStringLiteral("本方案材料成本"));
     }
 
 private:
     // 配色与 ztf_theme.qss 的 QHeaderView::section 保持一致
     static void paintThemeSection(QPainter *p, const QRect &rect, const QString &text) {
-        p->fillRect(rect, QColor(0x2a, 0x2f, 0x38));
-        p->setPen(QColor(0x3a, 0x40, 0x50));
+        p->fillRect(rect, QColor("#EDF3EF"));
+        p->setPen(QColor("#D3DDD6"));
         p->drawLine(rect.topRight(), rect.bottomRight());
         p->drawLine(rect.bottomLeft(), rect.bottomRight());
         QFont f = p->font();
         f.setPixelSize(11);
         f.setBold(true);
         p->setFont(f);
-        p->setPen(QColor(0x8a, 0x9b, 0xb0));
+        p->setPen(QColor("#607368"));
         p->drawText(rect, Qt::AlignCenter, text);
     }
 };
@@ -78,15 +76,15 @@ void applyButtonStyle(QPushButton *btn, bool marked)
 {
     if (marked) {
         btn->setStyleSheet(
-            "QPushButton { background: #00bcd4; color: #0d1117;"
-            "border: 1px solid #00bcd4; border-radius: 3px; font-size: 11px;"
+            "QPushButton { background: #217346; color: #FFFFFF;"
+            "border: 1px solid #217346; border-radius: 3px; font-size: 11px;"
             "padding: 2px 10px; font-weight: bold; }"
-            "QPushButton:hover { background: #00a5bf; }");
+            "QPushButton:hover { background: #1A633C; }");
     } else {
         btn->setStyleSheet(
-            "QPushButton { background: rgba(0,188,212,0.15); color: #4dd0e1;"
-            "border: 1px solid #3a4050; border-radius: 3px; font-size: 11px; padding: 2px 10px; }"
-            "QPushButton:hover { background: #00bcd4; color: #0d1117; }");
+            "QPushButton { background: rgba(33, 115, 70,0.15); color: #185C37;"
+            "border: 1px solid #D3DDD6; border-radius: 3px; font-size: 11px; padding: 2px 10px; }"
+            "QPushButton:hover { background: #217346; color: #FFFFFF; }");
     }
 }
 
@@ -108,13 +106,15 @@ void SchemeTableWidget::setupColumns()
     // 列 2 表头默认显示两行文本；铜铁列隐藏时由
     // GroupHeaderView 绘制为上下两格
     QStringList headers = {
-        "选择", "方案序号", "主材成本\n铜铁油", "铜铁", "铁芯直径\n铁芯矩轴",
+        "选择", "方案序号", "本方案材料成本\n材料合计", "铁芯导线", "铁芯直径\n铁芯矩轴",
         "铁芯长轴\n与短轴比", "低压匝数", "低压线规厚", "低压线规宽",
-        "高压线规厚", "高压线规宽", "高压线圈层数", "低压油道个数",
+        "高压线规厚", "高压线规宽", "高压每层匝数 Y9", "低压油道个数",
         "高压油道个数", "低压到铁扼最", "主空道尺寸", "低压半油道个",
         "高压半油道个", "低压半距"
     };
     setHorizontalHeaderLabels(headers);
+    horizontalHeaderItem(kCostCol)->setToolTip(CostBasisNotes::engine());
+    horizontalHeaderItem(kCuFeCol)->setToolTip(QStringLiteral("按本方案采用的价格：铁芯+高压导线+低压导线；不含油和油箱。导线按实际铜/铝材料计算。"));
     verticalHeader()->setVisible(false);
     setAlternatingRowColors(true);
     setSelectionBehavior(QAbstractItemView::SelectRows);
@@ -167,6 +167,8 @@ void SchemeTableWidget::fillRowItems(int row, const OptimizationResult &r)
     setItem(row, col++, intItem(r.schemeIdx));
     setItem(row, col++, numItem(r.costCuFeOil));
     setItem(row, col++, numItem(r.costCuFe));
+    item(row, kCostCol)->setToolTip(r.costBasis);
+    item(row, kCuFeCol)->setToolTip(r.costBasis);
     setItem(row, col++, numItem(r.coreD));
     setItem(row, col++, numItem(r.coreL));
     setItem(row, col++, intItem(r.lvTurns));

@@ -59,9 +59,10 @@ private slots:
     void onOptimizeProgress(int percent);
     // 候选方案入库（方案表）
     void onOptimizeCandidate(const OptimizeCandidate &candidate);
+    void onOptimizeCandidates(const QVector<OptimizeCandidate> &candidates);
     // 寻优结束：最优方案加载到结果面板
     void onOptimizeFinished(bool stopped, const OptimizeCandidate &best,
-                            int total, int valid);
+                            const OptimizationRunSummary &summary);
     // 对拍自检：SB20 计算单缓存值逐项对照
     void onSelfTest();
     // 保存当前电磁计算结果为计算单文本文件
@@ -137,6 +138,7 @@ private slots:
     void onExportDocuments();
 
 private:
+    void runEmCalcInput(const CalcInput &candidate); // 校验成功前不替换当前方案输入。
     void setupOptimizeTab();
     void setupSchemeTab();
     void setupPrintTab();
@@ -154,10 +156,12 @@ private:
     OptimizationSettings loadOptimizeSettings() const;
     // 持久化寻优设置
     void saveOptimizeSettings(const OptimizationSettings &settings) const;
+    void showOptimizationSummary();
     // 当前计算结果映射为方案行，追加进方案表
-    void appendScheme(const CalcInput &input, const CalcResult &result);
+    int appendScheme(const CalcInput &input, const CalcResult &result);
     // 确认指定行方案：记录基准并跳转输出打印 Tab
     void confirmSchemeAt(int row);
+    TransformerParams currentResultParams() const;
 
     QTabBar *m_tabBar;
     QStackedWidget *m_stack;
@@ -168,7 +172,18 @@ private:
     RibbonButton *m_pauseBtn = nullptr;   // 暂停/继续 切换按钮
     GridOptimizer *m_optimizer = nullptr; // 网格寻优器（后台线程）
     OptimizationSettings m_optSettings;   // 寻优网格设置（循环参数对话框可配）
+    OptimizationSettings m_runningOptSettings;
+    CalcInput m_runningOptInput;
+    TransformerParams m_runningOptParams;
+    OptimizationRunSummary m_optSummary;
+    bool m_optSummaryAvailable = false;
+    bool m_optStopped = false;
+    double m_optBestCost = 0.0;
+    int m_optStage = 1;
+    int m_optStagePlanned = 0;
+    int m_optProgressPercent = 0;
     bool m_optRunning = false;            // 寻优运行中标志
+    bool m_discardOptimizationResults = false; // 输入已更换，忽略旧寻优线程的后续信号
     SchemeTableWidget *m_schemeTable;
     PrintTableWidget *m_printTable;
     EmResultPanel *m_emResultPanel = nullptr;
@@ -185,6 +200,7 @@ private:
     int m_confirmedSchemeIdx = -1;   // 已确认方案序号（方案库比较基准，排序无关）
     // 方案序号 → 完整候选（input+result+方案行）：确认方案时取回该方案全部数据
     QHash<int, OptimizeCandidate> m_schemeData;
+    QHash<int, TransformerParams> m_schemeParams; // 本方案的型号与性能设置，不覆盖寻优基准
     TransformerParams m_params;
     StructureConfig m_config;
     ElectromagneticEngine m_engine;
@@ -192,6 +208,7 @@ private:
     CalcInput m_calcInput;       // 当前设计变量（参数设置页传入，默认 SB20）
     CalcInput m_lastInput;       // 最近一次计算实际使用的输入
     bool m_hasResult = false;
+    TransformerParams m_lastParams;
     QString m_defaultPrinterName;   // 打印设置选定的打印机
     bool m_landscape = false;       // 打印设置选定的横向
 };

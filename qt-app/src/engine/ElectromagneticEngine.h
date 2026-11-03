@@ -8,6 +8,7 @@
 
 class ElectromagneticEngine : public ICalcEngine {
 public:
+    static constexpr int SheetDetailVersion = 11;
     // 旧接口（打印输出）：以默认设计变量（SB20）计算并组行
     PrintOutputData calculate(const TransformerParams &params,
                               const StructureConfig &config) override;
@@ -15,8 +16,17 @@ public:
     // 任意方案的计算结果 → 打印双栏行（确认方案后刷新打印表用）
     static PrintOutputData buildPrintOutput(const CalcInput &input, const CalcResult &result);
 
+    // 仅复用椭圆叠积几何和AN8推荐式，不运行绕组/损耗/温升或修改实际匝数。
+    // 适用范围与主引擎一致，调用界面须保证已支持的结构及50Hz配置。
+    static LvTurnsRecommendation recommendLvTurns(const CalcInput &input);
+    static bool previewCoreGeometry(const CalcInput &input, CoreResult &core, QString &error);
+    // 复用基础电量公式；不运行几何/损耗/温升，不代表全链可算。
+    static bool previewElectrical(const CalcInput &input, ElectricalResult &electrical, QString &error);
+
     // 电磁计算全链路：CalcInput（默认即 SB20-M-630-10）→ CalcResult
     bool calcElectromagnetic(const CalcInput &input, CalcResult &result) override;
+    // 仅方案计算单预览请求中间量，寻优候选不分配明细映射。
+    bool calcElectromagnetic(const CalcInput &input, CalcResult &result, bool captureSheetDetails);
 
     // 对拍自检：用 SB20-M-630-10 计算单缓存值验证全链路，返回逐项对照文本
     static QString selfTestReport();

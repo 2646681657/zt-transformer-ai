@@ -25,7 +25,7 @@ MainDashboardPage::MainDashboardPage(const QString &username, QWidget *parent)
     : QWidget(parent), m_username(username), m_navGroup(nullptr), m_subStack(nullptr)
 {
     setAttribute(Qt::WA_StyledBackground, true);
-    setStyleSheet("MainDashboardPage { background: #1a1d23; }");
+    setStyleSheet("MainDashboardPage { background: #F3F5F4; }");
 
     auto *mainLayout = new QVBoxLayout(this);
     mainLayout->setContentsMargins(0, 0, 0, 0);
@@ -33,7 +33,7 @@ MainDashboardPage::MainDashboardPage(const QString &username, QWidget *parent)
 
     // Top navigation area (light blue background with icons)
     auto *navArea = new QWidget(this);
-    navArea->setStyleSheet("background: #22262e; border-bottom: 1px solid #00bcd4;");
+    navArea->setStyleSheet("background: #FFFFFF; border-bottom: 1px solid #217346;");
     auto *navAreaLayout = new QHBoxLayout(navArea);
     navAreaLayout->setContentsMargins(20, 12, 20, 12);
     navAreaLayout->setSpacing(0);
@@ -43,7 +43,7 @@ MainDashboardPage::MainDashboardPage(const QString &username, QWidget *parent)
     // Sub buttons area (动态切换，根据选中的主按钮显示对应子按钮；
     // 选中"数据查询"时整体隐藏，让内容区直接显示数据查询界面)
     m_subArea = new QWidget(this);
-    m_subArea->setStyleSheet("background: #1e2228; border-bottom: 1px solid #3a4050;");
+    m_subArea->setStyleSheet("background: #F7FAF8; border-bottom: 1px solid #D3DDD6;");
     m_subArea->setFixedHeight(110);
     auto *subLayout = new QVBoxLayout(m_subArea);
     subLayout->setContentsMargins(0, 0, 0, 0);
@@ -56,7 +56,7 @@ MainDashboardPage::MainDashboardPage(const QString &username, QWidget *parent)
     // Content area（空白页 + 内嵌功能页，点击"产品报价"/"数据查询"
     // 主按钮直接在内容区显示对应界面）
     m_contentStack = new QStackedWidget(this);
-    m_contentStack->setStyleSheet("QStackedWidget { background: #1a1d23; }");
+    m_contentStack->setStyleSheet("QStackedWidget { background: #F3F5F4; }");
     m_contentStack->addWidget(new QWidget(m_contentStack));   // index 0: 空白
     m_quotePage = new QuotePage(this);
     m_contentStack->addWidget(m_quotePage);                   // index 1: 产品报价
@@ -80,14 +80,14 @@ MainDashboardPage::MainDashboardPage(const QString &username, QWidget *parent)
     // Footer
     auto *footer = new QWidget(this);
     footer->setFixedHeight(26);
-    footer->setStyleSheet("background: #22262e; border-top: 1px solid #3a4050;");
+    footer->setStyleSheet("background: #FFFFFF; border-top: 1px solid #D3DDD6;");
     auto *footerLayout = new QHBoxLayout(footer);
     footerLayout->setContentsMargins(12, 0, 12, 0);
     int hour = QTime::currentTime().hour();
     QString greeting = hour < 12 ? "上午好" : (hour < 18 ? "下午好" : "晚上好");
     auto *footerLabel = new QLabel(
         QString("%1, %2! 欢迎进入程序选择！").arg(greeting, m_username), footer);
-    footerLabel->setStyleSheet("font-size: 11px; color: #8a9bb0;");
+    footerLabel->setStyleSheet("font-size: 11px; color: #607368;");
     footerLayout->addWidget(footerLabel);
     footerLayout->addStretch();
     mainLayout->addWidget(footer);
@@ -117,9 +117,9 @@ void MainDashboardPage::setupToolBar(QHBoxLayout *layout)
         btn->setCursor(Qt::PointingHandCursor);
         btn->setCheckable(true);
         btn->setStyleSheet(
-            "QToolButton { background: transparent; border: none; color: #e0e6ed; font-size: 13px; }"
-            "QToolButton:hover { background: rgba(0,188,212,0.15); border-radius: 6px; color: #4dd0e1; }"
-            "QToolButton:checked { background: rgba(0,188,212,0.2); border-radius: 6px; color: #4dd0e1; }");
+            "QToolButton { background: transparent; border: none; color: #24362B; font-size: 13px; }"
+            "QToolButton:hover { background: rgba(33, 115, 70,0.15); border-radius: 6px; color: #185C37; }"
+            "QToolButton:checked { background: rgba(33, 115, 70,0.2); border-radius: 6px; color: #185C37; }");
         m_navGroup->addButton(btn, i);
         layout->addWidget(btn);
     }
@@ -136,9 +136,9 @@ void MainDashboardPage::setupToolBar(QHBoxLayout *layout)
         btn->setFlat(true);
         btn->setCursor(Qt::PointingHandCursor);
         btn->setStyleSheet(
-            "QPushButton { color: #8a9bb0; font-size: 11px; padding: 4px 10px;"
-            "border: 1px solid #3a4050; border-radius: 4px; background: #2a2f38; }"
-            "QPushButton:hover { background: rgba(0,188,212,0.15); border-color: #00bcd4; color: #4dd0e1; }");
+            "QPushButton { color: #607368; font-size: 11px; padding: 4px 10px;"
+            "border: 1px solid #D3DDD6; border-radius: 4px; background: #EDF3EF; }"
+            "QPushButton:hover { background: rgba(33, 115, 70,0.15); border-color: #217346; color: #185C37; }");
         if (toolTexts[i] == "退出")
             connect(btn, &QPushButton::clicked, this, &MainDashboardPage::onLogoutClicked);
         layout->addWidget(btn);
@@ -176,8 +176,8 @@ QWidget *MainDashboardPage::createOptimizeSubPage()
     calcBtn->setFixedSize(96, 84);
     calcBtn->setCursor(Qt::PointingHandCursor);
     calcBtn->setStyleSheet(
-        "QToolButton { background: transparent; border: none; color: #c0c8d0; font-size: 12px; }"
-        "QToolButton:hover { background: rgba(0,188,212,0.15); border-radius: 6px; color: #4dd0e1; }");
+        "QToolButton { background: transparent; border: none; color: #42584A; font-size: 12px; }"
+        "QToolButton:hover { background: rgba(33, 115, 70,0.15); border-radius: 6px; color: #185C37; }");
     connect(calcBtn, &QToolButton::clicked, this, &MainDashboardPage::navigateToOptimizeCalc);
     layout->addWidget(calcBtn);
 
@@ -190,8 +190,8 @@ QWidget *MainDashboardPage::createOptimizeSubPage()
     swBtn->setFixedSize(96, 84);
     swBtn->setCursor(Qt::PointingHandCursor);
     swBtn->setStyleSheet(
-        "QToolButton { background: transparent; border: none; color: #c0c8d0; font-size: 12px; }"
-        "QToolButton:hover { background: rgba(0,188,212,0.15); border-radius: 6px; color: #4dd0e1; }");
+        "QToolButton { background: transparent; border: none; color: #42584A; font-size: 12px; }"
+        "QToolButton:hover { background: rgba(33, 115, 70,0.15); border-radius: 6px; color: #185C37; }");
     connect(swBtn, &QToolButton::clicked, this, [this]() {
         m_subArea->hide();
         m_contentStack->setCurrentWidget(m_swDrawingPage);
@@ -218,8 +218,8 @@ QWidget *MainDashboardPage::createToolsSubPage()
         btn->setFixedSize(96, 84);
         btn->setCursor(Qt::PointingHandCursor);
         btn->setStyleSheet(
-            "QToolButton { background: transparent; border: none; color: #c0c8d0; font-size: 12px; }"
-            "QToolButton:hover { background: rgba(0,188,212,0.15); border-radius: 6px; color: #4dd0e1; }");
+            "QToolButton { background: transparent; border: none; color: #42584A; font-size: 12px; }"
+            "QToolButton:hover { background: rgba(33, 115, 70,0.15); border-radius: 6px; color: #185C37; }");
         return btn;
     };
 

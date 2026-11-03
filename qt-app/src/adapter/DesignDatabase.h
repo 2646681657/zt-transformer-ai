@@ -52,11 +52,15 @@ public:
     // 磁密 → 曲线序号（对应 LOOKUP(b, 磁密列, AL 序号)）
     bool steelIndexOfB(const QString &grade, double bT, int &index) const;
     const QVector<SteelCurve> &steelCurves() const { return m_steelCurves; }
+    // 内置曲线磁密闭区间；无数据或无效顺序返回false，不推测范围。
+    bool steelCurveRange(const QString &grade, double &minT, double &maxT) const;
+    // 空字符串表示允许内插（含端点），否则为缺数据/非法值/越界原因。
+    QString steelCurveLookupError(const QString &grade, double bT) const;
 
     // ---- 硅钢性能曲线（线性插值：对应计算单 J16/I26 的两点内插）----
-    // 磁密 → 单位铁损 W/kg（插值）
+    // 磁密 → 单位铁损 W/kg（插值），越界返回false，不取端点替代。
     bool steelLossPerKgInterp(const QString &grade, double bT, double &wPerKg) const;
-    // 磁密 → 磁化容量 VA/kg（插值）
+    // 磁密 → 磁化容量 VA/kg（插值），越界返回false，不取端点替代。
     bool steelMagnetizationPerKgInterp(const QString &grade, double bT, double &vaPerKg) const;
 
     // ---- 性能标准值 ----
@@ -72,10 +76,14 @@ public:
     // ---- 波纹油箱系数 ----
     // 波纹深 → Ks / Kp
     bool corrugatedCoefs(double depthMm, double &ks, double &kp) const;
+    // 仅为独立膨缩参考提供数据边界；不改变既有温升查表规则。
+    bool corrugatedDepthRange(double &minMm, double &maxMm) const;
 
     // ---- 线规表 ----
     // 裸线宽 → 线规（阶梯查）
     bool wireByBareWidth(double bareWidthMm, WireSpec &spec) const;
+    // 圆线首版只接受表内精确规格；不向下取档、不插值、不越界。
+    bool roundWireSpec(double diameterMm, WireSpec &spec) const;
 
     // ---- 原始数据只读访问（数据查询页展示用）----
     const QVector<QPair<double, double>> &perfStandards() const { return m_perfStd; }

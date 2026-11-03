@@ -49,7 +49,7 @@ AiSchemeDialog::AiSchemeDialog(const CalcInput &base, QWidget *parent)
 
     auto *intro = new QLabel(QStringLiteral(
         "用一句话描述设计需求，AI 解析为设计变量并填入参数表："), this);
-    intro->setStyleSheet("color: #e0e6ed; font-size: 12px;");
+    intro->setStyleSheet("color: #24362B; font-size: 12px;");
     layout->addWidget(intro);
 
     m_inputEdit = new QTextEdit(this);
@@ -57,12 +57,12 @@ AiSchemeDialog::AiSchemeDialog(const CalcInput &base, QWidget *parent)
         "例：1000kVA 干式变压器，10kV 进线，低压 0.4kV，"
         "低损耗取向硅钢，铁芯直径 220mm 左右"));
     m_inputEdit->setStyleSheet(
-        "QTextEdit { background: #22262e; color: #e0e6ed;"
-        " border: 1px solid #3a4050; border-radius: 4px; padding: 6px; }");
+        "QTextEdit { background: #FFFFFF; color: #24362B;"
+        " border: 1px solid #D3DDD6; border-radius: 4px; padding: 6px; }");
     layout->addWidget(m_inputEdit, 1);
 
     m_statusLabel = new QLabel(this);
-    m_statusLabel->setStyleSheet("color: #8a9bb0; font-size: 11px;");
+    m_statusLabel->setStyleSheet("color: #607368; font-size: 11px;");
     m_statusLabel->setWordWrap(true);
     layout->addWidget(m_statusLabel);
 
@@ -71,23 +71,23 @@ AiSchemeDialog::AiSchemeDialog(const CalcInput &base, QWidget *parent)
     m_submitBtn = new QPushButton(QStringLiteral("AI 解析"), this);
     m_submitBtn->setCursor(Qt::PointingHandCursor);
     m_submitBtn->setStyleSheet(
-        "QPushButton { background: #00bcd4; color: #1a1d23; font-size: 12px;"
+        "QPushButton { background: #217346; color: #F3F5F4; font-size: 12px;"
         " padding: 8px 24px; border: none; border-radius: 4px; font-weight: bold; }"
-        "QPushButton:hover { background: #4dd0e1; }"
-        "QPushButton:disabled { background: #45505e; color: #8a9bb0; }");
+        "QPushButton:hover { background: #185C37; }"
+        "QPushButton:disabled { background: #90A398; color: #607368; }");
     m_applyBtn = new QPushButton(QStringLiteral("应用到参数表"), this);
     m_applyBtn->setEnabled(false);
     m_applyBtn->setCursor(Qt::PointingHandCursor);
     m_applyBtn->setStyleSheet(
-        "QPushButton { background: #4caf50; color: #1a1d23; font-size: 12px;"
+        "QPushButton { background: #217346; color: #F3F5F4; font-size: 12px;"
         " padding: 8px 24px; border: none; border-radius: 4px; font-weight: bold; }"
-        "QPushButton:hover { background: #81c784; }"
-        "QPushButton:disabled { background: #45505e; color: #8a9bb0; }");
+        "QPushButton:hover { background: #217346; }"
+        "QPushButton:disabled { background: #90A398; color: #607368; }");
     auto *cancelBtn = new QPushButton(QStringLiteral("取消"), this);
     cancelBtn->setStyleSheet(
-        "QPushButton { background: transparent; color: #8a9bb0; font-size: 12px;"
-        " padding: 8px 16px; border: 1px solid #3a4050; border-radius: 4px; }"
-        "QPushButton:hover { color: #e0e6ed; }");
+        "QPushButton { background: transparent; color: #607368; font-size: 12px;"
+        " padding: 8px 16px; border: 1px solid #D3DDD6; border-radius: 4px; }"
+        "QPushButton:hover { color: #24362B; }");
     btnLayout->addWidget(m_submitBtn);
     btnLayout->addWidget(m_applyBtn);
     btnLayout->addStretch();

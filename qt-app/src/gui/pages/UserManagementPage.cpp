@@ -41,35 +41,35 @@ void UserManagementPage::setupUi()
     // 工具栏
     auto *toolbar = new QWidget(this);
     toolbar->setFixedHeight(34);
-    toolbar->setStyleSheet("background: #2a2f38; border-bottom: 1px solid #3a4050;");
+    toolbar->setStyleSheet("background: #EDF3EF; border-bottom: 1px solid #D3DDD6;");
     auto *toolLayout = new QHBoxLayout(toolbar);
     toolLayout->setContentsMargins(8, 4, 8, 4);
     auto *pageLabel = new QLabel(QStringLiteral("用户管理"), toolbar);
-    pageLabel->setStyleSheet("color: #4dd0e1; font-size: 12px; font-weight: bold;");
+    pageLabel->setStyleSheet("color: #185C37; font-size: 12px; font-weight: bold;");
     toolLayout->addWidget(pageLabel);
     toolLayout->addStretch();
 
     auto *refreshBtn = new QPushButton(QStringLiteral("刷新"), toolbar);
     refreshBtn->setCursor(Qt::PointingHandCursor);
     refreshBtn->setStyleSheet(
-        "QPushButton { color: #8a9bb0; font-size: 11px; padding: 3px 12px;"
-        " border: 1px solid #3a4050; border-radius: 3px; background: #2a2f38; }"
-        "QPushButton:hover { border-color: #00bcd4; color: #4dd0e1; }");
+        "QPushButton { color: #607368; font-size: 11px; padding: 3px 12px;"
+        " border: 1px solid #D3DDD6; border-radius: 3px; background: #EDF3EF; }"
+        "QPushButton:hover { border-color: #217346; color: #185C37; }");
     toolLayout->addWidget(refreshBtn);
     connect(refreshBtn, &QPushButton::clicked, this, &UserManagementPage::onRefresh);
     mainLayout->addWidget(toolbar);
 
     // 内容区
     auto *content = new QWidget(this);
-    content->setStyleSheet("background: #1a1d23;");
+    content->setStyleSheet("background: #F3F5F4;");
     auto *contentLayout = new QVBoxLayout(content);
     contentLayout->setContentsMargins(16, 16, 16, 16);
     contentLayout->setSpacing(12);
 
     // 权限提示
     m_permLabel = new QLabel(content);
-    m_permLabel->setStyleSheet("color: #c0c8d0; font-size: 12px; padding: 8px 12px;"
-                               " background: #22262e; border-radius: 4px;");
+    m_permLabel->setStyleSheet("color: #42584A; font-size: 12px; padding: 8px 12px;"
+                               " background: #FFFFFF; border-radius: 4px;");
     contentLayout->addWidget(m_permLabel);
 
     // 用户列表表格
@@ -78,12 +78,12 @@ void UserManagementPage::setupUi()
     m_table->setHorizontalHeaderLabels(
         {QStringLiteral("用户名"), QStringLiteral("角色"), QStringLiteral("显示名称")});
     m_table->setStyleSheet(
-        "QTableWidget { background: #22262e; alternate-background-color: #262b34;"
-        " color: #e0e6ed; gridline-color: #3a4050; border: 1px solid #3a4050; }"
-        "QHeaderView::section { background: #2a2f38; color: #4dd0e1;"
-        " padding: 6px; border: none; border-bottom: 1px solid #3a4050; font-weight: bold; }"
+        "QTableWidget { background: #FFFFFF; alternate-background-color: #EFF5F1;"
+        " color: #24362B; gridline-color: #D3DDD6; border: 1px solid #D3DDD6; }"
+        "QHeaderView::section { background: #EDF3EF; color: #185C37;"
+        " padding: 6px; border: none; border-bottom: 1px solid #D3DDD6; font-weight: bold; }"
         "QTableWidget::item { padding: 6px 8px; }"
-        "QTableWidget::item:selected { background: rgba(0,188,212,0.25); color: #e0e6ed; }");
+        "QTableWidget::item:selected { background: rgba(33, 115, 70,0.25); color: #24362B; }");
     m_table->setAlternatingRowColors(true);
     m_table->setSelectionBehavior(QAbstractItemView::SelectRows);
     m_table->setSelectionMode(QAbstractItemView::SingleSelection);
@@ -94,34 +94,34 @@ void UserManagementPage::setupUi()
     contentLayout->addWidget(m_table, 1);
 
     // 操作按钮组
-    auto makeBtn = [](const QString &text, const QString &color = "#00bcd4") {
+    auto makeBtn = [](const QString &text, const QString &color = "#217346") {
         auto *btn = new QPushButton(text);
         btn->setCursor(Qt::PointingHandCursor);
         btn->setStyleSheet(
-            QString("QPushButton { background: %1; color: #1a1d23; font-size: 12px;"
+            QString("QPushButton { background: %1; color: #F3F5F4; font-size: 12px;"
                     " padding: 8px 20px; border: none; border-radius: 4px; font-weight: bold; }"
                     "QPushButton:hover { background: %2; }"
-                    "QPushButton:disabled { background: #3a4050; color: #5a6070; }")
-                .arg(color, color == "#00bcd4" ? "#4dd0e1" :
-                            color == "#ef5350" ? "#ef9a9a" :
-                            color == "#ff9800" ? "#ffb74d" : "#81c784"));
+                    "QPushButton:disabled { background: #D3DDD6; color: #607368; }")
+                .arg(color, color == "#217346" ? "#185C37" :
+                            color == "#C53030" ? "#C53030" :
+                            color == "#9A6500" ? "#8A5900" : "#217346"));
         btn->setFixedWidth(140);
         return btn;
     };
 
     auto *btnGroup = new QGroupBox(content);
     btnGroup->setStyleSheet(
-        "QGroupBox { color: #c0c8d0; font-size: 12px; border: 1px solid #3a4050;"
+        "QGroupBox { color: #42584A; font-size: 12px; border: 1px solid #D3DDD6;"
         " border-radius: 4px; margin-top: 10px; padding-top: 6px; }"
         "QGroupBox::title { subcontrol-origin: margin; left: 8px; padding: 0 3px; }");
     auto *btnLayout = new QHBoxLayout(btnGroup);
     btnLayout->setContentsMargins(12, 8, 12, 12);
     btnLayout->setSpacing(12);
 
-    auto *addBtn = makeBtn(QStringLiteral("添加用户"), "#4caf50");
-    auto *delBtn = makeBtn(QStringLiteral("删除用户"), "#ef5350");
-    auto *roleBtn = makeBtn(QStringLiteral("修改角色"), "#ff9800");
-    auto *pwdBtn = makeBtn(QStringLiteral("修改密码"), "#2196f3");
+    auto *addBtn = makeBtn(QStringLiteral("添加用户"), "#217346");
+    auto *delBtn = makeBtn(QStringLiteral("删除用户"), "#C53030");
+    auto *roleBtn = makeBtn(QStringLiteral("修改角色"), "#9A6500");
+    auto *pwdBtn = makeBtn(QStringLiteral("修改密码"), "#217346");
 
     btnLayout->addWidget(addBtn);
     btnLayout->addWidget(delBtn);
@@ -155,13 +155,13 @@ void UserManagementPage::refreshTable()
     if (isAdmin) {
         m_permLabel->setText(QStringLiteral("当前用户：%1 （管理员）— 可添加/删除用户、修改角色与密码")
             .arg(currentUser));
-        m_permLabel->setStyleSheet("color: #4dd0e1; font-size: 12px; padding: 8px 12px;"
-                                   " background: #22262e; border-radius: 4px;");
+        m_permLabel->setStyleSheet("color: #185C37; font-size: 12px; padding: 8px 12px;"
+                                   " background: #FFFFFF; border-radius: 4px;");
     } else {
         m_permLabel->setText(QStringLiteral("当前用户：%1 （普通用户）— 仅可修改自己的密码")
             .arg(currentUser));
-        m_permLabel->setStyleSheet("color: #c0c8d0; font-size: 12px; padding: 8px 12px;"
-                                   " background: #22262e; border-radius: 4px;");
+        m_permLabel->setStyleSheet("color: #42584A; font-size: 12px; padding: 8px 12px;"
+                                   " background: #FFFFFF; border-radius: 4px;");
     }
 
     // 普通用户禁用管理类按钮
@@ -216,12 +216,12 @@ void UserManagementPage::onAddUser()
 
     QDialog dlg(this);
     dlg.setWindowTitle(QStringLiteral("添加用户"));
-    dlg.setStyleSheet("QDialog { background: #1a1d23; }"
-                      "QLabel { color: #c0c8d0; font-size: 12px; }"
-                      "QLineEdit, QComboBox { background: #22262e; color: #e0e6ed;"
-                      " border: 1px solid #3a4050; border-radius: 4px; padding: 6px 8px; }"
-                      "QComboBox QAbstractItemView { background: #22262e; color: #e0e6ed;"
-                      " selection-background-color: rgba(0,188,212,0.3); }");
+    dlg.setStyleSheet("QDialog { background: #F3F5F4; }"
+                      "QLabel { color: #42584A; font-size: 12px; }"
+                      "QLineEdit, QComboBox { background: #FFFFFF; color: #24362B;"
+                      " border: 1px solid #D3DDD6; border-radius: 4px; padding: 6px 8px; }"
+                      "QComboBox QAbstractItemView { background: #FFFFFF; color: #24362B;"
+                      " selection-background-color: rgba(33, 115, 70,0.3); }");
 
     auto *form = new QFormLayout(&dlg);
     form->setContentsMargins(20, 20, 20, 12);
@@ -332,10 +332,10 @@ void UserManagementPage::onChangePassword()
 
     QDialog dlg(this);
     dlg.setWindowTitle(QStringLiteral("修改密码 - %1").arg(target));
-    dlg.setStyleSheet("QDialog { background: #1a1d23; }"
-                      "QLabel { color: #c0c8d0; font-size: 12px; }"
-                      "QLineEdit { background: #22262e; color: #e0e6ed;"
-                      " border: 1px solid #3a4050; border-radius: 4px; padding: 6px 8px; }");
+    dlg.setStyleSheet("QDialog { background: #F3F5F4; }"
+                      "QLabel { color: #42584A; font-size: 12px; }"
+                      "QLineEdit { background: #FFFFFF; color: #24362B;"
+                      " border: 1px solid #D3DDD6; border-radius: 4px; padding: 6px 8px; }");
 
     auto *form = new QFormLayout(&dlg);
     form->setContentsMargins(20, 20, 20, 12);
@@ -404,12 +404,12 @@ void UserManagementPage::onChangeRole()
 
     QDialog dlg(this);
     dlg.setWindowTitle(QStringLiteral("修改角色 - %1").arg(name));
-    dlg.setStyleSheet("QDialog { background: #1a1d23; }"
-                      "QLabel { color: #c0c8d0; font-size: 12px; }"
-                      "QLineEdit, QComboBox { background: #22262e; color: #e0e6ed;"
-                      " border: 1px solid #3a4050; border-radius: 4px; padding: 6px 8px; }"
-                      "QComboBox QAbstractItemView { background: #22262e; color: #e0e6ed;"
-                      " selection-background-color: rgba(0,188,212,0.3); }");
+    dlg.setStyleSheet("QDialog { background: #F3F5F4; }"
+                      "QLabel { color: #42584A; font-size: 12px; }"
+                      "QLineEdit, QComboBox { background: #FFFFFF; color: #24362B;"
+                      " border: 1px solid #D3DDD6; border-radius: 4px; padding: 6px 8px; }"
+                      "QComboBox QAbstractItemView { background: #FFFFFF; color: #24362B;"
+                      " selection-background-color: rgba(33, 115, 70,0.3); }");
 
     auto *form = new QFormLayout(&dlg);
     form->setContentsMargins(20, 20, 20, 12);

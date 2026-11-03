@@ -55,9 +55,12 @@ inline const QVector<StdEntry> &table(const QString &series)
         {1600, 1170, 14500, 14500, 4.5}, {2000, 1360, 18300, 18300, 5.0},
         {2500, 1600, 21200, 21200, 5.0},
     };
-    if (series == QStringLiteral("SB22-M")) return t22;
-    if (series == QStringLiteral("SB13-M")) return t13;
-    return t20;
+    const QString normalized = series.trimmed().toUpper();
+    if (normalized == QStringLiteral("SB22-M")) return t22;
+    if (normalized == QStringLiteral("SB13-M")) return t13;
+    if (normalized == QStringLiteral("SB20-M")) return t20;
+    static const QVector<StdEntry> unavailable;
+    return unavailable;
 }
 
 inline QVector<double> capacities()
