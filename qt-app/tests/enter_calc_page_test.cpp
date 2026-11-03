@@ -9,10 +9,42 @@
 #include <QDebug>
 #include <QElapsedTimer>
 #include <QThread>
+#include <QTimer>
+#include <QMessageBox>
+#include <QSettings>
+#include <QScopeGuard>
+#include <QTemporaryDir>
+#include <QStandardPaths>
 
 int main(int argc, char *argv[])
 {
     QApplication app(argc, argv);
+    QStandardPaths::setTestModeEnabled(true);
+    QTemporaryDir settingsDir;
+    if (!settingsDir.isValid()) return 10;
+    QSettings::setDefaultFormat(QSettings::IniFormat);
+    QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, settingsDir.path());
+    QSettings::setPath(QSettings::IniFormat, QSettings::SystemScope, settingsDir.path());
+    QTimer modalGuard;
+    QObject::connect(&modalGuard, &QTimer::timeout, &app, [] {
+        if (auto *box=qobject_cast<QMessageBox *>(QApplication::activeModalWidget())) {
+            qWarning().noquote() << "Regression modal:" << box->windowTitle() << box->text();
+            box->reject();
+        }
+    });
+    modalGuard.start(20);
+    // Explicit organization/app settings use the native store on Windows.
+    // Keep this historical-branch test within its one-million budget limit,
+    // then restore the user's value on every exit path.
+    QSettings optimizerSettings("ZTF", "Designer");
+    const QVariant previousBudget=optimizerSettings.value("optimize/combinationBudget");
+    const auto restoreBudget=qScopeGuard([&] {
+        if (previousBudget.isValid()) optimizerSettings.setValue("optimize/combinationBudget",previousBudget);
+        else optimizerSettings.remove("optimize/combinationBudget");
+        optimizerSettings.sync();
+    });
+    optimizerSettings.setValue("optimize/combinationBudget",100000);
+    optimizerSettings.sync();
     EnterCalcPage page;
     auto *results = page.findChild<EmResultPanel *>();
     auto *schemes = page.findChild<SchemeTableWidget *>();
@@ -23,6 +55,11 @@ int main(int argc, char *argv[])
     }
 
     CalcInput first;
+    // Calculation entry requires a confirmed performance-criteria snapshot.
+    first.hasPerformanceCriteria = true;
+    first.performanceCriteria.standardMode = TransformerParams::StandardMode::Custom;
+    first.performanceCriteria.productModel = QStringLiteral("SB20-M-630/10-0.4");
+    first.performanceCriteria.lossStandardsManual = true;
     page.setCalcInput(first);
     if (!QMetaObject::invokeMethod(&page, "onRunEmCalc", Qt::DirectConnection)
             || schemes->rowCount() == 0
@@ -56,7 +93,7 @@ int main(int argc, char *argv[])
     }
     bool finished = false;
     QObject::connect(optimizer, &IOptimizer::finished, &page,
-                     [&finished](bool, const OptimizeCandidate &, int, int) {
+                     [&finished](bool, const OptimizeCandidate &, const OptimizationRunSummary &) {
                          finished = true;
                      });
     if (!QMetaObject::invokeMethod(&page, "onOptimizeStart", Qt::DirectConnection)) {

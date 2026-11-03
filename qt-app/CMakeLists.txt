@@ -51,6 +51,24 @@ set_target_properties(ztf-designer PROPERTIES
     WIN32_EXECUTABLE TRUE
 )
 
+# 临时扫描工具（SB22-M/630 可行域搜索，验证后删除）
+add_executable(scan-sb22
+    tests/scan_sb22.cpp
+    src/engine/ElectromagneticEngine.cpp
+    src/adapter/DesignDatabase.cpp
+    resources/resources.qrc
+)
+set_target_properties(scan-sb22 PROPERTIES AUTOMOC OFF)
+target_include_directories(scan-sb22 PRIVATE
+    src
+    src/core
+    src/engine
+    src/adapter
+)
+target_link_libraries(scan-sb22 PRIVATE
+    Qt6::Core
+)
+
 include(CTest)
 if(BUILD_TESTING)
     qt_add_executable(test-enter-calc-page
