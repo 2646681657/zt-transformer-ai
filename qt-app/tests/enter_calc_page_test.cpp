@@ -32,6 +32,10 @@
 #include <QFileInfo>
 #include <QLineEdit>
 #include "SchemeStore.h"
+#include "StartupSchemeLibrary.h"
+#include <QListWidget>
+#include <QCheckBox>
+#include <QDialogButtonBox>
 
 int main(int argc, char *argv[])
 {
@@ -43,6 +47,71 @@ int main(int argc, char *argv[])
     QSettings::setDefaultFormat(QSettings::IniFormat);
     QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, settingsDir.path());
     QSettings::setPath(QSettings::IniFormat, QSettings::SystemScope, settingsDir.path());
+    if(app.arguments().contains(QStringLiteral("--startup-schemes"))) {
+        app.setApplicationName(QStringLiteral("ZTBLD-Startup-")+QFileInfo(settingsDir.path()).fileName());
+        OptimizeCalcPage page;
+        const QString captureDir=qEnvironmentVariable("ZTBLD_TEST_OUTPUT_DIR");
+        if(!captureDir.isEmpty()) {
+            QDir().mkpath(captureDir);page.resize(1600,1000);page.show();app.processEvents();
+            page.grab().save(QDir(captureDir).filePath("startup-design-input.png"));
+        }
+        auto *choose=page.findChild<QToolButton *>("chooseStartupSchemeButton");
+        auto *save=page.findChild<QToolButton *>("saveStartupSchemeButton");
+        if(!choose||!save||choose->text()!=QStringLiteral("默认方案选择"))return 150;
+        bool selected=false;
+        QTimer::singleShot(0,&page,[&] {
+            auto *dialog=qobject_cast<QDialog *>(QApplication::activeModalWidget());
+            auto *list=dialog?dialog->findChild<QListWidget *>("startupSchemeList"):nullptr;
+            auto *activate=dialog?dialog->findChild<QPushButton *>("activateSelectedStartupScheme"):nullptr;
+            if(!list||!activate||list->count()!=3){if(dialog)dialog->reject();return;}
+            if(!captureDir.isEmpty()) {
+                app.processEvents();dialog->grab().save(QDir(captureDir).filePath("startup-library.png"));
+            }
+            list->setCurrentRow(1);selected=true;activate->click();
+        });
+        choose->click();
+        if(!selected||page.currentInput().capacity_kVA!=400||page.currentInput().hvAxialAllowance_mm!=-2)return 151;
+        auto *table=page.findChild<ParamTableWidget *>();
+        CalcInput collected=page.currentInput();table->saveToInput(collected);
+        auto expectedInput=page.currentInput();
+        // Legacy manual criteria acquire a normalized lookup identity on display;
+        // all numerical values, source modes and process inputs must stay identical.
+        expectedInput.performanceCriteria.lossStandardsKey=collected.performanceCriteria.lossStandardsKey;
+        if(!SchemeStore::sameInput(collected,expectedInput)) {
+            const auto actual=SchemeStore::toJson(collected),expected=SchemeStore::toJson(page.currentInput());
+            for(auto it=expected.begin();it!=expected.end();++it)if(it.value()!=actual[it.key()])
+                qCritical()<<it.key()<<"saved"<<it.value()<<"loaded"<<actual[it.key()];
+            qCritical()<<"Loading a startup scheme changed its parameter snapshot";return 152;
+        }
+        bool saved=false;
+        QTimer::singleShot(0,&page,[&] {
+            auto *dialog=qobject_cast<QDialog *>(QApplication::activeModalWidget());
+            auto *name=dialog?dialog->findChild<QLineEdit *>("startupSchemeName"):nullptr;
+            auto *active=dialog?dialog->findChild<QCheckBox *>("activateStartupScheme"):nullptr;
+            auto *buttons=dialog?dialog->findChild<QDialogButtonBox *>():nullptr;
+            if(!name||!active||!buttons){if(dialog)dialog->reject();return;}
+            name->setText("startup test snapshot");active->setChecked(true);saved=true;
+            buttons->button(QDialogButtonBox::Save)->click();
+        });
+        save->click();if(!saved)return 153;
+        OptimizeCalcPage restarted;
+        if(!SchemeStore::sameInput(restarted.currentInput(),collected))return 154;
+        bool third=false;
+        QTimer::singleShot(0,&restarted,[&] {
+            auto *dialog=qobject_cast<QDialog *>(QApplication::activeModalWidget());
+            auto *list=dialog?dialog->findChild<QListWidget *>("startupSchemeList"):nullptr;
+            auto *activate=dialog?dialog->findChild<QPushButton *>("activateSelectedStartupScheme"):nullptr;
+            if(!list||!activate||list->count()!=4){if(dialog)dialog->reject();return;}
+            if(!list->item(3)->text().contains(QStringLiteral("启动默认"))){dialog->reject();return;}
+            list->setCurrentRow(2);third=true;activate->click();
+        });
+        restarted.findChild<QToolButton *>("chooseStartupSchemeButton")->click();
+        OptimizeCalcPage thirdStartup;
+        if(!third||thirdStartup.currentInput().capacity_kVA!=630||thirdStartup.currentInput().coreStraight_mm!=136)return 155;
+        QFile::remove(StartupSchemeLibrary::path());
+        qInfo()<<"PASS: three presets, select/load, save/activate, reopen, exact snapshots and manual criteria";
+        return 0;
+    }
     if (app.arguments().contains(QStringLiteral("--worksheet-output"))) {
         QApplication::setAttribute(Qt::AA_DontUseNativeDialogs);
         const QString outputDir=qEnvironmentVariable("ZTBLD_TEST_OUTPUT_DIR",settingsDir.path());

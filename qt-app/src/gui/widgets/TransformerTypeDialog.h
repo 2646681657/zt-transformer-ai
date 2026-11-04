@@ -12,6 +12,7 @@ class TransformerTypeDialog : public QDialog {
     Q_OBJECT
 public:
     explicit TransformerTypeDialog(QWidget *parent = nullptr);
+    void setInitialConfig(const StructureConfig &config);
     StructureConfig::TransformerCategory selectedCategory() const { return m_category; }
     StructureConfig::WindingProcess selectedProcess() const { return m_process; }
 
