@@ -36,6 +36,8 @@ private slots:
     void onSelectionChanged();
     void onImportParamsClicked();   // 导入基础技术参数表（Excel/CSV）
     void onVerifySheetClicked();   // 校验算单：约束预检
+    void onSaveStartupScheme();
+    void onChooseStartupScheme();
 
 private:
     void setupRibbon();
@@ -48,7 +50,9 @@ private:
     void saveModePreference() const;
     // 应用方案设计变量，并恢复其心柱、铁轭及高压线圈选型。
     void applySchemeInput(const CalcInput &input);
-    // 侧边栏方案按钮（0=推荐 1=保存我的 2=方案库 3=记忆库 4=上次方案）
+    void applyStartupScheme(const CalcInput &input, const StructureConfig &config);
+    void restoreStartupScheme();
+    // 侧栏统一分发：2=推荐、3=保存我的、4=方案库、7=记忆库、8=上次方案。
     void onSchemeButtonClicked(int index);
 
     RibbonBar *m_ribbon;
@@ -60,6 +64,7 @@ private:
     TransformerParams m_params;
     StructureConfig m_config;
     CalcInput m_input;              // 设计变量（默认即 SB20-M-630-10）
+    CalcInput m_builtinDefault;
     QVector<RibbonGroup *> m_selectGroups;
     RibbonGroup *m_modeGroup = nullptr;   // 计算模式组（正常/专业）
 };

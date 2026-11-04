@@ -5,6 +5,12 @@
 #include "ParamTableWidget.h"
 #include "SidebarPanel.h"
 #include "SchemeStore.h"
+#include "StartupSchemeLibrary.h"
+#include <QDialogButtonBox>
+#include <QListWidget>
+#include <QCheckBox>
+#include <QTimer>
+#include <QScrollArea>
 #include "RecommendSchemes.h"
 #include "SchemePickDialog.h"
 #include "AiSchemeDialog.h"
@@ -145,10 +151,160 @@ OptimizeCalcPage::OptimizeCalcPage(QWidget *parent)
     areaLayout->setSpacing(0);
     setupMainArea();
     areaLayout->addWidget(m_navButton);
-    areaLayout->addWidget(m_sidebar);
+    auto *sidebarScroll=new QScrollArea(mainArea);
+    sidebarScroll->setWidget(m_sidebar);
+    sidebarScroll->setWidgetResizable(true);
+    sidebarScroll->setFrameShape(QFrame::NoFrame);
+    sidebarScroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    sidebarScroll->setFixedWidth(150);
+    areaLayout->addWidget(sidebarScroll);
     areaLayout->addWidget(m_paramTable, 1);
     areaLayout->addWidget(m_helpPanel);
     mainLayout->addWidget(mainArea, 1);
+    m_paramTable->saveToInput(m_builtinDefault);
+    restoreStartupScheme();
+}
+
+void OptimizeCalcPage::applyStartupScheme(const CalcInput &input,const StructureConfig &config)
+{
+    m_config=config;
+    const int selections[]={int(config.calcMode),int(config.coreType),int(input.coreShape),
+        int(config.windingForm),input.hvCoilFormIdx-1};
+    for(int group=0;group<5;++group) {
+        const QSignalBlocker blocker(m_selectGroups[group]);
+        const auto buttons=m_selectGroups[group]->buttons();
+        for(int i=0;i<buttons.size();++i)buttons[i]->setActive(i==selections[group]);
+    }
+    applySchemeInput(input);
+    // Use the complete persisted criteria, including manual standards and AN3 provenance.
+    m_params=ParamTableWidget::paramsForInput(input.performanceCriteria,input);
+    m_paramTable->loadParamsForConfig(m_params,m_config,m_input,
+        m_config.calcMode==StructureConfig::Professional,true);
+    if(auto *title=findChild<QLabel *>("pageTitleLabel"))title->setText(
+        (config.category==StructureConfig::OilImmersed?QStringLiteral("油浸式变压器"):QStringLiteral("干式变压器"))
+        +QStringLiteral(" - ")+(config.windingProcess==StructureConfig::FoilWound?QStringLiteral("箔绕"):QStringLiteral("线绕"))
+        +QStringLiteral(" 电磁计算AI寻优 V2.0"));
+    updateHelpPanel();
+}
+
+void OptimizeCalcPage::restoreStartupScheme()
+{
+    StartupSchemeLibrary::State state;QString error;
+    const auto path=StartupSchemeLibrary::path();
+    const bool existed=QFile::exists(path);
+    const bool ok=StartupSchemeLibrary::read(path,m_builtinDefault,state,error);
+    if(ok&&!existed)StartupSchemeLibrary::write(path,state,error);
+    for(const auto &e:state.entries)if(e.id==state.selectedId) {
+        auto config=e.config;
+        // The original baseline follows the existing normal/professional display preference.
+        if(e.id=="builtin-base")config.calcMode=m_config.calcMode;
+        applyStartupScheme(e.input,config);break;
+    }
+    if(!error.isEmpty())QTimer::singleShot(0,this,[this,error] {
+        QMessageBox::warning(this,QStringLiteral("默认方案提示"),error);
+    });
+}
+
+void OptimizeCalcPage::onSaveStartupScheme()
+{
+    CalcInput input=m_input;TransformerParams params;QString error;
+    if(!m_paramTable->collectForCalculation(params,input,error)) {
+        QMessageBox::warning(this,QStringLiteral("参数需核对"),error);return;
+    }
+    StartupSchemeLibrary::State state;
+    if(!StartupSchemeLibrary::read(StartupSchemeLibrary::path(),m_builtinDefault,state,error)) {
+        QMessageBox::warning(this,QStringLiteral("无法保存默认方案"),error);return;
+    }
+    QDialog dialog(this);dialog.setObjectName("saveStartupSchemeDialog");
+    dialog.setWindowTitle(QStringLiteral("保存为默认参数"));dialog.setMinimumWidth(430);
+    QVBoxLayout layout(&dialog);
+    layout.addWidget(new QLabel(QStringLiteral("保存当前完整参数快照。日常编辑不会自动覆盖此方案。")));
+    auto *name=new QLineEdit(params.productModel,&dialog);name->setObjectName("startupSchemeName");layout.addWidget(name);
+    auto *active=new QCheckBox(QStringLiteral("设为启动默认方案"),&dialog);active->setObjectName("activateStartupScheme");layout.addWidget(active);
+    QDialogButtonBox buttons(QDialogButtonBox::Save|QDialogButtonBox::Cancel,&dialog);layout.addWidget(&buttons);
+    connect(&buttons,&QDialogButtonBox::rejected,&dialog,&QDialog::reject);
+    connect(&buttons,&QDialogButtonBox::accepted,&dialog,[&] {
+        auto next=state;
+        auto config=m_config;
+        config.coreShape=input.coreShape;config.yokeShape=input.yokeShape;
+        config.hvCoilStructure=StructureConfig::HvCoilStructure(input.hvCoilFormIdx-1);
+        for(auto &entry:next.entries)if(entry.name==name->text().trimmed()) {
+            if(entry.builtin) {
+                QMessageBox::warning(&dialog,QStringLiteral("名称已使用"),QStringLiteral("内置方案保留用于恢复，请使用新名称保存。"));return;
+            }
+            if(QMessageBox::question(&dialog,QStringLiteral("更新默认方案"),
+                QStringLiteral("默认方案库中已有同名方案，是否用当前参数更新？"))!=QMessageBox::Yes)return;
+            entry.input=input;entry.config=config;
+            if(active->isChecked())next.selectedId=entry.id;
+            if(!StartupSchemeLibrary::write(StartupSchemeLibrary::path(),next,error)) {
+                QMessageBox::warning(&dialog,QStringLiteral("保存失败"),error);return;
+            }
+            dialog.accept();return;
+        }
+        if(!StartupSchemeLibrary::add(next,name->text(),input,config,active->isChecked(),error)
+           ||!StartupSchemeLibrary::write(StartupSchemeLibrary::path(),next,error)) {
+            QMessageBox::warning(&dialog,QStringLiteral("保存失败"),error);return;
+        }
+        dialog.accept();
+    });
+    dialog.exec();
+}
+
+void OptimizeCalcPage::onChooseStartupScheme()
+{
+    StartupSchemeLibrary::State state;QString error;
+    if(!StartupSchemeLibrary::read(StartupSchemeLibrary::path(),m_builtinDefault,state,error)) {
+        QMessageBox::warning(this,QStringLiteral("默认方案库无法读取"),error);return;
+    }
+    QDialog dialog(this);dialog.setObjectName("chooseStartupSchemeDialog");
+    dialog.setWindowTitle(QStringLiteral("默认方案选择"));dialog.resize(620,420);
+    QVBoxLayout layout(&dialog);
+    layout.addWidget(new QLabel(QStringLiteral("选中方案后设为默认并加载，下次启动自动使用。")));
+    auto *list=new QListWidget(&dialog);list->setObjectName("startupSchemeList");layout.addWidget(list);
+    list->setWordWrap(true);list->setTextElideMode(Qt::ElideNone);list->setSpacing(4);
+    auto refill=[&] {
+        list->clear();int selected=0;
+        for(int i=0;i<state.entries.size();++i) {
+            const auto &e=state.entries[i];
+            list->addItem(e.name+(e.id==state.selectedId?QStringLiteral("  【启动默认】"):QString())
+                +QStringLiteral("\n%1 · %2/%3 kV").arg(e.input.performanceCriteria.productModel)
+                    .arg(e.input.hvRated_kV).arg(e.input.lvRated_kV));
+            list->item(i)->setSizeHint(QSize(0,56));
+            if(e.id==state.selectedId)selected=i;
+        }
+        list->setCurrentRow(selected);
+    };
+    refill();
+    QDialogButtonBox buttons(QDialogButtonBox::Cancel,&dialog);
+    auto *choose=buttons.addButton(QStringLiteral("设为默认并加载"),QDialogButtonBox::AcceptRole);
+    choose->setObjectName("activateSelectedStartupScheme");
+    auto *remove=buttons.addButton(QStringLiteral("删除所选"),QDialogButtonBox::ActionRole);
+    remove->setObjectName("removeStartupScheme");layout.addWidget(&buttons);
+    connect(list,&QListWidget::currentRowChanged,&dialog,[&](int row) {
+        remove->setEnabled(row>=0&&!state.entries[row].builtin);
+    });
+    remove->setEnabled(!state.entries[list->currentRow()].builtin);
+    connect(remove,&QPushButton::clicked,&dialog,[&] {
+        const int row=list->currentRow();if(row<0)return;
+        if(QMessageBox::question(&dialog,QStringLiteral("删除默认方案"),
+            QStringLiteral("删除「%1」？如果它是启动默认方案，将恢复内置基准方案。").arg(state.entries[row].name))!=QMessageBox::Yes)return;
+        auto next=state;
+        if(!StartupSchemeLibrary::remove(next,state.entries[row].id,error)
+           ||!StartupSchemeLibrary::write(StartupSchemeLibrary::path(),next,error)) {
+            QMessageBox::warning(&dialog,QStringLiteral("删除失败"),error);return;
+        }
+        state=next;refill();
+    });
+    connect(&buttons,&QDialogButtonBox::rejected,&dialog,&QDialog::reject);
+    connect(&buttons,&QDialogButtonBox::accepted,&dialog,[&] {
+        const int row=list->currentRow();if(row<0)return;
+        auto next=state;next.selectedId=state.entries[row].id;
+        if(!StartupSchemeLibrary::write(StartupSchemeLibrary::path(),next,error)) {
+            QMessageBox::warning(&dialog,QStringLiteral("设置失败"),error);return;
+        }
+        applyStartupScheme(next.entries[row].input,next.entries[row].config);dialog.accept();
+    });
+    dialog.exec();
 }
 
 void OptimizeCalcPage::setupRibbon()
@@ -267,12 +423,18 @@ void OptimizeCalcPage::setupMainArea()
     m_sidebar->addButton(QStringLiteral("选用推荐方案"), ":/icons/recommend.svg");
     m_sidebar->addButton(QStringLiteral("保存为我的方案"), ":/icons/save_scheme.svg");
     m_sidebar->addButton(QStringLiteral("从方案库中选择"), ":/icons/library.svg");
+    auto *saveDefault=m_sidebar->addButton(QStringLiteral("保存为默认参数"), ":/icons/save_scheme.svg");
+    saveDefault->setObjectName("saveStartupSchemeButton");
+    connect(saveDefault,&QToolButton::clicked,this,&OptimizeCalcPage::onSaveStartupScheme);
+    auto *chooseDefault=m_sidebar->addButton(QStringLiteral("默认方案选择"), ":/icons/library.svg");
+    chooseDefault->setObjectName("chooseStartupSchemeButton");
+    connect(chooseDefault,&QToolButton::clicked,this,&OptimizeCalcPage::onChooseStartupScheme);
     m_sidebar->addButton(QStringLiteral("从记忆库中选择"), ":/icons/memory.svg");
     m_sidebar->addButton(QStringLiteral("采用上一次方案"), ":/icons/undo.svg");
     auto *enterBtn = m_sidebar->addButton(QStringLiteral("进入计算"), ":/icons/enter_calc.svg");
     connect(enterBtn, &QToolButton::clicked, this, &OptimizeCalcPage::onEnterCalcClicked);
     // 方案按钮分发（0=导入参数表(独立连接) 1=AI助手(独立连接) 2=推荐 3=保存我的
-    // 4=方案库 5=记忆库 6=上次方案 7=进入计算(独立连接)）
+    // 4=方案库 5/6=默认方案(独立连接) 7=记忆库 8=上次方案 9=进入计算(独立连接)）
     connect(m_sidebar, &SidebarPanel::buttonClicked,
             this, &OptimizeCalcPage::onSchemeButtonClicked);
 
@@ -453,8 +615,7 @@ void OptimizeCalcPage::applySchemeInput(const CalcInput &input)
         m_linkStatusLabel->setText(QStringLiteral("分段式整机计算目前仅覆盖高低压五组油道均启用的情况。"));
 }
 
-// 侧边栏方案按钮分发（0=导入参数表 1=AI助手 7=进入计算，均已独立连接，此处忽略；
-// 2=推荐 3=保存我的 4=方案库 5=记忆库 6=上次方案）
+// 0/1/5/6/9独立连接；2=推荐、3=保存我的、4=方案库、7=记忆库、8=上次方案。
 void OptimizeCalcPage::onSchemeButtonClicked(int index)
 {
     switch (index) {
@@ -540,7 +701,7 @@ void OptimizeCalcPage::onSchemeButtonClicked(int index)
         }
         break;
     }
-    case 5: {  // 从记忆库中选择（最近使用的方案，支持删除所选）
+    case 7: {  // 从记忆库中选择（最近使用的方案，支持删除所选）
         QVector<SchemeStore::SchemeEntry> entries =
             SchemeStore::loadEntries(SchemeStore::memorySchemesPath());
         if (entries.isEmpty()) {
@@ -555,7 +716,7 @@ void OptimizeCalcPage::onSchemeButtonClicked(int index)
         }
         break;
     }
-    case 6: {  // 采用上一次方案
+    case 8: {  // 采用上一次方案
         CalcInput last;
         if (!SchemeStore::loadLastScheme(last)) {
             QMessageBox::information(this, QStringLiteral("暂无记录"),

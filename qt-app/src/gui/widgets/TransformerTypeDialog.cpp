@@ -78,3 +78,10 @@ TransformerTypeDialog::TransformerTypeDialog(QWidget *parent)
     });
     connect(cancelBtn, &QPushButton::clicked, this, &QDialog::reject);
 }
+void TransformerTypeDialog::setInitialConfig(const StructureConfig &config)
+{
+    m_category=config.category;
+    m_process=config.windingProcess;
+    if(auto *button=m_categoryGroup->button(int(m_category)))button->setChecked(true);
+    if(auto *button=m_processGroup->button(int(m_process)))button->setChecked(true);
+}

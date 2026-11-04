@@ -74,6 +74,8 @@ void MainWindow::showOptimizeCalc()
 void MainWindow::onOptimizeCalcRequested()
 {
     TransformerTypeDialog dlg(this);
+    m_config=m_optimizeCalcPage->currentConfig();
+    dlg.setInitialConfig(m_config);
     if (dlg.exec() == QDialog::Accepted) {
         m_config.category = dlg.selectedCategory();
         m_config.windingProcess = dlg.selectedProcess();

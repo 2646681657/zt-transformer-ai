@@ -71,6 +71,11 @@ target_link_libraries(scan-sb22 PRIVATE
 
 include(CTest)
 if(BUILD_TESTING)
+    qt_add_executable(test-startup-schemes tests/startup_scheme_library_test.cpp resources/resources.qrc)
+    set_target_properties(test-startup-schemes PROPERTIES EXCLUDE_FROM_ALL TRUE)
+    target_include_directories(test-startup-schemes PRIVATE src/core)
+    target_link_libraries(test-startup-schemes PRIVATE Qt6::Core)
+    add_test(NAME startup-scheme-library COMMAND test-startup-schemes)
     qt_add_executable(test-candidate-comparison tests/candidate_comparison_test.cpp ${CORE_SOURCES} ${ENGINE_SOURCES}
         src/adapter/DesignDatabase.cpp resources/resources.qrc)
     set_target_properties(test-candidate-comparison PROPERTIES EXCLUDE_FROM_ALL TRUE)
@@ -173,6 +178,8 @@ if(BUILD_TESTING)
         Qt6::Core Qt6::Widgets Qt6::Gui Qt6::Concurrent Qt6::PrintSupport Qt6::Network
     )
     add_test(NAME enter-calc-page-state COMMAND test-enter-calc-page)
+    add_test(NAME startup-scheme-ui COMMAND test-enter-calc-page --startup-schemes)
+    set_tests_properties(startup-scheme-ui PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen" TIMEOUT 35)
     add_test(NAME linked-excel-export COMMAND test-enter-calc-page --worksheet-output)
     set_tests_properties(linked-excel-export PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen" TIMEOUT 90)
     find_package(Python3 COMPONENTS Interpreter QUIET)
