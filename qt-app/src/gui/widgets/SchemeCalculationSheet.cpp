@@ -1031,7 +1031,6 @@ void SchemeCalculationSheet::rebuildSheet()
     inputAt(QStringLiteral("AG26"),QStringLiteral("低压层间绝缘层数"));
     inputAt(QStringLiteral("AI26"),QStringLiteral("低压层间绝缘厚(mm)"));
     inputAt(QStringLiteral("J10"),QStringLiteral("杂散损耗系数"));
-    inputAt(QStringLiteral("L51"),QStringLiteral("油顶层温升修正项(K)"));
     inputAt(QStringLiteral("S45"),QStringLiteral("波纹深(mm)"));
     inputAt(QStringLiteral("S46"),QStringLiteral("波纹高(mm)"));
     inputAt(QStringLiteral("S47"),QStringLiteral("波纹节距(mm)"));
@@ -1519,7 +1518,7 @@ void SchemeCalculationSheet::refreshSupplementDetails()
     }
     if (m_snapshot.valid && m_snapshot.sheetDetailsSnapshotAvailable
             && m_snapshot.calculationSheetDetails.contains(QStringLiteral("CoreSheetCount1"))) {
-        QString coreHtml=QStringLiteral("<h3>铁芯逐级片数与实际叠厚</h3><p>当前已计算方案的快照；修改参数后需重新计算。片宽=当前尺寸查表基数+片宽修正。第17—20级备用，尚未参与计算。</p><table border='1' cellspacing='0' cellpadding='5'><tr><th>级次</th><th>查表基数(mm)</th><th>片宽修正(mm)</th><th>片宽(mm)</th><th>基础片数</th><th>修正(片)</th><th>实际片数</th><th>实际总叠厚(mm)</th></tr>");
+        QString coreHtml=QStringLiteral("<h3>铁芯逐级片数与实际叠厚</h3><p>当前已计算方案的快照；修改参数后需重新计算。统一采用SB20固定默认规则：片宽由当前尺寸查表基数加固定默认偏移求得，片数按固定默认增减量计算；此处仅显示计算快照。第17—20级备用，尚未参与计算。</p><table border='1' cellspacing='0' cellpadding='5'><tr><th>级次</th><th>查表基数(mm)</th><th>固定默认片宽偏移(mm)</th><th>片宽(mm)</th><th>基础片数</th><th>固定默认增减(片)</th><th>实际片数</th><th>实际总叠厚(mm)</th></tr>");
         for(int i=1;i<=16;++i) {
             if(!m_snapshot.calculationSheetDetails.contains(QStringLiteral("CoreSheetCount%1").arg(i))) continue;
             const auto value=[this,i](const char *prefix){return m_snapshot.calculationSheetDetails.value(QString::fromLatin1(prefix)+QString::number(i)).first;};
@@ -1542,7 +1541,7 @@ void SchemeCalculationSheet::refreshSupplementDetails()
         coreHtml+=QStringLiteral("</table>");
         if(m_snapshot.calculationSheetDetails.contains(QStringLiteral("CoreWeightCenter"))){
             const auto value=[this](const char *key){return m_snapshot.calculationSheetDetails.value(QString::fromLatin1(key)).first;};
-            coreHtml+=QStringLiteral("<h3>铁芯分项重量核对</h3><p>窗高：%1 mm；中心距：%2 mm；中心距附加量：%3 mm；层绝缘计算系数：%4。</p><p>心柱合重：%5 kg；铁轭重：%6 kg；铁芯总重（取整）：%7 kg。</p><table border='1' cellspacing='0' cellpadding='5'><tr><th>级次</th><th>轭片宽(mm)</th><th>轭阶梯(mm)</th><th>外柱重(kg)</th><th>中柱重(kg)</th><th>铁轭重(kg)</th></tr>")
+            coreHtml+=QStringLiteral("<h3>铁芯分项重量核对</h3><p>窗高：%1 mm；中心距：%2 mm；固定默认中心距附加量：%3 mm；固定默认层绝缘计算系数：%4（SB20规则）。</p><p>心柱合重：%5 kg；铁轭重：%6 kg；铁芯总重（取整）：%7 kg。</p><table border='1' cellspacing='0' cellpadding='5'><tr><th>级次</th><th>轭片宽(mm)</th><th>轭阶梯(mm)</th><th>外柱重(kg)</th><th>中柱重(kg)</th><th>铁轭重(kg)</th></tr>")
                 .arg(value("CoreWeightWindow"),0,'g',15).arg(value("CoreWeightCenter"),0,'g',15)
                 .arg(value("CoreCenterAllowance"),0,'g',15).arg(value("HVLayerCalcFactor"),0,'g',15)
                 .arg(m_snapshot.core.coreLegsWeight_kg,0,'f',2).arg(m_snapshot.core.yokesWeight_kg,0,'f',2).arg(m_snapshot.core.coreWeight_kg,0,'f',0);

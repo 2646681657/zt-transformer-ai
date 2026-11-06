@@ -70,7 +70,7 @@ int main(int argc, char *argv[])
             list->setCurrentRow(1);selected=true;activate->click();
         });
         choose->click();
-        if(!selected||page.currentInput().capacity_kVA!=400||page.currentInput().hvAxialAllowance_mm!=-2)return 151;
+        if(!selected||page.currentInput().capacity_kVA!=400||page.currentInput().lvFoilThick_mm!=1.0)return 151;
         auto *table=page.findChild<ParamTableWidget *>();
         CalcInput collected=page.currentInput();table->saveToInput(collected);
         auto expectedInput=page.currentInput();

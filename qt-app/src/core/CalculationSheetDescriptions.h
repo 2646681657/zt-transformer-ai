@@ -240,7 +240,7 @@ inline void capture(const CalcInput &in, CalcResult &r)
         .arg(number(std::min(r.thermal.hvLayerGap_mm, 0.64))).arg(in.hvTurnsPerLayer).arg(coolingCount)
         .arg(number(r.thermal.hvHeatLoad)),
         QStringLiteral("按实际AC52公式：计数只含前三组端部油道，不照抄原U52字符串中的五组。修正项允许为负；汇总Y53时只叠加非负层间修正。"));
-    double lvCoolingCount = in.thermalFormulaMode==1.0?1.5:1.0;
+    double lvCoolingCount = 1.0;
     for (int i = 0; i < 5; ++i) if (in.lvDuctHeightSide[i] > 0.0) lvCoolingCount += 2;
     text("AD50", QStringLiteral("τc2=0.002×%1×(%2−2×%3)×%4=")
         .arg(number(in.lvLayerInsulCount*in.lvLayerInsul_mm)).arg(in.lvTurns).arg(lvCoolingCount)

@@ -138,7 +138,7 @@ const std::array<Metric, MetricCount> &metrics()
 }
 
 // Bump whenever the underlying formula/data tables or input schema change.
-QString engineVersion() { return QStringLiteral("sb20-sheet11-learning-v1"); }
+QString engineVersion() { return QStringLiteral("sb20-default-sheet12-learning-v1"); }
 QString datasetPath()
 {
     return QStandardPaths::writableLocation(QStandardPaths::AppDataLocation)
@@ -408,7 +408,6 @@ bool purposeBundle(const QVector<Sample> &samples, const QString &purpose, QJson
     criteriaSchema["required"]=legacyRequired; // 旧数据没有此字段，按方案迁移规则恢复。
     criteriaSchema["properties"] = criteriaProperties;
     properties["performanceCriteria"] = criteriaSchema;
-    properties["oilTopCorrection_K"] = QJsonObject{{"type", "number"}}; // optional: absent means legacy value 6
     schema["properties"] = properties; // Optional: intentionally absent from the root required list.
     schema["id"] = "ztbld-calcinput-learning-v1";
     schema["numericValidation"] = "finite, abs<=1000000; exact CalcInput serialization and successful full-engine calculation required";

@@ -129,20 +129,20 @@ int main(int argc, char **argv)
           "Same product and test date cannot leak into two samples via another scheme library");
     {
         CalcInput customInput;
-        customInput.oilTopCorrection_K = 9.0;
+        customInput.lvFoilThick_mm = 1.375;
         Sample customSample;
-        check(makeSample(customInput, customSample, error), "Custom oil correction must create a learning sample");
+        check(makeSample(customInput, customSample, error), "Real design input must create a learning sample");
         customSample.productId = "CUSTOM-TEMP-001";
         customSample.source = "Factory test report";
         customSample.testedOn = QDate(2026,10,23);
         customSample.measured[3] = 41.0;
         customSample.purpose = "training";
-        check(decode(encode(customSample), restored, error) && restored.input.oilTopCorrection_K == 9.0,
-              "Learning sample must preserve custom correction and recalculate its baseline");
+        check(decode(encode(customSample), restored, error) && restored.input.lvFoilThick_mm == 1.375,
+              "Learning sample must preserve real input and recalculate unified baseline");
         QJsonObject customBundle;
         check(trainingBundle({customSample}, customBundle, error)
-                  && customBundle["inputSchema"].toObject()["properties"].toObject().contains("oilTopCorrection_K"),
-              "Learning bundle must describe the optional correction input");
+                  && !customBundle["inputSchema"].toObject()["properties"].toObject().contains("oilTopCorrection_K"),
+              "Learning bundle must exclude obsolete correction inputs");
     }
     QJsonObject bundle;
     // Only explicit training fixtures opt in; legacy persistence tests above stay unassigned.

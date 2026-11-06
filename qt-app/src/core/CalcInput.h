@@ -77,46 +77,23 @@ struct CalcInput {
         return {};
     }
     int seamCount = 5;                // 接缝数
+    // Unified default formula constants; legacy per-sheet overrides are never restored.
     // Formula offsets added to current lookup row: G17..S17, F19..I19.
-    // Slots 16..20 are reserves without geometry; missing legacy field uses original offsets.
-    double coreWidthOffsets_mm[20] = {0,5,15,25,45,60,90,130,120,110,100,90,80,60,0,0,0,0,0,0};
-    QString coreWidthOffsetError() const {
-        for(int i=0;i<20;++i)
-            if(!std::isfinite(coreWidthOffsets_mm[i]))return QStringLiteral("第%1级片宽修正必须为有效数值。").arg(i+1);
-        return {};
-    }
+    // Slots 16..20 have no geometry; these values are not editable scheme inputs.
+    static constexpr double coreWidthOffsets_mm[20] = {0,5,15,25,45,60,90,130,120,110,100,90,80,60,0,0,0,0,0,0};
+    QString coreWidthOffsetError() const { return {}; }
     // Sheet1 L5..L20: add these integer corrections after the geometric sheet-count rounding.
-    // Missing fields in old schemes retain the previous +2/-1 supplemental-piece rules.
-    // Levels 17..20 are stored reserves; the current geometry has 16 levels.
-    double coreSheetCountAdjust[20] = {0,0,0,0,0,0,0,0,0,0,0,2,-1,0,0,0};
-    QString coreSheetCountAdjustmentError() const {
-        for (int i=0;i<20;++i)
-            if (!std::isfinite(coreSheetCountAdjust[i]) || std::floor(coreSheetCountAdjust[i]) != coreSheetCountAdjust[i])
-                return QStringLiteral("第%1级片数修正必须为有效整数，不允许空值或小数。").arg(i+1);
-        return {};
-    }
+    // Default formula keeps its original +2/-1 supplemental-piece rules.
+    // Current geometry has 16 levels; remaining fixed entries are zero.
+    static constexpr double coreSheetCountAdjust[20] = {0,0,0,0,0,0,0,0,0,0,0,2,-1,0,0,0};
+    QString coreSheetCountAdjustmentError() const { return {}; }
     double coreLossCraftCoef = 1.23;  // 心柱工艺系数（Sheet1 T25），保留旧字段名
-    double designAreaMode = 0.0; // 0原几何叠厚；1线圈型式辅助表片数截面，只改变设计截面链
-    QString designAreaInputError() const
-    {
-        if(designAreaMode!=0.0&&designAreaMode!=1.0)return QStringLiteral("请选择有效设计截面来源。");
-        if(designAreaMode==1.0){
-            if(coreShape!=StructureConfig::Ellipse)return QStringLiteral("辅助表设计截面目前只核实椭圆形分支。");
-            bool a=false,b=false;const double t=lvConnectionBarThicknessText.trimmed().toDouble(&a),w=lvConnectionBarWidthText.trimmed().toDouble(&b);
-            if(!a||!b||!std::isfinite(t)||!std::isfinite(w)||t<=0||w<=0)return QStringLiteral("辅助表设计截面需要填写有效且大于0的内连接排厚度、宽度；不沿用示例尺寸。");
-        }
-        return {};
-    }
-    double unitIronLossMode = 0.0; // 0曲线，1手工指定I26/O26
-    double manualCoreLossPerKg_W = 0.0;
-    double manualYokeLossPerKg_W = 0.0;
-    QString coreUnitLossInputError() const
-    {
-        if((unitIronLossMode!=0.0&&unitIronLossMode!=1.0)||!std::isfinite(manualCoreLossPerKg_W)||manualCoreLossPerKg_W<0||!std::isfinite(manualYokeLossPerKg_W)||manualYokeLossPerKg_W<0)
-            return QStringLiteral("请选择有效单位铁损来源，并输入非负有限手工单位铁损。");
-        if(unitIronLossMode==1.0&&(manualCoreLossPerKg_W<=0||manualYokeLossPerKg_W<=0))return QStringLiteral("手工铁损模式下，心柱和铁轭单位铁损均须大于0；不沿用曲线值。");
-        return {};
-    }
+    static constexpr double designAreaMode = 0.0; // 统一默认几何叠厚，不提供来源切换
+    QString designAreaInputError() const { return {}; }
+    static constexpr double unitIronLossMode = 0.0; // 统一按牌号与实际磁密查曲线
+    static constexpr double manualCoreLossPerKg_W = 0.0;
+    static constexpr double manualYokeLossPerKg_W = 0.0;
+    QString coreUnitLossInputError() const { return {}; }
     double yokeLossCraftCoef = 1.23;  // 铁轭工艺系数（Sheet1 W25）
     // 原单H16/M16历史记录，仅供人工对照，不替代查表铁损或现用工艺系数。
     QString legacyUnitLossRecordText;
@@ -258,65 +235,32 @@ struct CalcInput {
     int waveDepth_mm = 150;           // S45 波纹深
     int waveHeight_mm = 900;          // S46 波纹高
     int wavePitch_mm = 41;            // S47 波纹节距
-    double tankRimHighCapacity_mm = 75.0; // >=630kVA箱沿高度；小容量仍75
-    double tankWallThicknessOverride_mm = 0.0; // 0沿用容量/电压规则，正数指定
-    double tankBottomThicknessAdjust_mm = 0.0; // 自动箱底厚度后的工艺修正
+    static constexpr double tankRimHighCapacity_mm = 75.0; // >=630kVA箱沿高度；小容量仍75
+    static constexpr double tankWallThicknessOverride_mm = 0.0; // 固定按默认容量/电压规则
+    static constexpr double tankBottomThicknessAdjust_mm = 0.0; // 不另加箱底厚度修正
     double conservatorWeight_kg = 0.0; // 原表D18手工重量；不是储油柜自动选型模型
-    double waveLongCountAdjust = 0.0; // 长边片数公式后的修正，可为-0.5
-    QString tankProcessInputError() const
-    {
-        if(!std::isfinite(tankRimHighCapacity_mm)||tankRimHighCapacity_mm<=0
-            ||!std::isfinite(tankWallThicknessOverride_mm)||tankWallThicknessOverride_mm<0
-            ||!std::isfinite(tankBottomThicknessAdjust_mm)
-            ||!std::isfinite(conservatorWeight_kg)||conservatorWeight_kg<0
-            ||!std::isfinite(waveLongCountAdjust))
-            return QStringLiteral("油箱工艺输入无效：箱沿高须大于0，箱壁指定厚度和储油柜重量须非负，所有修正须为有限数值。");
-        return {};
+    static constexpr double waveLongCountAdjust = 0.0; // 不另加波纹片数修正
+    QString tankProcessInputError() const {
+        return (!std::isfinite(conservatorWeight_kg)||conservatorWeight_kg<0)
+            ? QStringLiteral("储油柜重量必须为非负有限数值。") : QString();
     }
 
     // ---- 其他结构常数 ----
     double phaseGapBase_mm = 3.0;     // B28 相间距基础
-    double centerDistanceAllowance_mm = 5.0; // 中心距按5mm进位后附加量；不同原表为5/1/4
-    double hvLayerInsulCalcFactor = 4900.0; // 层绝缘张数公式分母系数；不同原表为4900/5250/5300
-    double hvMaxTurnsAdjust = 0.0; // V8取整后的整数匝数修正；第一组原表另减1匝
-    double activePartHvWeightMode = 0.0; // C10器身高压导线口径：0绝缘重Z21，1裸重W21
-    double hvAxialAllowance_mm = 1.0; // AA28轴向高度按5mm取整后附加量
-    double hvDuctLayerRule = 0.0; // 0默认五档；1原三档不减1层规则
-    double impedanceOutputMode = 0.0; // 0直接Q35；1=ROUND(Q35/Kx*校正系数,2)
-    double impedanceCalibrationFactor = 1.0;
-    QString electricalProcessInputError() const
-    {
-        if(hvDuctLayerRule!=0.0&&hvDuctLayerRule!=1.0)return QStringLiteral("请选择有效高压油道层序规则。");
-        if(hvDuctLayerRule==1.0&&(hvDuctWidthSide[3]>0||hvDuctWidthSide[4]>0||hvDuctHeightSide[3]>0||hvDuctHeightSide[4]>0))return QStringLiteral("三档层序规则只支持前三档高压油道；使用第四、五档时请选择五档规则。");
-        if(!std::isfinite(hvAxialAllowance_mm))return QStringLiteral("高压轴向附加量必须为有限数值。");
-        if((impedanceOutputMode!=0.0&&impedanceOutputMode!=1.0)||!std::isfinite(impedanceCalibrationFactor)||impedanceCalibrationFactor<=0)
-            return QStringLiteral("请选择有效阻抗输出口径，并输入大于0的校正系数。");
-        return {};
-    }
-    QString coreWeightProcessInputError() const
-    {
-        if(activePartHvWeightMode!=0.0&&activePartHvWeightMode!=1.0)
-            return QStringLiteral("请选择有效的器身高压线重口径：绝缘导线重或裸导线重。");
-        if (!std::isfinite(hvMaxTurnsAdjust) || std::trunc(hvMaxTurnsAdjust) != hvMaxTurnsAdjust)
-            return QStringLiteral("高压最大匝数修正必须为有效整数。");
-        if (!std::isfinite(centerDistanceAllowance_mm) || centerDistanceAllowance_mm < 0.0)
-            return QStringLiteral("中心距附加量必须为非负有效数值。");
-        if (!std::isfinite(hvLayerInsulCalcFactor) || hvLayerInsulCalcFactor <= 0.0)
-            return QStringLiteral("层绝缘计算系数必须为大于零的有效数值。");
-        return {};
-    }
-    double thermalFormulaMode = 0.0; // 0五档原表；1三档原表散热周长及低压层间末项1.5
-    double lvThermalExtraMode = 0.0; // 0跟随lvExtraLoss_W；1按原表箔材公式独立计算，仅进入温升
-    QString thermalProcessInputError() const
-    {
-        if((thermalFormulaMode!=0.0&&thermalFormulaMode!=1.0)||(lvThermalExtraMode!=0.0&&lvThermalExtraMode!=1.0))
-            return QStringLiteral("请选择有效温升公式版本及低压热附加来源。");
-        if(thermalFormulaMode==1.0)for(int i=3;i<5;++i)
-            if(hvDuctWidthSide[i]>0||hvDuctHeightSide[i]>0||lvDuctWidthSide[i]>0||lvDuctHeightSide[i]>0)
-                return QStringLiteral("三档温升公式只支持前三档油道；使用第四、五档时请选择五档原表。");
-        return {};
-    }
-    double oilTopCorrection_K = 6.0; // L51 油顶层温升修正项，旧方案默认为6
+    static constexpr double centerDistanceAllowance_mm = 5.0; // 默认中心距进位后固定附加5mm
+    static constexpr double hvLayerInsulCalcFactor = 4900.0; // 默认层绝缘张数公式固定系数4900
+    static constexpr double hvMaxTurnsAdjust = 0.0; // 最大匝数按默认公式取整，不另加减
+    static constexpr double activePartHvWeightMode = 0.0; // 默认器身重使用绝缘导线重Z21
+    static constexpr double hvAxialAllowance_mm = 1.0; // AA28轴向高度按5mm取整后附加量
+    static constexpr double hvDuctLayerRule = 0.0; // 固定默认五档油道层序公式
+    static constexpr double impedanceOutputMode = 0.0; // 固定直接输出合成阻抗Q35
+    static constexpr double impedanceCalibrationFactor = 1.0;
+    QString electricalProcessInputError() const { return {}; }
+    QString coreWeightProcessInputError() const { return {}; }
+    static constexpr double thermalFormulaMode = 0.0; // 固定默认五档散热公式
+    static constexpr double lvThermalExtraMode = 0.0; // 固定默认lvExtraLoss_W热附加链
+    QString thermalProcessInputError() const { return {}; }
+    static constexpr double oilTopCorrection_K = 6.0; // L51 油顶层温升修正项，旧方案默认为6
     double refFluxDens_T = 1.7;       // AM8 低压参考磁密
 };
 

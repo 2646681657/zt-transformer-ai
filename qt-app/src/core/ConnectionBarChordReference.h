@@ -11,7 +11,6 @@ namespace ConnectionBarChordReference {
 inline void capture(const CalcInput &in, CalcResult &r)
 {
     if (!r.valid || !r.sheetDetailsSnapshotAvailable) return;
-    if(in.designAreaMode==1.0)return; // 引擎已按辅助几何链计算并捕获，不能再以重量表叠厚覆盖。
     for (const char *a : {"AN14", "K19", "K20"}) {
         const QString key = QString::fromLatin1(a);
         r.calculationSheetDetails.remove(key);
