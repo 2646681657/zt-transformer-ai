@@ -22,17 +22,13 @@ struct Result {
 };
 
 inline Result calculate(StructureConfig::CoreShape shape, double diameter, double straight,
-                        const QVector<CoreLaminationRow> &rows, const QVector<double> &widthOffsets = {})
+                        const QVector<CoreLaminationRow> &rows)
 {
     const auto failure = [](const QString &message) {
         Result unavailable;
         unavailable.error = message;
         return unavailable;
     };
-    if(!widthOffsets.isEmpty()){
-        if(widthOffsets.size()!=20)return failure(QStringLiteral("片宽修正必须包含20级参数。"));
-        for(double value:widthOffsets)if(!std::isfinite(value))return failure(QStringLiteral("片宽修正包含无效数值。"));
-    }
     if (shape != StructureConfig::Circle && shape != StructureConfig::LongRound)
         return failure(QStringLiteral("本区仅预览圆形/长圆形几何；椭圆沿用上方已有预览，其他形状未接入。"));
     if (!std::isfinite(diameter) || diameter <= 0.0)
@@ -70,7 +66,7 @@ inline Result calculate(StructureConfig::CoreShape shape, double diameter, doubl
         const double base = i < 11 ? matched->widths[i] : matched->yokeBase[i - 11];
         if (!std::isfinite(base) || base < 0.0)
             return failure(QStringLiteral("第%1级片宽基数无效，不能预览。原单偏移须加在有效基数上。").arg(i + 1));
-        const double width = base + (widthOffsets.isEmpty() ? (i < 11 ? offsets[i] : supplementOffsets[i - 11]) : widthOffsets[i]);
+        const double width = base + (i < 11 ? offsets[i] : supplementOffsets[i - 11]);
         if(!std::isfinite(width)||width<0)return failure(QStringLiteral("第%1级修正后片宽为负或无效。").arg(i+1));
         double stack = 0.0;
         // G18:L18 have no zero-width guard. M18:S18 and F20:I20 do.

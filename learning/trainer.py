@@ -16,7 +16,7 @@ import tempfile
 import uuid
 
 SCOPE = 'oil-foil-stacked-ellipse-tyoke-dual-cylinder-50hz-75c'
-ENGINE = 'sb20-sheet11-learning-v1'
+ENGINE = 'sb20-default-sheet12-learning-v1'
 METRICS = ['noLoadLoss_W','loadLoss_W','impedance_pct','oilTopRise_K','hvWindingRise_K','lvWindingRise_K']
 UNITS = ['W','W','%','K','K','K']
 # Explicit whitelist: electrical ratings, core/winding geometry, material flags.

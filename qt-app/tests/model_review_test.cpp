@@ -108,7 +108,7 @@ struct Fixture {
          {"testOnly", false},
          {"modelVersion", root},
          {"scope", "oil-foil-stacked-ellipse-tyoke-dual-cylinder-50hz-75c"},
-         {"engineVersion", "sb20-sheet11-learning-v1"},
+         {"engineVersion", "sb20-default-sheet12-learning-v1"},
          {"featureOrder", features},
          {"architecture", QJsonArray{16, 32, 16, 1}},
          {"inputSchema", schema},
@@ -299,6 +299,37 @@ int main(int argc, char **argv) {
   check(canActivate(tmp.path(), f.model, e) && !canRollback(tmp.path(), e),
         "UI capability checks use current valid evidence");
   const auto approvedState = state(tmp.path(), e);
+  // A previous-engine model must fail the version gate even with fresh hashes
+  // and a saved approval, rather than merely fail because evidence changed.
+  const auto currentModel = f.m;
+  f.m["engineVersion"] = "sb20-sheet11-learning-v1";
+  f.sync();
+  auto legacyState = approvedState;
+  auto legacyApprovals = legacyState["approvals"].toArray();
+  auto legacyApproval = legacyApprovals[0].toObject();
+  legacyApproval["engineVersion"] = f.m["engineVersion"];
+  legacyApproval["modelSha256"] = sha(f.model);
+  legacyApproval["evaluationSha256"] = sha(f.evaluation);
+  legacyApprovals[0] = legacyApproval;
+  legacyState["approvals"] = legacyApprovals;
+  write(tmp.filePath("registry/registry.json"), legacyState);
+  check(!approve(tmp.path(), f.model, f.evaluation, "reviewer", "legacy", e) &&
+            e.contains("Model scope/version mismatch"),
+        "Previous engine model cannot receive a new approval");
+  check(!canActivate(tmp.path(), f.model, e) &&
+            e.contains("Model scope/version mismatch"),
+        "Previous engine approval is not eligible for activation");
+  check(!activate(tmp.path(), f.model, e) &&
+            e.contains("Model scope/version mismatch"),
+        "Saved previous engine approval cannot activate");
+  check(activeModel(tmp.path(), e).isEmpty() &&
+            e.contains("Model scope/version mismatch"),
+        "Previously active engine model is invalidated on reopen");
+  check(state(tmp.path(), e) == legacyState,
+        "Rejected legacy approval and activation preserve registry");
+  f.m = currentModel;
+  f.sync();
+  write(tmp.filePath("registry/registry.json"), approvedState);
   QLockFile held(tmp.filePath("registry/registry.json.lock"));
   check(held.tryLock(0), "Acquire competing writer lock");
   check(!deactivate(tmp.path(), "must not persist", e),

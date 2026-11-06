@@ -1,4 +1,5 @@
 #include "LearningModelReview.h"
+#include "SelfLearningDataset.h"
 #include <QCryptographicHash>
 #include <QDateTime>
 #include <QDir>
@@ -16,7 +17,7 @@
 namespace LearningReview {
 namespace {
 const QString scope = "oil-foil-stacked-ellipse-tyoke-dual-cylinder-50hz-75c",
-              engine = "sb20-sheet11-learning-v1";
+              engine = SelfLearning::engineVersion();
 const QStringList metrics{"noLoadLoss_W", "loadLoss_W",      "impedance_pct",
                           "oilTopRise_K", "hvWindingRise_K", "lvWindingRise_K"};
 const QStringList features =

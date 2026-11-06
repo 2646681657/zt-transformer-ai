@@ -100,183 +100,107 @@ int main(int argc, char **argv)
     }
 
     {
-        // Independent golden data from the original workbooks, not engine-generated results.
+        const QStringList obsoleteKeys={
+            QStringLiteral("coreWidthOffsets_mm"),
+            QStringLiteral("coreSheetCountAdjust"),
+            QStringLiteral("designAreaMode"),
+            QStringLiteral("unitIronLossMode"),
+            QStringLiteral("manualCoreLossPerKg_W"),
+            QStringLiteral("manualYokeLossPerKg_W"),
+            QStringLiteral("centerDistanceAllowance_mm"),
+            QStringLiteral("hvLayerInsulCalcFactor"),
+            QStringLiteral("hvMaxTurnsAdjust"),
+            QStringLiteral("hvAxialAllowance_mm"),
+            QStringLiteral("hvDuctLayerRule"),
+            QStringLiteral("impedanceOutputMode"),
+            QStringLiteral("impedanceCalibrationFactor"),
+            QStringLiteral("activePartHvWeightMode"),
+            QStringLiteral("thermalFormulaMode"),
+            QStringLiteral("lvThermalExtraMode"),
+            QStringLiteral("tankRimHighCapacity_mm"),
+            QStringLiteral("tankWallThicknessOverride_mm"),
+            QStringLiteral("tankBottomThicknessAdjust_mm"),
+            QStringLiteral("waveLongCountAdjust"),
+            QStringLiteral("oilTopCorrection_K")
+        };
+        // The source workbooks remain historical evidence; unified defaults no
+        // longer promise to reproduce their per-workbook tuning choices.
         const auto cases=QJsonDocument::fromJson(coreWeightCasesJson).array();
-        check(cases.size()==3,"Core weight fixtures must contain all three authorized worksheets");
+        check(cases.size()==3,"Historical fixtures must retain all three source worksheets");
         for(const auto &entry:cases){
-            const auto fixture=entry.toObject();const auto expected=fixture.value("expected").toObject();
-            const auto input=SchemeStore::fromJson(fixture.value("input").toObject());CalcResult r;
-            const bool ok=engine.calcElectromagnetic(input,r,true);
-            qInfo()<<"Core weight fixture"<<fixture.value("file").toString()<<"ok"<<ok<<"window"<<r.mass.windowHeight_mm
-                   <<"center"<<r.mass.centerDistance_mm<<"legs"<<r.core.coreLegsWeight_kg<<"yokes"<<r.core.yokesWeight_kg<<"total"<<r.core.coreWeight_kg;
-            check(ok,"Core weight worksheet input must calculate without sample-specific engine branches");
-            if(!ok)continue;
-            const auto eq=[](double a,double b){return std::abs(a-b)<1e-7;};
-            check(eq(r.mass.windowHeight_mm,expected.value("window").toDouble())&&eq(r.mass.centerDistance_mm,expected.value("center").toDouble()),"Core weight upstream window and center must match the original worksheet");
-            check(eq(r.core.coreLegsWeight_kg,expected.value("legs").toDouble())&&eq(r.core.yokesWeight_kg,expected.value("yokes").toDouble())&&eq(r.core.coreWeight_kg,expected.value("total").toDouble()),"Core weight component masses must match the worksheet before total rounding");
-            check(eq(r.core.coreAreaActual_cm2,expected.value("area").toDouble())&&eq(r.core.yokeAreaActual_cm2,expected.value("yokeArea").toDouble()),"Core weight actual sections must match independently saved worksheet values");
-            check(eq(r.cost.steelCost,expected.value("steelCost").toDouble()),"Core weight steel material line must match original integer-yuan worksheet amount");
-            const auto winding=expected.value("winding").toObject();
-            const auto wireEq=[&](const char *key,double actual){return winding.contains(QString::fromLatin1(key))&&eq(actual,winding.value(QString::fromLatin1(key)).toDouble());};
-            check(wireEq("X17",r.winding.hvMeanTurn_m)&&wireEq("AH17",r.winding.lvMeanTurn_m),"Winding audit mean turn lengths must match original worksheets");
-            check(wireEq("V8",r.winding.hvTurnsMax)&&wireEq("Y8",r.winding.hvTurnsRated)&&wireEq("AA8",r.winding.hvTurnsMin),"Winding audit tap turns must include explicit original maximum-turn correction");
-            check(wireEq("W18",r.winding.hvWireLenMax_m)&&wireEq("Z18",r.winding.hvWireLenRated_m)&&wireEq("AH18",r.winding.lvWireLen_m),"Winding audit conductor lengths must match original worksheets");
-            check(wireEq("W21",r.winding.hvBareWireWeight_kg)&&wireEq("Z21",r.winding.hvWireWeight_kg)&&wireEq("AH21",r.winding.lvWireWeight_kg),"Winding audit conductor masses must match original worksheets");
-            check(wireEq("U15",r.winding.hvWireSection_mm2)&&wireEq("AH15",r.winding.lvWireSection_mm2)&&wireEq("hvCost",r.cost.hvWireCost)&&wireEq("lvCost",r.cost.lvWireCost),"Winding audit cross sections and both material costs must match original worksheets");
-            check(SchemeStore::toJson(input).value("hvMaxTurnsAdjust")==fixture.value("input").toObject().value("hvMaxTurnsAdjust"),"Winding audit maximum-turn correction must persist in scheme JSON");
-            const auto tank=expected.value("tank").toObject();
-            const auto tankEq=[&](const char *key,double actual){return tank.contains(QString::fromLatin1(key))&&eq(actual,tank.value(QString::fromLatin1(key)).toDouble());};
-            check(tankEq("F25",r.mass.tankWidth_mm)&&tankEq("H26",r.mass.tankLength_mm)&&tankEq("J27",r.mass.tankHeight_mm),"Tank audit dimensions must match original source chain");
-            check(tankEq("C19",r.mass.tankWeight_kg)&&tankEq("C24",r.mass.oilWeight_kg),"Tank audit tank and oil masses must match original worksheets");
-            for(const auto key:{"D12","D13","D14","D15","D17","D18","C20","C21","C22"})
-                check(r.calculationSheetDetails.contains(QString::fromLatin1(key))&&tankEq(key,r.calculationSheetDetails.value(QString::fromLatin1(key)).first),"Tank audit each part and oil displacement component must match original source");
-            check(tankEq("longCount",r.oilExpansion.longSideCount)&&tankEq("shortCount",r.oilExpansion.shortSideCount),"Tank audit corrugated counts must include original fractional adjustment");
-            check(tankEq("oilCost",r.cost.oilCost)&&tankEq("tankCost",r.cost.tankCost)&&tankEq("materialCost",r.cost.materialCost),"Tank audit final five material lines must match original worksheet");
-            check(tankEq("C10",r.winding.wireWeightTotal_kg)&&tankEq("C11",r.mass.activePartWeight_kg)&&tankEq("C25",r.mass.totalWeight_kg),"Active part audit wire weight basis and total mass must match every original worksheet");
-            const auto electrical=expected.value("electrical").toObject();
-            qInfo()<<"Electrical audit"<<fixture.value("file").toString()<<"load"<<r.winding.loadLoss_W<<"impedance"<<r.impedance.impedance_pct;
-            check(eq(r.winding.loadLoss_W,electrical.value("load").toDouble()),"Electrical audit load loss must match original source with original stray coefficient");
-            check(eq(r.core.noLoadLoss_W,electrical.value("noLoad").toDouble())&&eq(r.core.coreLossPerKg_W,electrical.value("coreUnit").toDouble())&&eq(r.core.yokeLossPerKg_W,electrical.value("yokeUnit").toDouble()),"No load audit must use original manual unit losses and calculate original total loss");
-            auto curveJson=fixture.value("input").toObject();curveJson.insert("unitIronLossMode",0);CalcResult curveA,curveB;
-            const bool curveOk=engine.calcElectromagnetic(SchemeStore::fromJson(curveJson),curveA,true);
-            curveJson.insert("manualCoreLossPerKg_W",input.manualCoreLossPerKg_W*2);curveJson.insert("manualYokeLossPerKg_W",input.manualYokeLossPerKg_W*2);
-            check(curveOk&&engine.calcElectromagnetic(SchemeStore::fromJson(curveJson),curveB,true)&&eq(curveA.core.noLoadLoss_W,curveB.core.noLoadLoss_W)&&eq(curveA.core.coreLossPerKg_W,curveB.core.coreLossPerKg_W),"No load audit unused manual values must not affect curve mode");
-            for(const auto key:{"unitIronLossMode","manualCoreLossPerKg_W","manualYokeLossPerKg_W"})check(SchemeStore::toJson(input).value(QString::fromLatin1(key))==fixture.value("input").toObject().value(QString::fromLatin1(key)),"No load audit selected source and unit values must persist");
-            check(eq(r.impedance.impedance_pct,electrical.value("impedance").toDouble()),"Electrical audit final impedance must follow original output rule");
-            check(r.calculationSheetDetails.contains("Q35")&&eq(r.calculationSheetDetails.value("Q35").first,electrical.value("combined").toDouble()),"Electrical audit combined Q35 must remain distinct from final R10");
-            check(eq(r.winding.hvAxial_mm,electrical.value("axial").toDouble()),"Electrical audit axial geometry must match the source before impedance correction");
-            for(const auto key:{"hvAxialAllowance_mm","hvDuctLayerRule","impedanceOutputMode","impedanceCalibrationFactor"})check(SchemeStore::toJson(input).value(QString::fromLatin1(key))==fixture.value("input").toObject().value(QString::fromLatin1(key)),"Electrical audit process settings must persist");
-            const auto current=expected.value("current").toObject();
-            const auto currentEq=[&](const char *key,double actual){check(eq(actual,current.value(key).toDouble()),"Current audit must match original design section flux VA current and deviation");};
-            for(const auto pair:{qMakePair("AN14","chord"),qMakePair("K19","pieceWidth"),qMakePair("K20","pieceStack")})currentEq(pair.second,r.calculationSheetDetails.value(pair.first).first);
-            currentEq("area",r.core.coreArea_cm2);currentEq("flux",r.core.fluxDensity_core_T);currentEq("va",r.core.magCapacity_vaPerKg);currentEq("design",r.core.noLoadCurrent_pct);
-            check(input.hasPerformanceCriteria,"Current audit original manual or built-in criterion must have a valid snapshot");currentEq("standard",input.performanceCriteria.noLoadCurrentStd_pct);
-            for(const auto key:{"L11","M11","O11","R11"}){check(r.calculationSheetDetails.contains(key),"Current audit deviations must be available");currentEq(key,r.calculationSheetDetails.value(key).first);}
-            check(SchemeStore::toJson(input).value("designAreaMode")==fixture.value("input").toObject().value("designAreaMode"),"Design section source must persist");
-            auto auxJson=SchemeStore::toJson(input);auxJson.insert("designAreaMode",1);CalcResult auxiliary;
-            check(engine.calcElectromagnetic(SchemeStore::fromJson(auxJson),auxiliary,true),"Auxiliary design section must calculate for all three original inputs");currentEq("auxArea",auxiliary.core.coreArea_cm2);
-            for(const auto pair:{qMakePair("AN14","chord"),qMakePair("K19","pieceWidth"),qMakePair("K20","pieceStack")})currentEq(pair.second,auxiliary.calculationSheetDetails.value(pair.first).first);
-            const auto auxStages=current.value("auxStages").toArray();check(auxStages.size()==16,"Auxiliary source must contain all nonzero-origin rows");
-            for(int j=0;j<auxStages.size();++j){const auto e=auxStages[j].toObject();for(const auto pair:{qMakePair("AuxDesignWidth","width"),qMakePair("AuxDesignStack","stack"),qMakePair("AuxDesignCount","count"),qMakePair("AuxDesignTotalStack","totalStack")})check(eq(auxiliary.calculationSheetDetails.value(QString::fromLatin1(pair.first)+QString::number(j+1)).first,e.value(pair.second).toDouble()),"Auxiliary design per-stage geometry counts and total stacks must match original formulas");}
-            auto barJson=auxJson;barJson.insert("lvConnectionBarThicknessText",QString::number(input.lvConnectionBarThicknessText.toDouble()+5));CalcResult barChanged;
-            check(engine.calcElectromagnetic(SchemeStore::fromJson(barJson),barChanged,true)&&barChanged.core.coreArea_cm2!=auxiliary.core.coreArea_cm2&&eq(barChanged.cost.materialCost,auxiliary.cost.materialCost)&&eq(barChanged.core.coreWeight_kg,auxiliary.core.coreWeight_kg)&&eq(barChanged.winding.loadLoss_W,auxiliary.winding.loadLoss_W)&&eq(barChanged.impedance.impedance_pct,auxiliary.impedance.impedance_pct),"Auxiliary design section must respond to bar geometry without altering weight load loss price or impedance");
-            check(eq(auxiliary.cost.materialCost,r.cost.materialCost)&&eq(auxiliary.core.coreAreaActual_cm2,r.core.coreAreaActual_cm2)&&eq(auxiliary.core.noLoadLoss_W,r.core.noLoadLoss_W),"Switching design section source must not rewrite actual section mass or core loss");
-            const auto thermal=expected.value("thermal").toObject();
-            const auto heatEq=[&](const char *key,double actual){if(!eq(actual,thermal.value(key).toDouble()))qCritical()<<fixture.value("file")<<key<<"actual"<<actual<<"expected"<<thermal.value(key);check(eq(actual,thermal.value(key).toDouble()),"Thermal audit must match original saved temperatures areas and heat loads");};
-            heatEq("oil",r.thermal.oilTopRise_K);heatEq("mean",r.thermal.oilRise_K);heatEq("hv",r.thermal.hvWindingRise_K);heatEq("lv",r.thermal.lvWindingRise_K);
-            heatEq("hvArea",r.thermal.hvSurface_m2);heatEq("lvArea",r.thermal.lvSurface_m2);heatEq("area",r.thermal.totalSurface_m2);heatEq("hvHeat",r.thermal.hvHeatLoad);heatEq("lvHeat",r.thermal.lvHeatLoad);
-            for(const auto key:{"thermalFormulaMode","lvThermalExtraMode"})check(SchemeStore::toJson(input).value(key)==fixture.value("input").toObject().value(key),"Thermal rule selections must persist");
-            heatEq("extra",r.thermal.lvThermalExtraLoss_W);
-            check(r.calculationSheetTexts.value("AD48").contains(QString::number(r.thermal.lvThermalExtraLoss_W,'g',12))&&r.calculationSheetTexts.value("AD47").contains(QString::number(r.calculationSheetDetails.value("LvSurfaceOuterPerimeter").first,'g',12)),"Thermal sheet explanations must use the same extra loss and perimeter as the engine");
-            auto extraJson=SchemeStore::toJson(input);extraJson.insert("lvThermalExtraMode",1-input.lvThermalExtraMode);CalcResult extraHeat;
-            check(engine.calcElectromagnetic(SchemeStore::fromJson(extraJson),extraHeat,true)&&eq(extraHeat.winding.loadLoss_W,r.winding.loadLoss_W)&&eq(extraHeat.cost.materialCost,r.cost.materialCost)&&eq(extraHeat.impedance.impedance_pct,r.impedance.impedance_pct)&&extraHeat.thermal.lvHeatLoad!=r.thermal.lvHeatLoad,"Thermal extra selection must change heating without changing load loss impedance or price");
-            if(input.lvThermalExtraMode==1){auto dynamic=SchemeStore::toJson(input);dynamic.insert("lvFoilThick_mm",input.lvFoilThick_mm+0.05);CalcResult d;check(engine.calcElectromagnetic(SchemeStore::fromJson(dynamic),d,true),"Thermal foil rule must accept changed foil thickness");const double pct=std::round((input.lvCopperFoil?8.0:2.9)*std::pow(input.lvFoilThick_mm+0.05,1.2)*input.lvTurns*input.lvFoilWidth_mm/100.0)/100.0;check(eq(d.thermal.lvThermalExtraLoss_W,std::round(pct*d.winding.lvCopperLoss_W/100.0)),"Thermal extra must recalculate from changed physical inputs not fixed sample watts");}
-            const auto modeJson=SchemeStore::toJson(input);
-            check(modeJson.value("activePartHvWeightMode")==fixture.value("input").toObject().value("activePartHvWeightMode"),"Active part audit weight basis must survive JSON persistence");
-            auto flipJson=fixture.value("input").toObject();flipJson.insert("activePartHvWeightMode",1-flipJson.value("activePartHvWeightMode").toInt());CalcResult flipped;
-            check(engine.calcElectromagnetic(SchemeStore::fromJson(flipJson),flipped,true)&&eq(flipped.cost.materialCost,r.cost.materialCost)&&eq(flipped.mass.oilWeight_kg,r.mass.oilWeight_kg)&&eq(flipped.core.noLoadLoss_W,r.core.noLoadLoss_W)&&eq(flipped.winding.loadLoss_W,r.winding.loadLoss_W)&&flipped.mass.activePartWeight_kg!=r.mass.activePartWeight_kg,"Active part audit changing weight basis must affect body mass without changing materials oil displacement or losses");
-            for(const auto key:{"tankRimHighCapacity_mm","tankWallThicknessOverride_mm","tankBottomThicknessAdjust_mm","conservatorWeight_kg","waveLongCountAdjust"})
-                check(SchemeStore::toJson(input).value(QString::fromLatin1(key))==fixture.value("input").toObject().value(QString::fromLatin1(key)),"Tank audit process fields must persist in scheme JSON");
-            ParamTableWidget tankEditor;tankEditor.loadParamsForConfig(TransformerParams{},StructureConfig{},input,false,true);
-            CalcInput ordinaryTank;tankEditor.saveToInput(ordinaryTank);
-            check(SchemeStore::toJson(ordinaryTank).value("designAreaMode")==fixture.value("input").toObject().value("designAreaMode"),"Design area source must survive ordinary mode");
-            for(const auto key:{"thermalFormulaMode","lvThermalExtraMode"})check(SchemeStore::toJson(ordinaryTank).value(key)==fixture.value("input").toObject().value(key),"Thermal rules must survive ordinary mode");
-            for(const auto key:{"unitIronLossMode","manualCoreLossPerKg_W","manualYokeLossPerKg_W"})check(SchemeStore::toJson(ordinaryTank).value(QString::fromLatin1(key))==fixture.value("input").toObject().value(QString::fromLatin1(key)),"No load audit ordinary mode must retain source and manual values");
-            for(const auto key:{"hvAxialAllowance_mm","hvDuctLayerRule","impedanceOutputMode","impedanceCalibrationFactor"})check(SchemeStore::toJson(ordinaryTank).value(QString::fromLatin1(key))==fixture.value("input").toObject().value(QString::fromLatin1(key)),"Electrical audit ordinary mode must retain process settings");
-            check(SchemeStore::toJson(ordinaryTank).value("activePartHvWeightMode")==fixture.value("input").toObject().value("activePartHvWeightMode"),"Active part audit ordinary mode must preserve weight basis");
-            for(const auto key:{"tankRimHighCapacity_mm","tankWallThicknessOverride_mm","tankBottomThicknessAdjust_mm","conservatorWeight_kg","waveLongCountAdjust"})
-                check(SchemeStore::toJson(ordinaryTank).value(QString::fromLatin1(key))==fixture.value("input").toObject().value(QString::fromLatin1(key)),"Tank audit ordinary mode must retain loaded process fields");
-            tankEditor.loadParamsForConfig(TransformerParams{},StructureConfig{},input,true,true);int conservatorRow=-1;
-            for(const auto key:{"thermalFormulaMode","lvThermalExtraMode"}){auto *combo=tankEditor.findChild<QComboBox *>(key);check(combo&&combo->count()==2,"Thermal rules must have explicit editable selectors");if(combo){int old=combo->currentIndex();combo->setCurrentIndex(1-old);CalcInput edited;tankEditor.saveToInput(edited);check(SchemeStore::toJson(edited).value(key).toInt(-1)==1-old,"Thermal selector edits must reach saved inputs");combo->setCurrentIndex(old);}}
-            auto *areaSource=tankEditor.findChild<QComboBox *>("designAreaMode");check(areaSource&&areaSource->count()==2,"Design area source needs two explicit choices");if(areaSource){int old=areaSource->currentIndex();areaSource->setCurrentIndex(1-old);CalcInput savedArea;tankEditor.saveToInput(savedArea);check(SchemeStore::toJson(savedArea).value("designAreaMode").toInt(-1)==1-old,"Design area selector edit must reach stored calculation input");areaSource->setCurrentIndex(old);}
-            auto *lossSource=tankEditor.findChild<QComboBox *>(QStringLiteral("unitIronLossMode"));check(lossSource&&lossSource->count()==2&&lossSource->currentData().toInt()==1,"No load audit source selector must show original manual mode");
-            if(lossSource){lossSource->setCurrentIndex(0);CalcInput edited;tankEditor.saveToInput(edited);check(SchemeStore::toJson(edited).value("unitIronLossMode").toInt(-1)==0,"No load audit selector must reach saved input");lossSource->setCurrentIndex(1);}
-            for(const auto name:{"impedanceOutputMode","hvDuctLayerRule"}){auto *combo=tankEditor.findChild<QComboBox *>(QString::fromLatin1(name));check(combo&&combo->count()==2,"Electrical audit rule selectors must expose two explicit choices");if(combo){const int old=combo->currentIndex();combo->setCurrentIndex(1-old);CalcInput edited;tankEditor.saveToInput(edited);check(SchemeStore::toJson(edited).value(QString::fromLatin1(name)).toInt()==1-old,"Electrical audit selector must reach calculation input");combo->setCurrentIndex(old);}}
-            auto *weightMode=tankEditor.findChild<QComboBox *>(QStringLiteral("activePartHvWeightMode"));
-            check(weightMode&&weightMode->count()==2&&weightMode->currentData().toInt()==modeJson.value("activePartHvWeightMode").toInt(),"Active part audit two-option selector must show the loaded weight basis");
-            if(weightMode){weightMode->setCurrentIndex(1-weightMode->currentIndex());CalcInput edited;tankEditor.saveToInput(edited);check(SchemeStore::toJson(edited).value("activePartHvWeightMode").toInt()==weightMode->currentData().toInt(),"Active part audit selector edits must reach calculation input");}
-            for(int row=0;row<tankEditor.rowCount();++row)if(tankEditor.item(row,3)&&tankEditor.item(row,3)->text()==QStringLiteral("储油柜重(kg)"))conservatorRow=row;
-            check(conservatorRow>=0,"Tank audit D18 manual weight must have an accessible input");
-            if(conservatorRow>=0){tankEditor.item(conservatorRow,4)->setText(QString::number(input.conservatorWeight_kg+10));CalcInput saved;tankEditor.saveToInput(saved);check(SchemeStore::toJson(saved).value("conservatorWeight_kg").toDouble()==input.conservatorWeight_kg+10,"Tank audit edited D18 must reach stored input");}
-            auto massJson=SchemeStore::toJson(input);massJson.insert("conservatorWeight_kg",input.conservatorWeight_kg+10);CalcResult extraTank;
-            check(engine.calcElectromagnetic(SchemeStore::fromJson(massJson),extraTank,true)&&eq(extraTank.mass.tankWeight_kg,r.mass.tankWeight_kg+10)&&eq(extraTank.mass.oilWeight_kg,r.mass.oilWeight_kg)&&eq(extraTank.core.coreWeight_kg,r.core.coreWeight_kg),"Tank audit D18 must add tank mass without changing oil displacement or core mass");
-            qInfo()<<"Tank audit"<<fixture.value("file").toString()<<"tank"<<r.mass.tankWeight_kg<<"oil"<<r.mass.oilWeight_kg<<"material"<<r.cost.materialCost<<"total mass"<<r.mass.totalWeight_kg;
-            const auto stages=expected.value("stages").toArray();
-            for(int j=0;j<stages.size();++j){
-                const auto e=stages[j].toObject();if(e.value("stack").toDouble()==0)continue;
-                const auto value=[&](const char *key){return r.calculationSheetDetails.value(QString::fromLatin1(key)+QString::number(j+1)).first;};
-                check(eq(value("CoreSheetCount"),e.value("count").toDouble())&&eq(value("CoreActualStack"),e.value("stack").toDouble()),"Core weight actual sheet count and stack must match each worksheet stage");
-                check(eq(value("CoreYokeWidth"),e.value("yokeWidth").toDouble())&&eq(value("CoreYokeStep"),e.value("step").toDouble()),"Core weight yoke geometry must be traceable at each stage");
-                check(eq(value("CoreOuterLegWeight"),e.value("outer").toDouble())&&eq(value("CoreMiddleLegWeight"),e.value("middle").toDouble())&&eq(value("CoreYokeWeight"),e.value("yoke").toDouble()),"Core weight stage masses must match independently rounded worksheet segments");
-            }
+            const auto fixture=entry.toObject();
+            const auto legacyJson=fixture.value("input").toObject();
+            auto cleanJson=legacyJson;
+            for(const auto &key:obsoleteKeys)cleanJson.remove(key);
+            const auto input=SchemeStore::fromJson(legacyJson);
             const auto saved=SchemeStore::toJson(input);
-            check(saved.value("centerDistanceAllowance_mm")==fixture.value("input").toObject().value("centerDistanceAllowance_mm")&&saved.value("hvLayerInsulCalcFactor")==fixture.value("input").toObject().value("hvLayerInsulCalcFactor"),"Core weight process parameters must survive scheme persistence");
-            CalcResult fast;check(engine.calcElectromagnetic(input,fast,false)
-                &&eq(fast.core.coreWeight_kg,r.core.coreWeight_kg)&&eq(fast.cost.materialCost,r.cost.materialCost)
-                &&eq(fast.core.coreArea_cm2,r.core.coreArea_cm2)&&eq(fast.core.magCapacity_vaPerKg,r.core.magCapacity_vaPerKg)&&eq(fast.core.noLoadCurrent_pct,r.core.noLoadCurrent_pct)
-                &&eq(fast.thermal.oilTopRise_K,r.thermal.oilTopRise_K)&&eq(fast.thermal.hvWindingRise_K,r.thermal.hvWindingRise_K)&&eq(fast.thermal.lvWindingRise_K,r.thermal.lvWindingRise_K)&&eq(fast.thermal.lvThermalExtraLoss_W,r.thermal.lvThermalExtraLoss_W)
-                &&!fast.calculationSheetDetails.contains("CoreYokeWeight1"),"Core weight optimization path must use identical physics without allocating display details");
-            auto changedJson=saved;changedJson.insert("centerDistanceAllowance_mm",saved.value("centerDistanceAllowance_mm").toDouble()+5);CalcResult changed;
+            check(saved==SchemeStore::toJson(SchemeStore::fromJson(cleanJson)),
+                  "Legacy tuning must not change the normalized real inputs");
+            for(const auto &key:obsoleteKeys)
+                check(!saved.contains(key),"Saving historical inputs must omit obsolete tuning");
+            CalcResult r,clean,fast;
+            const bool ok=engine.calcElectromagnetic(input,r,true);
+            check(ok&&engine.calcElectromagnetic(SchemeStore::fromJson(cleanJson),clean,true),
+                  "Historical real inputs must calculate with unified defaults");
+            if(!ok)continue;
+            check(r.calculationSheetDetails==clean.calculationSheetDetails
+                      &&r.cost.materialCost==clean.cost.materialCost,
+                  "Legacy tuning must not affect detailed calculation results");
+            check(engine.calcElectromagnetic(input,fast,false)
+                      &&fast.core.coreWeight_kg==r.core.coreWeight_kg
+                      &&fast.cost.materialCost==r.cost.materialCost
+                      &&fast.core.coreArea_cm2==r.core.coreArea_cm2
+                      &&fast.core.magCapacity_vaPerKg==r.core.magCapacity_vaPerKg
+                      &&fast.core.noLoadCurrent_pct==r.core.noLoadCurrent_pct
+                      &&fast.core.noLoadLoss_W==r.core.noLoadLoss_W
+                      &&fast.winding.loadLoss_W==r.winding.loadLoss_W
+                      &&fast.impedance.impedance_pct==r.impedance.impedance_pct
+                      &&fast.thermal.oilTopRise_K==r.thermal.oilTopRise_K
+                      &&fast.thermal.hvWindingRise_K==r.thermal.hvWindingRise_K
+                      &&fast.thermal.lvWindingRise_K==r.thermal.lvWindingRise_K
+                      &&!fast.calculationSheetDetails.contains("CoreYokeWeight1"),
+                  "Optimization and detail paths must use identical unified physics");
+            check(input.hasPerformanceCriteria,"Historical standard-source snapshots must remain valid");
+            check(saved.value("performanceCriteria").toObject().value("noLoadCurrentSource")
+                      ==legacyJson.value("performanceCriteria").toObject().value("noLoadCurrentSource"),
+                  "Removing tuning must preserve the actual criterion source");
+            ParamTableWidget editor;
+            editor.loadParamsForConfig(TransformerParams{},StructureConfig{},input,true,true);
+            int conservatorRow=-1;
+            for(int row=0;row<editor.rowCount();++row)
+                if(editor.item(row,1)&&editor.item(row,1)->text()==QStringLiteral("储油柜重(kg)"))conservatorRow=row;
+            check(conservatorRow>=0,"Conservator weight must remain an accessible real input");
+            if(conservatorRow>=0){
+                editor.item(conservatorRow,2)->setText(QString::number(input.conservatorWeight_kg+10));
+                CalcInput edited;editor.saveToInput(edited);
+                check(edited.conservatorWeight_kg==input.conservatorWeight_kg+10,
+                      "Conservator weight edits must reach the saved input");
+            }
+            CalcInput ordinary;
+            editor.loadParamsForConfig(TransformerParams{},StructureConfig{},input,false,true);
+            editor.saveToInput(ordinary);
+            check(ordinary.conservatorWeight_kg==input.conservatorWeight_kg,
+                  "Ordinary mode must retain conservator weight");
+            auto changedJson=saved;changedJson.insert("conservatorWeight_kg",input.conservatorWeight_kg+10);
+            CalcResult changed;
             check(engine.calcElectromagnetic(SchemeStore::fromJson(changedJson),changed,true)
-                &&eq(changed.mass.centerDistance_mm,r.mass.centerDistance_mm+5)&&eq(changed.core.coreLegsWeight_kg,r.core.coreLegsWeight_kg)
-                &&changed.core.yokesWeight_kg>r.core.yokesWeight_kg&&changed.cost.steelCost>r.cost.steelCost,
-                "Core weight allowance must recalculate yoke mass and steel cost without changing leg mass");
+                      &&changed.mass.tankWeight_kg==r.mass.tankWeight_kg+10
+                      &&changed.mass.oilWeight_kg==r.mass.oilWeight_kg
+                      &&changed.core.coreWeight_kg==r.core.coreWeight_kg,
+                  "Conservator weight must add tank mass without changing core or oil displacement");
             changedJson=saved;changedJson.insert("lvEndInsul_mm",input.lvEndInsul_mm+1);
             check(engine.calcElectromagnetic(SchemeStore::fromJson(changedJson),changed,true)
-                &&eq(changed.mass.windowHeight_mm,r.mass.windowHeight_mm+2)&&eq(changed.mass.centerDistance_mm,r.mass.centerDistance_mm)
-                &&changed.core.coreLegsWeight_kg>r.core.coreLegsWeight_kg&&eq(changed.core.yokesWeight_kg,r.core.yokesWeight_kg),
-                "Core weight window changes must recalculate leg mass without changing yoke mass");
-            // The rounded total may stay at the same watt; the unrounded component must increase.
-            check(changed.core.coreLegsLoss_W>r.core.coreLegsLoss_W&&eq(changed.core.yokesLoss_W,r.core.yokesLoss_W)
-                &&eq(changed.core.noLoadLoss_W,std::round(changed.core.coreLegsLoss_W+changed.core.yokesLoss_W)),"No load audit manual unit values must recalculate component loss when core weight changes");
+                      &&changed.mass.windowHeight_mm==r.mass.windowHeight_mm+2
+                      &&changed.mass.centerDistance_mm==r.mass.centerDistance_mm
+                      &&changed.core.coreLegsWeight_kg>r.core.coreLegsWeight_kg
+                      &&changed.core.yokesWeight_kg==r.core.yokesWeight_kg,
+                  "Real window inputs must recalculate leg mass without changing yoke mass");
         }
-        for(const auto key:{"thermalFormulaMode","lvThermalExtraMode"}){check(SchemeStore::toJson(SchemeStore::fromJson({})).value(key).toInt(-1)==0,"Legacy thermal rules must retain default formula");for(const auto bad:{QJsonValue("bad"),QJsonValue(QJsonValue::Null),QJsonValue(0.5),QJsonValue(2)}){QJsonObject j;j.insert(key,bad);CalcResult invalid;check(!engine.calcElectromagnetic(SchemeStore::fromJson(j),invalid),"Malformed thermal modes must fail rather than silently default");}}
-        {QJsonObject j;j.insert("thermalFormulaMode",1);CalcResult invalid;check(!engine.calcElectromagnetic(SchemeStore::fromJson(j),invalid),"Three duct thermal rules must reject active fourth and fifth ducts");}
-        check(SchemeStore::toJson(SchemeStore::fromJson({})).value("designAreaMode").toInt(-1)==0,"Legacy design section must retain original geometry default");
-        for(const auto bad:{QJsonValue("bad"),QJsonValue(QJsonValue::Null),QJsonValue(0.5),QJsonValue(2)}){QJsonObject j;j.insert("designAreaMode",bad);CalcResult invalid;check(!engine.calcElectromagnetic(SchemeStore::fromJson(j),invalid),"Invalid design area source must fail instead of defaulting");}
-        for(const auto text:{QString(),QStringLiteral("bad"),QStringLiteral("0"),QStringLiteral("100000")}){QJsonObject j;j.insert("designAreaMode",1);j.insert("lvConnectionBarThicknessText","6");j.insert("lvConnectionBarWidthText",text);CalcResult invalid;check(!engine.calcElectromagnetic(SchemeStore::fromJson(j),invalid),"Auxiliary design section must reject missing malformed or impossible bar geometry");}
-        const auto defaults=SchemeStore::toJson(SchemeStore::fromJson({}));
-        check(defaults.value("centerDistanceAllowance_mm").toDouble(-1)==5&&defaults.value("hvLayerInsulCalcFactor").toDouble(-1)==4900,"Core weight process defaults must preserve old schemes");
-        for(const auto key:{"centerDistanceAllowance_mm","hvLayerInsulCalcFactor"}){
-            for(const auto bad:{QJsonValue(-1),QJsonValue("bad"),QJsonValue(QJsonValue::Null)}){
-                QJsonObject json;json.insert(key,bad);CalcResult r;
-                check(!engine.calcElectromagnetic(SchemeStore::fromJson(json),r),"Core weight invalid process parameters must not silently use old values");
-            }
+        for(const auto bad:{QJsonValue("bad"),QJsonValue(QJsonValue::Null)}){
+            QJsonObject invalid;invalid.insert("conservatorWeight_kg",bad);CalcResult r;
+            check(!engine.calcElectromagnetic(SchemeStore::fromJson(invalid),r),
+                  "Malformed real conservator weight must still be rejected");
         }
-        CalcResult r;QJsonObject zero;zero.insert("hvLayerInsulCalcFactor",0);
-        for(const auto key:{"unitIronLossMode","manualCoreLossPerKg_W","manualYokeLossPerKg_W"}){for(const auto bad:{QJsonValue("bad"),QJsonValue(QJsonValue::Null),QJsonValue(-1)}){QJsonObject invalid;invalid.insert(key,bad);check(!engine.calcElectromagnetic(SchemeStore::fromJson(invalid),r),"No load audit malformed or negative source inputs must be rejected");}}
-        QJsonObject missingManual;missingManual.insert("unitIronLossMode",1);check(!engine.calcElectromagnetic(SchemeStore::fromJson(missingManual),r),"No load audit manual mode must not reuse curve values when manual values are missing");
-        for(const auto key:{"hvAxialAllowance_mm","hvDuctLayerRule","impedanceOutputMode","impedanceCalibrationFactor"}){for(const auto bad:{QJsonValue("bad"),QJsonValue(QJsonValue::Null)}){QJsonObject invalid;invalid.insert(key,bad);check(!engine.calcElectromagnetic(SchemeStore::fromJson(invalid),r),"Electrical audit malformed process settings must be rejected");}}
-        for(const auto key:{"hvDuctLayerRule","impedanceOutputMode"}){QJsonObject invalid;invalid.insert(key,2);check(!engine.calcElectromagnetic(SchemeStore::fromJson(invalid),r),"Electrical audit unknown rule must be rejected");}
-        for(const auto key:{"impedanceCalibrationFactor","hvAxialAllowance_mm"}){QJsonObject invalid;invalid.insert(key,-1000000);check(!engine.calcElectromagnetic(SchemeStore::fromJson(invalid),r),"Electrical audit impossible factor or axial height must be rejected");}
-        for(const auto invalid:{QJsonValue(2),QJsonValue(-1),QJsonValue(0.5),QJsonValue(true),QJsonValue("bad"),QJsonValue(QJsonValue::Null)}){QJsonObject bad;bad.insert("activePartHvWeightMode",invalid);check(!engine.calcElectromagnetic(SchemeStore::fromJson(bad),r),"Active part audit invalid weight mode must not silently become the default");}
-        for(const auto key:{"tankRimHighCapacity_mm","tankWallThicknessOverride_mm","tankBottomThicknessAdjust_mm","conservatorWeight_kg","waveLongCountAdjust"}){
-            for(const auto bad:{QJsonValue("bad"),QJsonValue(QJsonValue::Null)}){QJsonObject invalid;invalid.insert(key,bad);check(!engine.calcElectromagnetic(SchemeStore::fromJson(invalid),r),"Tank audit malformed process fields must fail rather than use defaults");}
-        }
-        for(const auto key:{"tankBottomThicknessAdjust_mm","waveLongCountAdjust"}){QJsonObject invalid;invalid.insert(key,-1000000);check(!engine.calcElectromagnetic(SchemeStore::fromJson(invalid),r),"Tank audit impossible adjusted thickness or wave count must fail");}
-        for(const auto invalid:{QJsonValue(0.5),QJsonValue("bad"),QJsonValue(QJsonValue::Null),QJsonValue(-1000000),QJsonValue(1e100)}){
-            QJsonObject bad;bad.insert("hvMaxTurnsAdjust",invalid);
-            check(!engine.calcElectromagnetic(SchemeStore::fromJson(bad),r),"Winding audit invalid maximum-turn correction must fail calculation");
-        }
-        check(!engine.calcElectromagnetic(SchemeStore::fromJson(zero),r),"Core weight insulation factor must be positive");
-        QJsonObject custom;custom.insert("centerDistanceAllowance_mm",1);custom.insert("hvLayerInsulCalcFactor",5300);custom.insert("hvMaxTurnsAdjust",-1);
-        ParamTableWidget editor;const auto input=SchemeStore::fromJson(custom);
-        editor.loadParamsForConfig(TransformerParams{},StructureConfig{},input,true,true);
-        int allowanceRow=-1,factorRow=-1;
-        for(int row=0;row<editor.rowCount();++row){if(editor.item(row,1)&&editor.item(row,1)->text()==QStringLiteral("中心距附加量(mm)"))allowanceRow=row;if(editor.item(row,1)&&editor.item(row,1)->text()==QStringLiteral("层绝缘计算系数"))factorRow=row;}
-        check(allowanceRow>=0&&factorRow>=0,"Core weight process inputs must have editable supplemental entries");
-        if(factorRow>=0){
-            check(editor.item(factorRow,3)&&editor.item(factorRow,3)->text()==QStringLiteral("最大匝数修正(匝)"),"Winding audit correction must have a supplemental input");
-            editor.item(factorRow,4)->setText("-2");CalcInput edited;editor.saveToInput(edited);
-            check(SchemeStore::toJson(edited).value("hvMaxTurnsAdjust").toDouble()==-2,"Winding audit correction edits must reach calculation input");
-            editor.item(factorRow,4)->setText("0.5");TransformerParams p;QString reason;
-            check(!editor.collectForCalculation(p,edited,reason,false),"Winding audit fractional correction must fail UI validation");
-            editor.item(factorRow,4)->setText("-1");
-        }
-        if(allowanceRow>=0&&factorRow>=0){editor.item(allowanceRow,2)->setText("4");editor.item(factorRow,2)->setText("5250");CalcInput saved;editor.saveToInput(saved);const auto json=SchemeStore::toJson(saved);check(json.value("centerDistanceAllowance_mm").toDouble()==4&&json.value("hvLayerInsulCalcFactor").toDouble()==5250,"Core weight edited process inputs must reach saved calculation input");editor.item(factorRow,2)->setText("");TransformerParams p;QString error;check(!editor.collectForCalculation(p,saved,error,false),"Core weight blank process input must block confirmation");}
-        editor.loadParamsForConfig(TransformerParams{},StructureConfig{},input,false,true);CalcInput ordinary;editor.saveToInput(ordinary);const auto json=SchemeStore::toJson(ordinary);
-        check(json.value("centerDistanceAllowance_mm").toDouble()==1&&json.value("hvLayerInsulCalcFactor").toDouble()==5300,"Core weight process parameters must survive ordinary mode without visible advanced inputs");
-        check(json.value("hvMaxTurnsAdjust").toDouble()==-1&&SchemeStore::toJson(SchemeStore::fromJson({})).value("hvMaxTurnsAdjust").toDouble(-99)==0,"Winding audit correction must survive ordinary mode and preserve old defaults");
     }
     CalcResult baseline;
     check(engine.calcElectromagnetic(CalcInput{}, baseline) && baseline.valid,
@@ -328,31 +252,17 @@ int main(int argc, char **argv)
         .arg(baseline.winding.loadLoss_W, 0, 'g', 16).arg(baseline.impedance.impedance_pct, 0, 'g', 16)
         .arg(baseline.thermal.oilTopRise_K, 0, 'g', 16);
     {
-        const struct WidthFixture {double diameter,straight,angle;double offsets[11],supplements[4],widths[11],stacks[11];} fixtures[]={
-            {170,103,18,{0,5,15,25,45,60,90,130,120,110,100},{90,80,60,0},{180,175,170,165,160,150,140,130,120,110,100},{36,15,11,9,9,12,8,6,6,4,4}},
-            {165,102,19,{0,10,20,35,55,70,90,130,120,110,100},{80,60,0,0},{175,170,165,160,155,150,140,130,120,110,100},{42,12,10,8,7,6,10,7,6,4,5}},
-            {170,136,22,{0,10,25,40,60,80,100,145,135,120,110},{90,80,60,0},{190,185,180,175,170,165,155,145,135,120,110},{43,13,11,9,8,7,12,9,8,8,5}}
-        };
-        for(const auto &fixture:fixtures){
-            auto json=SchemeStore::toJson(CalcInput{});QJsonArray offsets;
-            for(double value:fixture.offsets)offsets.append(value);
-            for(double value:fixture.supplements)offsets.append(value);
-            while(offsets.size()<20)offsets.append(0);
-            json.insert("coreWidthOffsets_mm",offsets);json.insert("coreDiameter_mm",fixture.diameter);
-            json.insert("coreStraight_mm",fixture.straight);json.insert("ellipseAngle_deg",fixture.angle);
-            const auto input=SchemeStore::fromJson(json);CoreResult geometry;QString error;
-            const bool ok=ElectromagneticEngine::previewCoreGeometry(input,geometry,error);
-            check(ok,"Width correction fixtures must produce valid geometry");
-            if(ok)for(int i=0;i<11;++i){
-                check(geometry.widths_mm[i]==fixture.widths[i],"Width corrections must reproduce original workbook column formulas");
-                check(geometry.stacks_mm[i]==fixture.stacks[i],"Width corrections must drive workbook geometric half-stack recursion");
-            }
-            const auto saved=SchemeStore::toJson(input).value("coreWidthOffsets_mm").toArray();
-            check(saved==offsets,"Width corrections must survive scheme round trip");
+        // Keep the unaffected default geometry as an independent regression.
+        CoreResult geometry;QString error;
+        const bool ok=ElectromagneticEngine::previewCoreGeometry(CalcInput{},geometry,error);
+        check(ok,"Default core geometry must remain available");
+        const double widths[]={180,175,170,165,160,150,140,130,120,110,100};
+        const double stacks[]={36,15,11,9,9,12,8,6,6,4,4};
+        if(ok)for(int i=0;i<11;++i){
+            check(geometry.widths_mm[i]==widths[i],"Default stage widths must retain their independent baseline");
+            check(geometry.stacks_mm[i]==stacks[i],"Default half-stacks must retain their independent baseline");
         }
-        auto widthJson=SchemeStore::toJson(CalcInput{});QJsonArray widthOffsets;
-        for(double v:{0.,10.,15.,25.,45.,60.,90.,130.,120.,110.,100.,90.,80.,60.,0.,0.,0.,0.,0.,0.})widthOffsets.append(v);
-        widthJson.insert("coreWidthOffsets_mm",widthOffsets);const auto widthInput=SchemeStore::fromJson(widthJson);
+        const auto widthJson=SchemeStore::toJson(CalcInput{});
         for(const auto change:{qMakePair(QString("coreDiameter_mm"),175.0),qMakePair(QString("coreStraight_mm"),110.0),qMakePair(QString("ellipseAngle_deg"),20.0)}){
             auto json=widthJson;json.insert(change.first,change.second);const auto input=SchemeStore::fromJson(json);
             CoreResult geometry;QString error;const bool ok=ElectromagneticEngine::previewCoreGeometry(input,geometry,error);
@@ -363,182 +273,59 @@ int main(int argc, char **argv)
             const double flat=std::round(input.coreStraight_mm/2/std::tan(radians)),junction=std::round(radius*std::sin(radians));
             double cumulative=0;
             for(int i=0;i<11&&i<bases.size();++i){
-                const double width=bases[i]+widthOffsets.at(i).toDouble();
-                check(geometry.widths_mm[i]==width,"Geometry changes must rerun lookup plus saved offsets");
+                const double width=bases[i]+CalcInput::coreWidthOffsets_mm[i];
+                check(geometry.widths_mm[i]==width,"Geometry changes must rerun lookup plus fixed default offsets");
                 const double arc=std::sqrt(radius*radius-std::pow(width/2+flat,2));
                 const double candidate=(i==0||arc<=junction)?arc:std::sqrt(std::pow(input.coreDiameter_mm/2,2)-std::pow(width/2,2))+input.coreStraight_mm/2;
                 const double stack=std::round(candidate-cumulative);cumulative+=stack;
                 check(geometry.stacks_mm[i]==stack,"Geometric half-stacks must follow original recursive formula after driver changes");
             }
         }
-        QVector<double> circleOffsets;for(const auto &value:widthOffsets)circleOffsets.append(value.toDouble());
-        const auto circle=CoreLaminationPreview::calculate(StructureConfig::Circle,170,0,DesignDatabase::instance().coreRows(),circleOffsets);
+        const auto circle=CoreLaminationPreview::calculate(StructureConfig::Circle,170,0,DesignDatabase::instance().coreRows());
         QVector<double> circleBases;DesignDatabase::instance().coreWidths(170,circleBases);
-        check(circle.available && circle.stages[1].width_mm==circleBases[1]+10,
-              "Independent circle preview must use the same saved width offsets");
-        CalcResult widthChanged;check(engine.calcElectromagnetic(widthInput,widthChanged,true),"Changed width must remain calculable");
-        check(widthChanged.core.widths_mm[1]==180 && widthChanged.core.stacks_mm[1]==0
-                  && widthChanged.core.coreAreaActual_cm2!=baseline.core.coreAreaActual_cm2,
-              "Changed width input must recalculate geometry and actual section");
-        for(const auto bad:{QJsonValue("bad"),QJsonValue(QJsonArray{})}){
-            auto json=widthJson;json.insert("coreWidthOffsets_mm",bad);CalcResult result;
-            check(!engine.calcElectromagnetic(SchemeStore::fromJson(json),result),"Malformed width correction must not silently fall back");
-        }
-        auto badGeometry=widthJson;auto impossible=widthOffsets;impossible.replace(0,10000);
-        badGeometry.insert("coreWidthOffsets_mm",impossible);CoreResult invalid;QString invalidReason;
-        check(!ElectromagneticEngine::previewCoreGeometry(SchemeStore::fromJson(badGeometry),invalid,invalidReason),
-              "Impossible corrected widths must fail rather than clamp or reuse old geometry");
-        ParamTableWidget widthEditor;widthEditor.loadParamsForConfig(TransformerParams{},StructureConfig{},widthInput,true,true);
-        int widthRow=-1;for(int row=0;row<widthEditor.rowCount();++row)
-            if(widthEditor.item(row,3)&&widthEditor.item(row,3)->text()==QStringLiteral("第2级片宽修正(mm)"))widthRow=row;
-        check(widthRow>=0,"Width corrections need an editable craft input");
-        if(widthRow>=0){
-            widthEditor.item(widthRow,4)->setText("6");CalcInput captured;widthEditor.saveToInput(captured);
-            check(SchemeStore::toJson(captured).value("coreWidthOffsets_mm").toArray().at(1).toDouble()==6,
-                  "Width edit must reach stored calculation input");
-            widthEditor.loadParamsForConfig(TransformerParams{},StructureConfig{},widthInput,false,true);
-            CalcInput ordinary;widthEditor.saveToInput(ordinary);
-            check(SchemeStore::toJson(ordinary).value("coreWidthOffsets_mm").toArray()==widthOffsets,
-                  "Ordinary mode must retain saved width correction settings");
-        }
-        auto oldJson=SchemeStore::toJson(CalcInput{});oldJson.remove("coreSheetCountAdjust");oldJson.remove("coreWidthOffsets_mm");
-        const auto legacyCore = SchemeStore::toJson(SchemeStore::fromJson(oldJson));
-        const auto defaults = legacyCore.value("coreSheetCountAdjust").toArray();
-        check(defaults.size() == 20 && defaults.at(11).toInt() == 2 && defaults.at(12).toInt() == -1,
-              "Core sheet adjustments must preserve legacy +2/-1 defaults");
-        const auto withAdjustment = [](int first, int diameter, int seams) {
-            auto json = SchemeStore::toJson(CalcInput{});
-            QJsonArray adjust;
-            for (int j=0;j<16;++j) adjust.append(j==0 ? first : (j==11 ? 2 : (j==12 ? -1 : 0)));
-            json.insert("coreSheetCountAdjust", adjust);
-            json.insert("coreDiameter_mm", diameter);
-            json.insert("seamCount", seams);
-            return SchemeStore::fromJson(json);
-        };
-        for (const auto pair : {qMakePair(170,5), qMakePair(175,5), qMakePair(170,6)}) {
-            CalcResult original, changed;
-            const auto before = withAdjustment(0,pair.first,pair.second);
-            const auto after = withAdjustment(10,pair.first,pair.second);
-            const bool validBefore=engine.calcElectromagnetic(before,original,true);
-            const bool validAfter=engine.calcElectromagnetic(after,changed,true);
-            check(validBefore && validAfter,"Core adjustment fixtures must be calculable at different diameters/seams");
-            if (!validBefore || !validAfter) continue;
-            const double expectedDelta=original.core.widths_mm[0] * (2.0*0.18*pair.second*10.0) * before.stackFactor / 200.0;
-            check(std::abs(changed.core.coreAreaActual_cm2-original.core.coreAreaActual_cm2-expectedDelta)<1e-7,
-                  "Core sheet adjustment must drive actual section using current diameter and seam count");
-            check(changed.core.coreWeight_kg>original.core.coreWeight_kg
-                      && changed.cost.steelCost>original.cost.steelCost
-                      && changed.core.fluxDensity_coreActual_T<original.core.fluxDensity_coreActual_T,
-                  "Core sheet adjustment must recalculate mass, steel cost and flux rather than patch final output");
-            const auto key=QStringLiteral("CoreSheetCount1");
-            const auto it=changed.calculationSheetDetails.constFind(key);
-            const double baseCount=std::ceil((2.0*changed.core.stacks_mm[0])/pair.second/0.18/2.0)*2.0;
-            check(it!=changed.calculationSheetDetails.cend() && it.value().first==baseCount+10,
-                  "Core sheet count snapshot must expose the applied adjustment");
-        }
-        for (const auto bad : {QJsonValue(0.5),QJsonValue("bad"),QJsonValue(QJsonValue::Null)}) {
-            auto json=SchemeStore::toJson(CalcInput{}); QJsonArray adjust;
-            for(int j=0;j<16;++j) adjust.append(j==0 ? bad : QJsonValue(0));
-            json.insert("coreSheetCountAdjust",adjust);
-            CalcResult rejected;
-            check(!engine.calcElectromagnetic(SchemeStore::fromJson(json),rejected),
-                  "Malformed core sheet adjustments must not silently fall back");
-        }
-        auto reservedJson=SchemeStore::toJson(CalcInput{});
-        QJsonArray reservedAdjust,reservedSteps;
-        for(int j=0;j<20;++j){
-            reservedAdjust.append(j==16 ? 7 : (j==11 ? 2 : (j==12 ? -1 : 0)));
-            reservedSteps.append(j<16 ? CalcInput{}.yokeSteps_mm[j] : (j==16 ? 12.5 : 0.0));
-        }
-        reservedJson.insert("coreSheetCountAdjust",reservedAdjust);
+        check(circle.available && circle.stages[1].width_mm==circleBases[1]+CalcInput::coreWidthOffsets_mm[1],
+              "Independent circle preview must use the same default width offsets");
+        auto reservedJson=SchemeStore::toJson(CalcInput{});QJsonArray reservedSteps;
+        for(int j=0;j<20;++j)reservedSteps.append(j==16?12.5:CalcInput{}.yokeSteps_mm[j]);
         reservedJson.insert("yokeSteps_mm",reservedSteps);
         const auto reservedInput=SchemeStore::fromJson(reservedJson);
-        const auto reservedSaved=SchemeStore::toJson(reservedInput);
-        const auto savedAdjust=reservedSaved.value("coreSheetCountAdjust").toArray();
-        const auto savedSteps=reservedSaved.value("yokeSteps_mm").toArray();
-        check(savedAdjust.size()==20 && savedSteps.size()==20
-                  && savedAdjust.at(16).toInt()==7 && savedSteps.at(16).toDouble()==12.5,
-              "Twenty-level core craft reserves must survive scheme round trip");
-        CalcResult reservedResult;
-        check(engine.calcElectromagnetic(reservedInput,reservedResult,true)
-                  && reservedResult.core.coreWeight_kg==baseline.core.coreWeight_kg
-                  && reservedResult.cost.materialCost==baseline.cost.materialCost
-                  && reservedResult.core.noLoadLoss_W==baseline.core.noLoadLoss_W,
-              "Reserved stages without geometry must not change calculated mass loss or price");
+        check(SchemeStore::toJson(reservedInput).value("yokeSteps_mm").toArray()==reservedSteps,
+              "Twenty-level real yoke steps must survive scheme round trip");
         ParamTableWidget reserveEditor;
         reserveEditor.loadParamsForConfig(TransformerParams{},StructureConfig{},reservedInput,true,true);
         int reserveRow=-1;
         for(int row=0;row<reserveEditor.rowCount();++row)
-            if(reserveEditor.item(row,3)&&reserveEditor.item(row,3)->text()==QStringLiteral("第20级片数修正(片)"))reserveRow=row;
-        check(reserveRow>=0,"Core craft input must expose twenty levels");
+            if(reserveEditor.item(row,1)&&reserveEditor.item(row,1)->text()==QStringLiteral("轭阶梯 20 外伸半宽(mm)"))reserveRow=row;
+        check(reserveRow>=0,"Real yoke step inputs must expose twenty levels");
         if(reserveRow>=0){
-            reserveEditor.item(reserveRow,2)->setText("8.5");reserveEditor.item(reserveRow,4)->setText("4");
-            CalcInput saved;reserveEditor.saveToInput(saved);const auto json=SchemeStore::toJson(saved);
-            check(json.value("yokeSteps_mm").toArray().size()==20
-                      && json.value("yokeSteps_mm").toArray().at(19).toDouble()==8.5
-                      && json.value("coreSheetCountAdjust").toArray().at(19).toInt()==4,
-                  "Twentieth-level input edits must reach saved scheme");
+            reserveEditor.item(reserveRow,2)->setText("8.5");
+            CalcInput edited;reserveEditor.saveToInput(edited);
+            check(SchemeStore::toJson(edited).value("yokeSteps_mm").toArray().at(19).toDouble()==8.5,
+                  "Twentieth-level yoke step edits must reach the saved scheme");
         }
         reserveEditor.loadParamsForConfig(TransformerParams{},StructureConfig{},reservedInput,false,true);
         CalcInput ordinaryReserve;reserveEditor.saveToInput(ordinaryReserve);
-        const auto ordinaryJson=SchemeStore::toJson(ordinaryReserve);
-        check(ordinaryJson.value("yokeSteps_mm").toArray().size()==20
-                  && ordinaryJson.value("yokeSteps_mm").toArray().at(16).toDouble()==12.5
-                  && ordinaryJson.value("coreSheetCountAdjust").toArray().at(16).toInt()==7,
-              "Ordinary mode must preserve both twenty-level reserve fields");
-        CalcResult rejected;
-        for(const auto badContainer : {QJsonValue("bad"),QJsonValue(QJsonArray{})}) {
-            auto badJson=SchemeStore::toJson(CalcInput{});badJson.insert("coreSheetCountAdjust",badContainer);
-            check(!engine.calcElectromagnetic(SchemeStore::fromJson(badJson),rejected),
-                  "Explicit malformed core adjustment containers cannot use legacy defaults");
-        }
-        check(!engine.calcElectromagnetic(withAdjustment(-1000000,170,5),rejected),
-              "Nonpositive adjusted sheet count must block calculation");
-        ParamTableWidget coreEditor;
-        coreEditor.loadParamsForConfig(TransformerParams{},StructureConfig{},withAdjustment(3,170,5),true,true);
-        int adjustmentRow=-1;
-        for(int row=0;row<coreEditor.rowCount();++row)
-            if(coreEditor.item(row,3) && coreEditor.item(row,3)->text()==QStringLiteral("第1级片数修正(片)")) adjustmentRow=row;
-        check(adjustmentRow>=0,"Core sheet adjustment must have an editable supplemental input");
-        if(adjustmentRow>=0) {
-            coreEditor.item(adjustmentRow,4)->setText("7");
-            CalcInput collected;coreEditor.saveToInput(collected);
-            check(SchemeStore::toJson(collected).value("coreSheetCountAdjust").toArray().at(0).toInt()==7,
-                  "Edited core adjustment must survive input collection and scheme JSON");
-            coreEditor.item(adjustmentRow,4)->setText("0.5");
-            TransformerParams params;QString reason;
-            check(!coreEditor.collectForCalculation(params,collected,reason,false),
-                  "Fractional core sheet adjustment must block UI confirmation");
-            coreEditor.loadParamsForConfig(TransformerParams{},StructureConfig{},withAdjustment(7,170,5),false,true);
-            CalcInput ordinary;coreEditor.saveToInput(ordinary);
-            check(SchemeStore::toJson(ordinary).value("coreSheetCountAdjust").toArray().at(0).toInt()==7,
-                  "Ordinary mode must preserve saved core adjustments even without advanced editors");
-        }
-        auto zeroJson=SchemeStore::toJson(CalcInput{});QJsonArray zeroAdjust;
-        for(int j=0;j<16;++j)zeroAdjust.append(0);
-        zeroJson.insert("coreSheetCountAdjust",zeroAdjust);
-        const auto noAdjust=SchemeStore::fromJson(zeroJson);CalcResult zeroResult;
-        check(engine.calcElectromagnetic(noAdjust,zeroResult,true)
-                  && zeroResult.calculationSheetDetails.value("CoreSheetAdjust12").first==0
-                  && zeroResult.calculationSheetDetails.value("CoreSheetCount12").first
-                        ==zeroResult.calculationSheetDetails.value("CoreSheetBase12").first,
-              "Explicit zero must disable the old supplemental +2 correction");
-        CalcResult snapshot;const auto adjusted=withAdjustment(3,170,5);
-        check(engine.calcElectromagnetic(adjusted,snapshot,true),"Prepare adjusted sheet snapshot");
-        CalcResult lightweight;
-        check(engine.calcElectromagnetic(adjusted,lightweight,false)
-                  && lightweight.cost.materialCost==snapshot.cost.materialCost
-                  && lightweight.core.coreWeight_kg==snapshot.core.coreWeight_kg
-                  && lightweight.core.noLoadLoss_W==snapshot.core.noLoadLoss_W
-                  && !lightweight.calculationSheetDetails.contains(QStringLiteral("CoreSheetCount1")),
-              "Optimizer calculation must apply identical core adjustments without generating display snapshots");
-        SchemeCalculationSheet popup(TransformerParams{},StructureConfig{},adjusted,snapshot,true);
+        check(SchemeStore::toJson(ordinaryReserve).value("yokeSteps_mm").toArray()==reservedSteps,
+              "Ordinary mode must preserve real yoke step reserves");
+        CalcResult snapshot,lightweight;
+        check(engine.calcElectromagnetic(reservedInput,snapshot,true)
+                  &&snapshot.core.coreWeight_kg==baseline.core.coreWeight_kg
+                  &&snapshot.cost.materialCost==baseline.cost.materialCost
+                  &&snapshot.core.noLoadLoss_W==baseline.core.noLoadLoss_W,
+              "Reserved yoke stages without geometry must not change mass loss or price");
+        check(engine.calcElectromagnetic(reservedInput,lightweight,false)
+                  &&lightweight.cost.materialCost==snapshot.cost.materialCost
+                  &&lightweight.core.coreWeight_kg==snapshot.core.coreWeight_kg
+                  &&lightweight.core.noLoadLoss_W==snapshot.core.noLoadLoss_W
+                  &&!lightweight.calculationSheetDetails.contains(QStringLiteral("CoreSheetCount1")),
+              "Optimizer must use the same fixed sheet counts without display snapshots");
+        SchemeCalculationSheet popup(TransformerParams{},StructureConfig{},reservedInput,snapshot,true);
         auto *supplement=popup.findChild<QPushButton *>(QStringLiteral("supplementParametersButton"));
-        check(supplement,"Adjusted sheet needs supplement entry");
+        check(supplement,"Unified sheet needs supplement entry");
         if(supplement){
             QTimer::singleShot(0,[&]{
                 auto *dialog=qobject_cast<QDialog *>(QApplication::activeModalWidget());
-                check(dialog,"Core adjustment supplement must open");if(!dialog)return;
+                check(dialog,"Core detail supplement must open");if(!dialog)return;
                 auto *details=dialog->findChild<QTextBrowser *>(QStringLiteral("supplementDetails"));
                 check(details && details->toPlainText().contains(QStringLiteral("铁芯逐级片数与实际叠厚"))
                           && details->toPlainText().contains(QStringLiteral("查表基数")),
@@ -552,48 +339,20 @@ int main(int argc, char **argv)
                     check(details->toPlainText().contains(QStringLiteral("铁芯分项重量核对"))&&details->toPlainText().contains(QStringLiteral("中心距附加量")),"Core weight details must expose stage masses and process settings");
                     if(!path.isEmpty()){details->find(QStringLiteral("铁芯分项重量核对"));details->verticalScrollBar()->setValue(details->verticalScrollBar()->value()+details->viewport()->height()-40);QApplication::processEvents();check(dialog->grab().save(QString(path).replace(".png","-weights.png")),"Capture core weight details");}
                 }
-                if(auto *tabs=dialog->findChild<QTabWidget *>())tabs->setCurrentIndex(0);
-                auto *source=popup.inputTable();int firstRow=-1;
-                for(int row=0;row<source->rowCount();++row)
-                    if(source->item(row,3)&&source->item(row,3)->text()==QStringLiteral("第1级片数修正(片)"))firstRow=row;
-                check(firstRow>=0 && !source->isRowHidden(firstRow),"Core adjustment input must be visible in the real supplement dialog");
-                if(firstRow>=0){source->scrollToItem(source->item(firstRow,4),QAbstractItemView::PositionAtTop);QApplication::processEvents();}
-                if(!path.isEmpty())check(dialog->grab().save(QString(path).replace(".png","-inputs.png")),"Capture core adjustment editor");
-                int widthStart=-1;
-                for(int row=0;row<source->rowCount();++row)
-                    if(source->item(row,1)&&source->item(row,1)->text()==QStringLiteral("第1级片宽修正(mm)"))widthStart=row;
-                check(widthStart>=0&&!source->isRowHidden(widthStart),"Width corrections must be accessible in the real supplement dialog");
-                if(widthStart>=0){source->scrollToItem(source->item(widthStart,2),QAbstractItemView::PositionAtTop);QApplication::processEvents();}
-                if(!path.isEmpty())check(dialog->grab().save(QString(path).replace(".png","-width-inputs.png")),"Capture width correction editors");
-                int tankStart=-1;for(int row=0;row<source->rowCount();++row)if(source->item(row,1)&&source->item(row,1)->text()==QStringLiteral("630档箱沿高(mm)"))tankStart=row;
-                check(tankStart>=0&&!source->isRowHidden(tankStart),"Tank audit supplemental process fields must be visible");
-                if(tankStart>=0){source->scrollToItem(source->item(tankStart,2),QAbstractItemView::PositionAtTop);QApplication::processEvents();if(!path.isEmpty())check(dialog->grab().save(QString(path).replace(".png","-tank-inputs.png")),"Capture tank process editor");}
-                int thermalStart=-1;for(int row=0;row<source->rowCount();++row)if(source->item(row,1)&&source->item(row,1)->text()==QStringLiteral("温升公式版本"))thermalStart=row;
-                check(thermalStart>=0,"Thermal selectors must remain visible in real supplement dialog");
-                if(thermalStart>=0){source->scrollToItem(source->item(thermalStart,2),QAbstractItemView::PositionAtTop);QApplication::processEvents();if(!path.isEmpty())check(dialog->grab().save(QString(path).replace(".png","-thermal-inputs.png")),"Capture thermal formula editors");}
-                int areaStart=-1;for(int row=0;row<source->rowCount();++row)if(source->item(row,1)&&source->item(row,1)->text()==QStringLiteral("设计截面来源"))areaStart=row;
-                check(areaStart>=0,"Design area source must remain visible in actual supplement dialog");
-                if(areaStart>=0){source->scrollToItem(source->item(areaStart,2),QAbstractItemView::PositionAtTop);QApplication::processEvents();if(!path.isEmpty())check(dialog->grab().save(QString(path).replace(".png","-area-inputs.png")),"Capture design area selector");}
-                int lossStart=-1;for(int row=0;row<source->rowCount();++row)if(source->item(row,1)&&source->item(row,1)->text()==QStringLiteral("单位铁损来源"))lossStart=row;
-                check(lossStart>=0&&!source->isRowHidden(lossStart),"No load audit source controls must be visible in supplement dialog");
-                int manualYokeRow=-1;for(int row=0;row<source->rowCount();++row)if(source->item(row,1)&&source->item(row,1)->text()==QStringLiteral("铁轭铁损(W/kg)"))manualYokeRow=row;
-                check(manualYokeRow>=0&&!source->isRowHidden(manualYokeRow),"No load audit manual yoke entry must remain reachable before switching from curve mode");
-                if(lossStart>=0){source->scrollToItem(source->item(lossStart,2),QAbstractItemView::PositionAtTop);QApplication::processEvents();if(!path.isEmpty())check(dialog->grab().save(QString(path).replace(".png","-loss-inputs.png")),"Capture unit loss source editor");}
                 dialog->accept();
             });
             supplement->click();
         }
     }
     {
-        auto json = SchemeStore::toJson(CalcInput{});
-        json.insert(QStringLiteral("oilTopCorrection_K"), 9.0);
-        const auto custom = SchemeStore::fromJson(json);
-        check(SchemeStore::toJson(custom).value(QStringLiteral("oilTopCorrection_K")).toDouble() == 9.0,
-              "Oil top correction must survive scheme storage");
-        CalcResult updated;
-        check(engine.calcElectromagnetic(custom, updated, true) && updated.valid
-                  && std::abs(updated.thermal.oilTopRise_K - baseline.thermal.oilTopRise_K - 3.0) < 0.001,
-              "Oil top correction must affect computed oil top temperature");
+        auto json=SchemeStore::toJson(CalcInput{});
+        json.insert(QStringLiteral("oilTopCorrection_K"),9.0);
+        const auto restored=SchemeStore::fromJson(json);CalcResult updated;
+        check(!SchemeStore::toJson(restored).contains(QStringLiteral("oilTopCorrection_K")),
+              "Saving must omit the obsolete oil top correction");
+        check(engine.calcElectromagnetic(restored,updated,true)&&updated.valid
+                  &&updated.thermal.oilTopRise_K==baseline.thermal.oilTopRise_K,
+              "Legacy oil top correction must not change unified temperatures");
     }
     for (const auto key : {QStringLiteral("coreShape"), QStringLiteral("yokeShape")}) {
         for (const auto malformed : {QJsonValue(QJsonValue::Null), QJsonValue(true),
@@ -996,7 +755,7 @@ int main(int argc, char **argv)
     // Compare the popup's tank edits and current results with workbook formulas.
     {
         struct TankCase { const char *address; const char *value; };
-        const TankCase cases[]={{"F24","100"},{"H25","80"},{"J23","23"},{"J26","330"},{"L51","9"}};
+        const TankCase cases[]={{"F24","100"},{"H25","80"},{"J23","23"},{"J26","330"}};
         const auto roundTo=[](double value,double scale) {return std::round(value*scale)/scale;};
         for (const auto &testCase : cases) {
             SchemeCalculationSheet sample(TransformerParams{}, StructureConfig{}, CalcInput{}, detailed, true);
@@ -1006,24 +765,17 @@ int main(int argc, char **argv)
             if(!grid)continue;
             const QString addr=QString::fromLatin1(testCase.address);
             const QString val=QString::fromLatin1(testCase.value);
-            if(addr==QStringLiteral("L51")) {
-                auto *cell=grid->item(50,11);
-                check(cell && cell->flags().testFlag(Qt::ItemIsEditable),"L51 must remain editable");
-                if(!cell)continue;
-                cell->setText(val);
-            } else {
-                auto *edit=sample.findChild<QLineEdit *>(QStringLiteral("tankInput_")+addr);
-                check(edit != nullptr,"Tank dimension editor missing");
-                if(!edit)continue;
-                edit->setText(val);
-                QMetaObject::invokeMethod(edit,"textEdited",Qt::DirectConnection,Q_ARG(QString,val));
-            }
+            auto *edit=sample.findChild<QLineEdit *>(QStringLiteral("tankInput_")+addr);
+            check(edit != nullptr,"Tank dimension editor missing");
+            if(!edit)continue;
+            edit->setText(val);
+            QMetaObject::invokeMethod(edit,"textEdited",Qt::DirectConnection,Q_ARG(QString,val));
             CalcInput input; sample.inputTable()->saveToInput(input);
             const double expected=val.toDouble();
             const double collected=addr==QStringLiteral("F24")?input.tankSideClear_mm
                 :addr==QStringLiteral("H25")?input.tankEndClear_mm
                 :addr==QStringLiteral("J23")?input.tankBottomOil_mm
-                :addr==QStringLiteral("J26")?input.tankFoot_mm:input.oilTopCorrection_K;
+                :input.tankFoot_mm;
             check(std::abs(collected-expected)<0.00001,"Edited tank input did not reach calculation");
             CalcResult result;
             const bool ok=engine.calcElectromagnetic(input,result,true)&&result.valid;
@@ -1359,24 +1111,22 @@ int main(int argc, char **argv)
               "Production theme must render the high-voltage duct cell magenta");
         linked.hide();
         const auto *oilCorrection=linkedGrid->item(50,11);
-        check(oilCorrection && oilCorrection->flags().testFlag(Qt::ItemIsEditable),
-              "Oil top correction L51 must be editable");
+        check(oilCorrection && !oilCorrection->flags().testFlag(Qt::ItemIsEditable),
+              "Fixed oil top correction L51 must be read-only");
         check(linkedGrid->item(7,35) && linkedGrid->item(7,35)->flags().testFlag(Qt::ItemIsEditable),
               "Reference flux must be editable beside the LV turns");
-        linkedGrid->item(50,11)->setText(QStringLiteral("9"));
         linkedGrid->item(29,23)->setText(QStringLiteral("5"));
         linkedGrid->item(7,35)->setText(QStringLiteral("1.65"));
         CalcInput sheetEdit;
         linked.inputTable()->saveToInput(sheetEdit);
         const auto savedInput = SchemeStore::toJson(sheetEdit);
-        check(savedInput.value("oilTopCorrection_K").toDouble() == 9.0
-                  && sheetEdit.hvDuctWidthSide[0] == 5.0 && sheetEdit.refFluxDens_T == 1.65,
-              "Editing original-sheet inputs must update the collected scheme");
-        const auto restoredEdit = SchemeStore::fromJson(savedInput);
-        check(restoredEdit.oilTopCorrection_K == 9.0 && restoredEdit.hvDuctWidthSide[0] == 5.0
-                  && restoredEdit.refFluxDens_T == 1.65,
-              "Changed correction, oil duct and reference flux must survive save/reload");
-        linkedGrid->item(50,11)->setText(QStringLiteral("6"));
+        check(!savedInput.contains("oilTopCorrection_K")
+                  &&sheetEdit.hvDuctWidthSide[0]==5.0&&sheetEdit.refFluxDens_T==1.65,
+              "Real original-sheet inputs must update the scheme without saving fixed defaults");
+        const auto restoredEdit=SchemeStore::fromJson(savedInput);
+        check(restoredEdit.oilTopCorrection_K==6.0&&restoredEdit.hvDuctWidthSide[0]==5.0
+                  &&restoredEdit.refFluxDens_T==1.65,
+              "Oil duct and reference flux must survive save/reload with fixed oil correction");
         linkedGrid->item(29,23)->setText(QStringLiteral("4"));
         linkedGrid->item(7,35)->setText(QStringLiteral("1.7"));
         for(int row:{36,47}) {
