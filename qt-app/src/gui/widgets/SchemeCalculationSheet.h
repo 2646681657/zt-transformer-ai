@@ -16,6 +16,7 @@ class QLabel;
 class QTableWidgetItem;
 class QComboBox;
 class QLineEdit;
+class QPushButton;
 class TankDimensionsPanel;
 class QTextBrowser;
 struct TransformerParams;
@@ -31,6 +32,7 @@ public:
                            QWidget *parent = nullptr);
     bool exportExcel(const QString &path, const CalcInput &input, const TransformerParams &params,
                      const CalcResult &result, QString &error) const;
+    void setSupplementParametersVisible(bool visible);
     void setOutputMode(); // 只读原单，隐藏辅助输入和说明
     void printTo(QPrinter *printer) const;
     ParamTableWidget *inputTable() const { return m_input; }
@@ -85,6 +87,7 @@ private:
     QMultiHash<QString, QTableWidgetItem *> m_resultBindings;
     QPointer<TankDimensionsPanel> m_tankPanel;
     QHash<QTableWidgetItem *, QPointer<QLineEdit>> m_panelInputs;
+    QPushButton *m_supplementButton = nullptr;
     QSet<int> m_supplementRows;
     QStringList m_supplementKeys;
     QPointer<QTextBrowser> m_supplementDetails;

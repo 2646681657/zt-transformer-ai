@@ -26,6 +26,7 @@ public:
     CalcInput currentInput() const { return m_input; }
     // 设置变压器大类和绕组工艺，刷新页面内容
     void setStructureConfig(const StructureConfig &config);
+    bool loadStartupCalculationInput(CalcInput &input, StructureConfig &config, QString &error) const;
 
 signals:
     void navigateToEnterCalc();

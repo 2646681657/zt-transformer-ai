@@ -181,6 +181,18 @@ QWidget *MainDashboardPage::createOptimizeSubPage()
     connect(calcBtn, &QToolButton::clicked, this, &MainDashboardPage::navigateToOptimizeCalc);
     layout->addWidget(calcBtn);
 
+    auto *directBtn = new QToolButton(page);
+    directBtn->setObjectName(QStringLiteral("directCalculationButton"));
+    directBtn->setText(QStringLiteral("直接计算"));
+    directBtn->setIcon(QIcon(":/icons/calculate.svg"));
+    directBtn->setIconSize(calcBtn->iconSize());
+    directBtn->setToolButtonStyle(Qt::ToolButtonTextUnderIcon);
+    directBtn->setFixedSize(calcBtn->size());
+    directBtn->setCursor(Qt::PointingHandCursor);
+    directBtn->setStyleSheet(calcBtn->styleSheet());
+    connect(directBtn, &QToolButton::clicked, this, &MainDashboardPage::directCalculationRequested);
+    layout->addWidget(directBtn);
+
     // "SW参数化出图" 子按钮
     auto *swBtn = new QToolButton(page);
     swBtn->setText(QStringLiteral("SW参数化出图"));
