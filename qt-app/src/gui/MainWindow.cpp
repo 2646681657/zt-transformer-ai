@@ -5,6 +5,7 @@
 #include "pages/EnterCalcPage.h"
 #include "widgets/TransformerTypeDialog.h"
 #include <QScreen>
+#include <QMessageBox>
 #include <QGuiApplication>
 
 MainWindow::MainWindow(QWidget *parent)
@@ -35,6 +36,8 @@ MainWindow::MainWindow(QWidget *parent)
     connect(m_loginPage, &LoginPage::loginSuccess, this, &MainWindow::onLoginSuccess);
     connect(m_dashboardPage, &MainDashboardPage::navigateToOptimizeCalc,
             this, &MainWindow::onOptimizeCalcRequested);
+    connect(m_dashboardPage, &MainDashboardPage::directCalculationRequested,
+            this, &MainWindow::onDirectCalculationRequested);
     connect(m_dashboardPage, &MainDashboardPage::logoutRequested, this, &MainWindow::onLogout);
     connect(m_optimizeCalcPage, &OptimizeCalcPage::navigateToEnterCalc, this, &MainWindow::showEnterCalc);
     connect(m_optimizeCalcPage, &OptimizeCalcPage::navigateBack, this, &MainWindow::showDashboard);
@@ -82,6 +85,19 @@ void MainWindow::onOptimizeCalcRequested()
         m_optimizeCalcPage->setStructureConfig(m_config);
         m_stack->setCurrentWidget(m_optimizeCalcPage);
     }
+}
+
+void MainWindow::onDirectCalculationRequested()
+{
+    CalcInput input;
+    StructureConfig config;
+    QString error;
+    if (!m_optimizeCalcPage->loadStartupCalculationInput(input, config, error)) {
+        QMessageBox::warning(this, QStringLiteral("默认方案无法读取"), error);
+        return;
+    }
+    if (m_enterCalcPage->openDirectCalculation(input, config, this))
+        m_stack->setCurrentWidget(m_enterCalcPage);
 }
 
 void MainWindow::showEnterCalc()

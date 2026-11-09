@@ -1,5 +1,8 @@
 #include <QDir>
+#include <QLayout>
 #include "EnterCalcPage.h"
+#include "MainWindow.h"
+#include "pages/MainDashboardPage.h"
 #include "OptimizeCalcPage.h"
 #include <QComboBox>
 #include <QPushButton>
@@ -47,6 +50,86 @@ int main(int argc, char *argv[])
     QSettings::setDefaultFormat(QSettings::IniFormat);
     QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, settingsDir.path());
     QSettings::setPath(QSettings::IniFormat, QSettings::SystemScope, settingsDir.path());
+    if (app.arguments().contains(QStringLiteral("--direct-calculation"))) {
+        QApplication::setAttribute(Qt::AA_DontUseNativeDialogs);
+        app.setApplicationName(QStringLiteral("ZTBLD-Direct-")+QFileInfo(settingsDir.path()).fileName());
+        OptimizeCalcPage bootstrap;
+        StartupSchemeLibrary::State defaults;
+        QString error;
+        if (!StartupSchemeLibrary::read(StartupSchemeLibrary::path(), bootstrap.currentInput(), defaults, error)
+            || defaults.entries.size() != 3) return 160;
+        defaults.selectedId = defaults.entries[1].id;
+        defaults.entries[1].input.yokeSteps_mm[19] = 27;
+        if (!StartupSchemeLibrary::write(StartupSchemeLibrary::path(), defaults, error)) return 161;
+        MainWindow window;
+        window.show();
+        QMetaObject::invokeMethod(&window, "onLoginSuccess", Qt::DirectConnection);
+        auto *dashboard = window.findChild<MainDashboardPage *>();
+        auto *calcPage = window.findChild<EnterCalcPage *>();
+        if (!dashboard || !calcPage) return 162;
+        for (auto *button : dashboard->findChildren<QToolButton *>()) {
+            if (button->isVisible() && button->text() == QStringLiteral("优化设计")) {
+                button->click();
+                break;
+            }
+        }
+        auto *direct = dashboard->findChild<QToolButton *>("directCalculationButton");
+        if (!direct || !direct->isVisible()) return 163;
+        auto *layout = direct->parentWidget()->layout();
+        const auto *nextItem = layout->itemAt(layout->indexOf(direct) + 1);
+        auto *next = nextItem ? qobject_cast<QToolButton *>(nextItem->widget()) : nullptr;
+        if (!next || next->text() != QStringLiteral("SW参数化出图")) return 167;
+        const QString savedPath = settingsDir.filePath(QStringLiteral("direct-scheme.json"));
+        bool saved = false;
+        bool confirmed = false;
+        CalcInput result;
+        QObject::connect(calcPage, &EnterCalcPage::schemeConfirmed, &window,
+            [&](const TransformerParams &, const CalcInput &input, const CalcResult &calculated) {
+                confirmed = calculated.valid;
+                result = input;
+            });
+        for (bool accept : {false, true}) {
+            bool correctDialog = false;
+            QTimer::singleShot(0, &window, [&] {
+                auto *dlg = qobject_cast<QDialog *>(QApplication::activeModalWidget());
+                if (!dlg) return;
+                auto *sheet = dlg->findChild<SchemeCalculationSheet *>();
+                auto *supplement = dlg->findChild<QPushButton *>("supplementParametersButton");
+                auto *confirm = dlg->findChild<QPushButton *>("confirmSchemeButton");
+                auto *save = dlg->findChild<QPushButton *>("saveSchemeLibraryButton");
+                QTableWidget *grid = nullptr;
+                if (sheet) for (auto *table : sheet->findChildren<QTableWidget *>())
+                    if (table->columnCount() == 38) grid = table;
+                correctDialog = dlg->windowTitle() == QStringLiteral("直接计算") && grid && confirm && save
+                    && (!supplement || !supplement->isVisible())
+                    && dlg->findChild<QPushButton *>("exportLinkedExcelButton");
+                if (!correctDialog || !accept) { dlg->reject(); return; }
+                grid->item(11,32)->setText(QStringLiteral("8"));
+                QTimer::singleShot(0, dlg, [&] {
+                    auto *file = qobject_cast<QFileDialog *>(QApplication::activeModalWidget());
+                    if (file) {
+                        file->selectFile(savedPath);
+                        QMetaObject::invokeMethod(file, "accept", Qt::DirectConnection);
+                    }
+                });
+                save->click();
+                bool ok = false;
+                const auto inputs = SchemeStore::loadSchemes(savedPath, &ok);
+                saved = ok && inputs.size() == 1 && inputs.first().lvConnectionBarThicknessText == QStringLiteral("8");
+                confirm->click();
+            });
+            direct->click();
+            if (!correctDialog) return 164;
+            if (!accept && (confirmed || !dashboard->isVisible())) return 165;
+        }
+        auto *tabs = calcPage->findChild<QTabBar *>();
+        if (!saved || !confirmed || !calcPage->isVisible() || !tabs || tabs->currentIndex() != 2
+            || result.capacity_kVA != 400 || result.yokeSteps_mm[19] != 27
+            || result.lvConnectionBarThicknessText != QStringLiteral("8")
+            || !calcPage->findChild<SchemeCalculationSheet *>("outputCalculationSheet")) return 166;
+        QFile::remove(StartupSchemeLibrary::path());
+        return 0;
+    }
     if(app.arguments().contains(QStringLiteral("--startup-schemes"))) {
         app.setApplicationName(QStringLiteral("ZTBLD-Startup-")+QFileInfo(settingsDir.path()).fileName());
         OptimizeCalcPage page;

@@ -178,6 +178,8 @@ if(BUILD_TESTING)
         Qt6::Core Qt6::Widgets Qt6::Gui Qt6::Concurrent Qt6::PrintSupport Qt6::Network
     )
     add_test(NAME enter-calc-page-state COMMAND test-enter-calc-page)
+    add_test(NAME dashboard-direct-calculation COMMAND test-enter-calc-page --direct-calculation)
+    set_tests_properties(dashboard-direct-calculation PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen" TIMEOUT 30)
     add_test(NAME startup-scheme-ui COMMAND test-enter-calc-page --startup-schemes)
     set_tests_properties(startup-scheme-ui PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen" TIMEOUT 35)
     add_test(NAME linked-excel-export COMMAND test-enter-calc-page --worksheet-output)

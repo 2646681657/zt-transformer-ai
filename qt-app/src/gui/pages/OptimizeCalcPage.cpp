@@ -187,6 +187,22 @@ void OptimizeCalcPage::applyStartupScheme(const CalcInput &input,const Structure
     updateHelpPanel();
 }
 
+bool OptimizeCalcPage::loadStartupCalculationInput(CalcInput &input, StructureConfig &config, QString &error) const
+{
+    StartupSchemeLibrary::State state;
+    if (!StartupSchemeLibrary::read(StartupSchemeLibrary::path(), m_builtinDefault, state, error))
+        return false;
+    for (const auto &entry : state.entries) {
+        if (entry.id != state.selectedId) continue;
+        input = entry.input;
+        config = entry.config;
+        if (entry.id == QStringLiteral("builtin-base")) config.calcMode = m_config.calcMode;
+        return true;
+    }
+    error = QStringLiteral("未找到当前启动默认方案。");
+    return false;
+}
+
 void OptimizeCalcPage::restoreStartupScheme()
 {
     StartupSchemeLibrary::State state;QString error;

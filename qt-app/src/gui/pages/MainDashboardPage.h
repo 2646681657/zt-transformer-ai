@@ -35,6 +35,7 @@ protected:
 
 signals:
     void navigateToOptimizeCalc();
+    void directCalculationRequested();
     void logoutRequested();
 
 private slots:

@@ -1616,7 +1616,7 @@ void EnterCalcPage::updatePrintSheet(const TransformerParams &params, const Calc
     m_printLayout->addWidget(m_printSheet, 1);
 }
 
-void EnterCalcPage::setCalcInput(const CalcInput &input)
+void EnterCalcPage::resetCalculationInput(const CalcInput &input)
 {
     m_optSummaryAvailable = false;
     if (m_optRunning) {
@@ -1645,7 +1645,12 @@ void EnterCalcPage::setCalcInput(const CalcInput &input)
     m_printTable->setRowCount(0);
     delete m_printSheet;
     m_printSheet = nullptr;
-    if (!calculationScopeError(m_config, m_params, m_calcInput).isEmpty())
+}
+
+void EnterCalcPage::setCalcInput(const CalcInput &input)
+{
+    resetCalculationInput(input);
+    if (!m_printTable || !calculationScopeError(m_config, m_params, m_calcInput).isEmpty())
         return;
     CalcResult initResult;
     if (m_engine.calcElectromagnetic(m_calcInput, initResult) && initResult.valid) {
@@ -2452,17 +2457,38 @@ void EnterCalcPage::onSchemeSelected(int row)
         return;
     }
 
-    // 方案参数弹窗：可修改该方案设计变量并重算（仅改这一个方案，
-    // 寻优基准 m_calcInput/参数设置页不受影响）；确认后返回本页并点亮行内按钮
-    OptimizeCandidate original = it.value();
+    const auto params = ParamTableWidget::paramsForInput(
+        m_schemeParams.value(schemeIdx, m_params), it->input);
+    editCalculationSheet(it.value(), params, m_config, row, this);
+}
+
+bool EnterCalcPage::openDirectCalculation(const CalcInput &input, const StructureConfig &config, QWidget *parent)
+{
+    if (m_optRunning) {
+        QMessageBox::information(parent, QStringLiteral("寻优进行中"),
+            QStringLiteral("请先结束或停止本轮寻优，再打开直接计算。"));
+        return false;
+    }
+    OptimizeCandidate original;
+    original.input = input;
+    return editCalculationSheet(original, ParamTableWidget::paramsForInput(input.performanceCriteria, input),
+                                config, -1, parent);
+}
+
+bool EnterCalcPage::editCalculationSheet(OptimizeCandidate original, const TransformerParams &originalParams,
+                                        const StructureConfig &config, int row, QWidget *parent)
+{
+    const bool direct = row < 0;
+    const int schemeIdx = original.scheme.schemeIdx;
     const bool needsBarDefaults = original.input.lvConnectionBarThicknessText.trimmed().isEmpty()
         && original.input.lvConnectionBarWidthText.trimmed().isEmpty();
     if (needsBarDefaults) {
         original.input.lvConnectionBarThicknessText = QStringLiteral("6");
         original.input.lvConnectionBarWidthText = QStringLiteral("50");
     }
-    QDialog dlg(this);
-    dlg.setWindowTitle(QStringLiteral("方案计算单 - 方案 %1").arg(schemeIdx));
+    QDialog dlg(parent);
+    dlg.setWindowTitle(direct ? QStringLiteral("直接计算")
+                              : QStringLiteral("方案计算单 - 方案 %1").arg(schemeIdx));
     dlg.setModal(true);
     dlg.setWindowFlags(dlg.windowFlags() | Qt::WindowMinMaxButtonsHint);
     const QSize available = dlg.screen()->availableGeometry().size();
@@ -2471,11 +2497,10 @@ void EnterCalcPage::onSchemeSelected(int row)
     auto *layout = new QVBoxLayout(&dlg);
     layout->setContentsMargins(12, 12, 12, 12);
 
-    const bool proMode = m_config.calcMode == StructureConfig::Professional;
-    const TransformerParams originalParams = ParamTableWidget::paramsForInput(
-        m_schemeParams.value(schemeIdx, m_params), original.input);
-    auto *sheet = new SchemeCalculationSheet(originalParams, m_config, original.input,
+    const bool proMode = config.calcMode == StructureConfig::Professional;
+    auto *sheet = new SchemeCalculationSheet(originalParams, config, original.input,
                                              original.result, proMode, &dlg);
+    if (direct) sheet->setSupplementParametersVisible(false);
     auto *table = sheet->inputTable();
     layout->addWidget(sheet, 1);
 
@@ -2584,27 +2609,16 @@ void EnterCalcPage::onSchemeSelected(int row)
     });
     connect(&autoCalcTimer, &QTimer::timeout, &dlg, [&]() { recalc(false); });
 
-    connect(okBtn, &QPushButton::clicked, this, [&]() {
-        // 子控件未必发出 itemChanged：确认时始终收集、校验并重算。
-        if (!recalc(true)) {
-            return;
-        }
-        OptimizeCandidate updated = original;
-        updated.input = working;
-        updated.result = pendingResult;
-        updated.scheme = makeScheme(schemeIdx, working, pendingResult);
-        m_schemeData.insert(schemeIdx, updated);
-        m_schemeParams.insert(schemeIdx, pendingParams);
-        m_schemeTable->updateResult(row, updated.scheme);
-        m_schemeTable->markRow(row);
-        m_schemeTable->selectRow(row);
-        dlg.accept();
+    connect(okBtn, &QPushButton::clicked, &dlg, [&]() {
+        // 子控件未必发出 itemChanged，确认时收集、校验并重算。
+        if (recalc(true)) dlg.accept();
     });
 
     connect(excelBtn, &QPushButton::clicked, &dlg, [&]() {
         if(!recalc(true))return;
         const QString path=QFileDialog::getSaveFileName(&dlg,QStringLiteral("输出联动计算单Excel"),
-            QStringLiteral("方案%1_计算单.xlsx").arg(schemeIdx),QStringLiteral("Excel工作簿 (*.xlsx)"));
+            direct ? QStringLiteral("直接计算_计算单.xlsx") : QStringLiteral("方案%1_计算单.xlsx").arg(schemeIdx),
+            QStringLiteral("Excel工作簿 (*.xlsx)"));
         if(path.isEmpty())return;
         QString error;
         if(!sheet->exportExcel(path,working,pendingParams,pendingResult,error))
@@ -2613,7 +2627,9 @@ void EnterCalcPage::onSchemeSelected(int row)
             QStringLiteral("已导出原计算单格式、下拉控件与联动公式。请用桌面Excel打开并自动重算，程序结果见“导出说明”表供复核。\n%1").arg(path));
     });
     connect(saveBtn, &QPushButton::clicked, &dlg, [&]() {
-        if (recalc(true)) saveSchemes(&working, schemeIdx, &dlg);
+        if (!recalc(true)) return;
+        if (direct) saveSchemeInputs({working}, pendingParams, &dlg);
+        else saveSchemes(&working, schemeIdx, &dlg);
     });
     connect(cancelBtn, &QPushButton::clicked, &dlg, &QDialog::reject);
     connect(&dlg, &QDialog::finished, &autoCalcTimer, &QTimer::stop);
@@ -2623,7 +2639,25 @@ void EnterCalcPage::onSchemeSelected(int row)
 
     // 默认占满屏幕工作区，保留标题栏、关闭按钮和还原能力。
     dlg.showMaximized();
-    if (dlg.exec() == QDialog::Accepted) confirmSchemeAt(row);
+    if (dlg.exec() != QDialog::Accepted) return false;
+    if (direct) {
+        m_params = pendingParams;
+        m_config = config;
+        resetCalculationInput(working);
+        const int index = appendScheme(working, pendingResult);
+        m_schemeParams.insert(index, pendingParams);
+        row = 0;
+    } else {
+        original.input = working;
+        original.result = pendingResult;
+        original.scheme = makeScheme(schemeIdx, working, pendingResult);
+        m_schemeData.insert(schemeIdx, original);
+        m_schemeParams.insert(schemeIdx, pendingParams);
+        m_schemeTable->updateResult(row, original.scheme);
+    }
+    m_schemeTable->markRow(row);
+    confirmSchemeAt(row);
+    return true;
 }
 
 void EnterCalcPage::onSaveSchemes()
@@ -2652,6 +2686,12 @@ void EnterCalcPage::saveSchemes(const CalcInput *editedInput, int editedIndex, Q
         inputs.append(editedInput && idx == editedIndex ? *editedInput : m_schemeData.value(idx).input);
     }
 
+    saveSchemeInputs(inputs, m_params, dialogParent);
+}
+
+void EnterCalcPage::saveSchemeInputs(const QVector<CalcInput> &inputs, const TransformerParams &params,
+                                    QWidget *dialogParent)
+{
     const QString defaultName = QStringLiteral("schemes_%1.json")
         .arg(QDateTime::currentDateTime().toString(QStringLiteral("yyyyMMdd_HHmm")));
     const QString path = QFileDialog::getSaveFileName(
@@ -2663,9 +2703,9 @@ void EnterCalcPage::saveSchemes(const CalcInput *editedInput, int editedIndex, Q
     if (!SchemeStore::saveSchemes(
             path, inputs,
             QStringLiteral("容量 %1 kVA / 高压 %2 kV / 低压 %3 kV")
-                .arg(m_params.capacity_kVA)
-                .arg(m_params.hvRatedVoltage_kV)
-                .arg(m_params.lvRatedVoltage_kV))) {
+                .arg(params.capacity_kVA)
+                .arg(params.hvRatedVoltage_kV)
+                .arg(params.lvRatedVoltage_kV))) {
         QMessageBox::warning(this, QStringLiteral("保存方案库"),
                              QStringLiteral("保存失败：无法写入文件 %1").arg(path));
         return;

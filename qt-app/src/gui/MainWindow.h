@@ -25,6 +25,7 @@ private slots:
     void showEnterCalc();
     // 弹出类型选择对话框，确认后进入参数设置页
     void onOptimizeCalcRequested();
+    void onDirectCalculationRequested();
 
 private:
     QStackedWidget *m_stack;

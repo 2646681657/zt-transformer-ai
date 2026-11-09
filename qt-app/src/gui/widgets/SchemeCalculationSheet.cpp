@@ -579,6 +579,7 @@ SchemeCalculationSheet::SchemeCalculationSheet(const TransformerParams &params,
     m_an3Status->setWordWrap(true);
     an3Row->addWidget(an3Label); an3Row->addWidget(m_an3Raw); an3Row->addWidget(m_an3Status, 1);
     auto *supplement = new QPushButton(QStringLiteral("补充参数"), this);
+    m_supplementButton = supplement;
     supplement->setObjectName(QStringLiteral("supplementParametersButton"));
     supplement->setToolTip(QStringLiteral("查看计算单辅助表及程序设计输入中未放入主表的参数和计算说明"));
     an3Row->addWidget(supplement);
@@ -1666,6 +1667,11 @@ QString outputWidgetText(QWidget *widget)
     }
     return parts.join(QStringLiteral(" "));
 }
+}
+
+void SchemeCalculationSheet::setSupplementParametersVisible(bool visible)
+{
+    m_supplementButton->setVisible(visible);
 }
 
 void SchemeCalculationSheet::setOutputMode()

@@ -37,6 +37,7 @@ public:
     // 设置设计变量（参数设置页编辑值，未设置时用 SB20-M-630-10 默认值）；
     // 同时刷新输出打印 Tab 初始计算单（构造时不预计算，避免显示默认方案结果）
     void setCalcInput(const CalcInput &input);
+    bool openDirectCalculation(const CalcInput &input, const StructureConfig &config, QWidget *parent);
     // 设置结构配置（参数设置页 Ribbon 选型，寻优与查看弹窗使用）
     void setConfig(const StructureConfig &config) { m_config = config; }
 
@@ -147,6 +148,10 @@ private:
     void setupPrintTab();
     void updatePrintSheet(const TransformerParams &params, const CalcInput &input, const CalcResult &result);
     void saveSchemes(const CalcInput *editedInput, int editedIndex, QWidget *dialogParent);
+    void saveSchemeInputs(const QVector<CalcInput> &inputs, const TransformerParams &params, QWidget *parent);
+    void resetCalculationInput(const CalcInput &input);
+    bool editCalculationSheet(OptimizeCandidate original, const TransformerParams &params,
+                              const StructureConfig &config, int row, QWidget *parent);
     // 竖排"程序选择"导航按钮（点击返回主界面），三个 Tab 各自持有
     QPushButton *createNavButton(QWidget *parent);
     void buildOptimizeRibbon();
