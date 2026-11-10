@@ -96,6 +96,12 @@ void MainWindow::onDirectCalculationRequested()
         QMessageBox::warning(this, QStringLiteral("默认方案无法读取"), error);
         return;
     }
+    TransformerTypeDialog dialog(this);
+    dialog.setInitialConfig(config);
+    if (dialog.exec() != QDialog::Accepted) return;
+
+    config.category = dialog.selectedCategory();
+    config.windingProcess = dialog.selectedProcess();
     if (m_enterCalcPage->openDirectCalculation(input, config, this))
         m_stack->setCurrentWidget(m_enterCalcPage);
 }
