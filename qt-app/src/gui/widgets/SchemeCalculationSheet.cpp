@@ -419,8 +419,12 @@ auto sheetGroups(const CalcResult &result)
     const char *widthCells[] = {"G17","H17","I17","J17","K17","L17","M17","N17","O17","Q17","S17","F19","G19","H19","I19"};
     const char *stackCells[] = {"G18","H18","I18","J18","K18","L18","M18","N18","O18","Q18","S18","F20","G20","H20","I20"};
     for (int i = 0; i < 15; ++i) {
+        // The direct calculation dialog starts without a result. Register every
+        // cell now so the first automatic calculation can refresh it in place.
         if (i < result.core.widths_mm.size()) at(widthCells[i], result.core.widths_mm[i], 0);
+        else original.append({QString::fromLatin1(widthCells[i]), QStringLiteral("—"), QString()});
         if (i < result.core.stacks_mm.size()) at(stackCells[i], result.core.stacks_mm[i], 2);
+        else original.append({QString::fromLatin1(stackCells[i]), QStringLiteral("—"), QString()});
     }
     for (int i = 0; i < 5; ++i) at(qPrintable(QStringLiteral("Z%1").arg(30+i)), result.winding.ductLayerIdx[i], 0);
     original.append({QStringLiteral("C7"), result.testVoltage.highVoltage, QString()});
