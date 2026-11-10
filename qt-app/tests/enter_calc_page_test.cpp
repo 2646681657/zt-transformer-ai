@@ -3,6 +3,7 @@
 #include "EnterCalcPage.h"
 #include "MainWindow.h"
 #include "pages/MainDashboardPage.h"
+#include "widgets/TransformerTypeDialog.h"
 #include "OptimizeCalcPage.h"
 #include <QComboBox>
 #include <QPushButton>
@@ -88,9 +89,18 @@ int main(int argc, char *argv[])
                 confirmed = calculated.valid;
                 result = input;
             });
+        bool typeCancelled = false;
+        QTimer::singleShot(0, &window, [&] {
+            auto *dialog = qobject_cast<TransformerTypeDialog *>(QApplication::activeModalWidget());
+            typeCancelled = dialog != nullptr;
+            if (auto *modal = qobject_cast<QDialog *>(QApplication::activeModalWidget())) modal->reject();
+        });
+        direct->click();
+        if (!typeCancelled || confirmed || !dashboard->isVisible()) return 168;
         for (bool accept : {false, true}) {
             bool correctDialog = false;
-            QTimer::singleShot(0, &window, [&] {
+            bool typeSelected = false;
+            const auto checkSheet = [&] {
                 auto *dlg = qobject_cast<QDialog *>(QApplication::activeModalWidget());
                 if (!dlg) return;
                 auto *sheet = dlg->findChild<SchemeCalculationSheet *>();
@@ -117,9 +127,25 @@ int main(int argc, char *argv[])
                 const auto inputs = SchemeStore::loadSchemes(savedPath, &ok);
                 saved = ok && inputs.size() == 1 && inputs.first().lvConnectionBarThicknessText == QStringLiteral("8");
                 confirm->click();
+            };
+            QTimer::singleShot(0, &window, [&] {
+                auto *dialog = qobject_cast<TransformerTypeDialog *>(QApplication::activeModalWidget());
+                if (!dialog) {
+                    if (auto *modal = qobject_cast<QDialog *>(QApplication::activeModalWidget())) modal->reject();
+                    return;
+                }
+                for (auto *button : dialog->findChildren<QPushButton *>()) {
+                    if (button->text() != QStringLiteral("确定")) continue;
+                    typeSelected = dialog->selectedCategory() == StructureConfig::OilImmersed
+                        && dialog->selectedProcess() == StructureConfig::FoilWound;
+                    QTimer::singleShot(0, &window, checkSheet);
+                    button->click();
+                    return;
+                }
+                dialog->reject();
             });
             direct->click();
-            if (!correctDialog) return 164;
+            if (!typeSelected || !correctDialog) return 164;
             if (!accept && (confirmed || !dashboard->isVisible())) return 165;
         }
         auto *tabs = calcPage->findChild<QTabBar *>();
