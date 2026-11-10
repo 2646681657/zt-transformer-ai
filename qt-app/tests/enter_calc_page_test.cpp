@@ -114,6 +114,19 @@ int main(int argc, char *argv[])
                     && (!supplement || !supplement->isVisible())
                     && dlg->findChild<QPushButton *>("exportLinkedExcelButton");
                 if (!correctDialog || !accept) { dlg->reject(); return; }
+                QEventLoop initialCalculation;
+                QTimer::singleShot(50, &initialCalculation, &QEventLoop::quit);
+                initialCalculation.exec();
+                bool widthReady = false, stackReady = false;
+                grid->item(16, 6)->text().toDouble(&widthReady); // G17
+                grid->item(17, 6)->text().toDouble(&stackReady); // G18
+                if (!widthReady || !stackReady) {
+                    qCritical() << "Direct calculation did not populate G17/G18 after opening"
+                                << grid->item(16, 6)->text() << grid->item(17, 6)->text();
+                    correctDialog = false;
+                    dlg->reject();
+                    return;
+                }
                 grid->item(11,32)->setText(QStringLiteral("8"));
                 QTimer::singleShot(0, dlg, [&] {
                     auto *file = qobject_cast<QFileDialog *>(QApplication::activeModalWidget());
