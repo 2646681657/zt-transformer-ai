@@ -28,10 +28,10 @@ struct CraftConstraints {
         return {};
     }
     QString description() const {
-        if (!enabled) return QStringLiteral("企业工艺未校核：未启用主油道最小宽度；其他制造限值及库存规格待企业资料核对。");
+        if (!enabled) return QStringLiteral("未启用企业主油道最小宽度校核。");
         const QString error = validationError();
         if (!error.isEmpty()) return QStringLiteral("企业工艺配置无效：") + error;
-        return QStringLiteral("企业主油道最小宽度%1 mm，来源：%2；仅校核此项，其他制造限值及库存规格待核对。")
+        return QStringLiteral("企业主油道最小宽度%1 mm，来源：%2。")
             .arg(minimumMainDuct_mm, 0, 'g', 15).arg(source.trimmed());
     }
 };

@@ -415,6 +415,33 @@ bool ParamTableWidget::collectShapePreviewInput(CalcInput &input, QString &error
     return true;
 }
 
+QString ParamTableWidget::boundCellInputError(int row, int column, const QString &text) const
+{
+    const QString key = m_inputRefs.key(qMakePair(row, column));
+    return key.isEmpty() ? QString() : boundInputError(key, text);
+}
+
+QString ParamTableWidget::boundInputError(const QString &key, const QString &text) const
+{
+    static const QStringList textKeys = {"noLoadCurrentSource", "connectionGroup", "environmentGrade", "efficiencyCalcMethod",
+        "lvConnectionBarThickness", "lvConnectionBarWidth", "legacyUnitLossRecord", "legacyCraftCoefRecord"};
+    static const QStringList integerKeys = {"frequency", "seamCount", "lvTurns", "hvTurnsPerLayer", "hvParallelCount",
+        "hvStackCount", "lvLayerInsulCount", "yokeWidenStages", "waveDepth", "waveHeight", "wavePitch"};
+    if (textKeys.contains(key)) return {};
+    const QString value = text.trimmed();
+    bool ok = false;
+    const double number = value.toDouble(&ok);
+    const bool integer = integerKeys.contains(key);
+    if (ok && integer) value.toInt(&ok);
+    if (ok && std::isfinite(number)) return {};
+
+    const auto [row, column] = m_inputRefs.value(key);
+    const auto *label = item(row, column == 2 ? 1 : 3);
+    return QStringLiteral("“%1”请输入有效%2，不能留空或输入非数字。")
+        .arg(label && !label->text().isEmpty() ? label->text() : key,
+             integer ? QStringLiteral("整数") : QStringLiteral("数值"));
+}
+
 bool ParamTableWidget::collectForCalculation(TransformerParams &params, CalcInput &input, QString &error,
                                             bool interactive)
 {
@@ -474,26 +501,10 @@ bool ParamTableWidget::collectForCalculation(TransformerParams &params, CalcInpu
             return false;
         }
     }
-    const QStringList textKeys = {"noLoadCurrentSource", "connectionGroup", "environmentGrade", "efficiencyCalcMethod",
-        "lvConnectionBarThickness", "lvConnectionBarWidth", "legacyUnitLossRecord", "legacyCraftCoefRecord"}; // 可选记录不阻断整机。
-    const QStringList integerKeys = {"frequency", "seamCount", "lvTurns", "hvTurnsPerLayer", "hvParallelCount",
-        "hvStackCount", "lvLayerInsulCount", "yokeWidenStages", "waveDepth", "waveHeight", "wavePitch"};
     for (auto it = m_inputRefs.constBegin(); it != m_inputRefs.constEnd(); ++it) {
-        if (textKeys.contains(it.key()))
-            continue;
         const auto *cell = item(it->first, it->second);
-        bool ok = false;
-        const QString value = cell ? cell->text().trimmed() : QString();
-        const double number = value.toDouble(&ok);
-        if (ok && integerKeys.contains(it.key()))
-            value.toInt(&ok);
-        if (!ok || !std::isfinite(number)) {
-            const auto *label = item(it->first, it->second == 2 ? 1 : 3);
-            error = QStringLiteral("“%1”请输入有效%2，不能留空或输入非数字。")
-                .arg(label && !label->text().isEmpty() ? label->text() : it.key(),
-                     integerKeys.contains(it.key()) ? QStringLiteral("整数") : QStringLiteral("数值"));
-            return false;
-        }
+        error = boundInputError(it.key(), cell ? cell->text() : QString());
+        if (!error.isEmpty()) return false;
     }
     if (m_tapMinusSpin->value() * m_tapStepSpin->value() >= 100.0) {
         error = QStringLiteral("负向调压总幅度必须小于100%，最低分接电压必须大于零。");

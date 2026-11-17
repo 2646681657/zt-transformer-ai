@@ -627,7 +627,7 @@ void calcWindingLayout(EmCtx &c)
     // 层间绝缘张数（X42/X41）与高压辐向（W24..W28）
     c.x42Sheets = excelCeiling(
         2.0 * c.segTurnsPerLayer * et
-            / (in.hvCoilFormIdx * in.hvLayerInsulCalcFactor * in.hvLayerInsul_mm), 1.0);
+            / (in.hvCoilFormIdx * in.layerInsulationFieldLimit_V_per_mm() * in.hvLayerInsul_mm), 1.0);
     c.x41Sheets = (c.x42Sheets < 5.0)
                       ? c.x42Sheets
                       : (std::fmod(c.x42Sheets, 2.0) == 1.0
@@ -960,7 +960,7 @@ void calcCoreWeights(EmCtx &c)
         rememberSheetValue(*c.out,"CoreWeightWindow",c.windowHeight_mm,4);
         rememberSheetValue(*c.out,"CoreWeightCenter",c.centerDist_mm,4);
         rememberSheetValue(*c.out,"CoreCenterAllowance",in.centerDistanceAllowance_mm,4);
-        rememberSheetValue(*c.out,"HVLayerCalcFactor",in.hvLayerInsulCalcFactor,4);
+        rememberSheetValue(*c.out,"HVLayerCalcFactor",in.layerInsulationFieldLimit_V_per_mm(),4);
         for(int i=16;i<20;++i) {
             rememberSheetValue(*c.out,qPrintable(QStringLiteral("CoreReservedSheetAdjust%1").arg(i+1)),in.coreSheetCountAdjust[i],0);
             rememberSheetValue(*c.out,qPrintable(QStringLiteral("CoreReservedYokeStep%1").arg(i+1)),in.yokeSteps_mm[i],4);

@@ -84,6 +84,8 @@ public slots:
         SearchCenterPool centerPool(space);
         SearchCoveragePlanner planner(space, m_settings);
         summary.coverageDetails.append(m_settings.craftConstraints.description());
+        summary.coverageDetails.append(QStringLiteral("高压层间绝缘张数按场强上限 4900 V/mm 计算。"));
+        summary.coverageDetails.append(QStringLiteral("已按企业规则校核铁芯尺寸及磁密、低压单箔、高压线规及电密、适用段间距和波纹片尺寸。"));
         summary.boundarySearchDimensions = space.boundarySearchDimensions();
         const QStringList grades = m_settings.searchSteelGrade ? m_settings.steelGrades
             : QStringList{m_base.steelGrade.trimmed()};
@@ -157,10 +159,13 @@ public slots:
                 reportProgress(stage);
                 return true;
             }
-            if (!in.craftConstraints.rejectionReason(in.mainDuctWidth_mm).isEmpty()) {
+            auto craftFailures = OilTransformerSearchRules::inputFailures(in);
+            if (!in.craftConstraints.rejectionReason(in.mainDuctWidth_mm).isEmpty())
+                craftFailures << QStringLiteral("企业主油道最小宽度");
+            if (!craftFailures.isEmpty()) {
                 ++stage.craftRejected;
                 ++gradeSummary.craftRejected;
-                ++summary.rejectionReasons[QStringLiteral("企业主油道最小宽度")];
+                for (const auto &reason : craftFailures) ++summary.rejectionReasons[reason];
                 reportProgress(stage);
                 return true;
             }
@@ -171,6 +176,8 @@ public slots:
             const bool calculated = engine.calcElectromagnetic(in, r) && r.valid;
             const auto constraints = calculated ? checkSchemeConstraints(m_params, r)
                                                 : SchemeConstraintsResult{};
+            const auto enterpriseFailures = calculated ? OilTransformerSearchRules::resultFailures(in, r)
+                                                       : QStringList{};
             if (!calculated || !std::isfinite(optimizationMaterialCost(r))
                     || optimizationMaterialCost(r) < 0.0) {
                 ++stage.invalid;
@@ -182,11 +189,13 @@ public slots:
                 if (!summary.calculationErrors.contains(reason) && summary.calculationErrors.size() >= 20)
                     reason = QStringLiteral("其他计算失败原因");
                 ++summary.calculationErrors[reason];
-            } else if (!constraints.passed) {
+            } else if (!constraints.passed || !enterpriseFailures.isEmpty()) {
                 ++stage.constraintRejected;
                 ++gradeSummary.constraintRejected;
                 for (const auto &name : constraints.failedChecks)
                     ++summary.rejectionReasons[name];
+                for (const auto &reason : enterpriseFailures)
+                    ++summary.rejectionReasons[reason];
             } else {
                 OptimizeCandidate c;
                 c.input = in;

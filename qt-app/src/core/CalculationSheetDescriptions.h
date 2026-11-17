@@ -5,13 +5,14 @@
 #include "CalcResult.h"
 #include <QStringList>
 #include <algorithm>
+#include <cmath>
 
 // 显示层说明：只读取本次输入/结果，不求解、不写回设计变量或筛选条件。
 namespace CalculationSheetDescriptions {
 inline QStringList addresses()
 {
     return QStringLiteral(
-        "X8 Z8 Z9 X10 Z10 Z11 Z15 W23 AA23 AJ25 AK25 AC33 B46 "
+        "X8 Z8 Z9 X10 Z10 Z11 Z15 W23 AA23 AD23 AE25 AJ25 AK25 AC33 B46 "
         "L12 L19 M19 O19 R19 Q44 Q45 Q46 Q47 Q48 Q49 Q50 Q51 "
         "E27 F27 Q52 Q53 E29 E30 E31 E32 E33 E34 E35 E36 E37 E38 "
         "E39 E40 E41 E42 E43 H44 E45 E46 E47 E49 J49 H51 E50 "
@@ -57,10 +58,10 @@ inline void capture(const CalcInput &in, CalcResult &r)
         for (const char *a : {"U44", "U45", "AB45"})
             text(a, QString(), QStringLiteral("圆线分支按原单留空；实际附加损耗沿用原有圆线规则，不套用扁线公式。"));
     } else {
-        text("U44", QStringLiteral("Kw1=%1/10^7×(50×%2×%3×")
+        text("U44", QStringLiteral("Kw1=%1/10⁷×(50×%2×%3×")
             .arg(in.hvCopperWire ? QStringLiteral("3.8") : QStringLiteral("1.4"))
             .arg(r.winding.hvTurnsMax).arg(number(in.hvBareWidth_mm)));
-        text("U45", QStringLiteral("%1×%2/%3)^2=")
+        text("U45", QStringLiteral("%1×%2/%3)²=")
             .arg(number(r.winding.hvEffectiveSection_mm2), detail("HvExtraRoundCoef"), number(r.winding.hvInnerAxial_mm)),
             QStringLiteral("AA15总有效截面×引擎实际ROUND(1−M39/Q33/π,2)系数÷AC30，接上行后平方。只说明原有AA45，不重新求解损耗。"));
         text("AB45", QStringLiteral("%"));
@@ -69,12 +70,12 @@ inline void capture(const CalcInput &in, CalcResult &r)
     text("U46", QStringLiteral("S1=6×%1×[%2×%3+1.7×%4")
         .arg(number(r.thermal.hvEffectiveHeight_mm), detail("HvSurfaceInnerPerimeter"),
             in.hvRated_kV > 12.0 ? QStringLiteral("0.85") : QStringLiteral("0"), detail("HvSurfaceDuctTerm")), surfaceNote);
-    text("U47", QStringLiteral("+%1]/10^6=").arg(detail("HvSurfaceOuterPerimeter")), surfaceNote);
+    text("U47", QStringLiteral("+%1]/10⁶=").arg(detail("HvSurfaceOuterPerimeter")), surfaceNote);
     text("AD46", QStringLiteral("S2=6×%1×[1.7×%2")
         .arg(number(in.lvFoilWidth_mm), detail("LvSurfaceDuctTerm")), surfaceNote
         + QStringLiteral(" 原单内表面乘0项不参与数值，这里省略该无贡献项。"));
-    text("AD47", r.winding.mainDuct_mm < 4.0 ? QStringLiteral("+0]/10^6=")
-        : QStringLiteral("+%1×0.85]/10^6=").arg(detail("LvSurfaceOuterPerimeter")), surfaceNote
+    text("AD47", r.winding.mainDuct_mm < 4.0 ? QStringLiteral("+0]/10⁶=")
+        : QStringLiteral("+%1×0.85]/10⁶=").arg(detail("LvSurfaceOuterPerimeter")), surfaceNote
         + QStringLiteral(" 主空道AK43<4mm时该项为0；否则读取本次版本实际外周长并乘0.85。五档为AK36+AK39，三档按原表整周长公式。"));
     text("X8", QStringLiteral("(%1)").arg(r.winding.hvTurnsMax - r.winding.hvTurnsRated));
     text("Z8", QStringLiteral("(%1)").arg(r.winding.hvTurnsRated - r.winding.hvTurnsMin));
@@ -85,6 +86,16 @@ inline void capture(const CalcInput &in, CalcResult &r)
     text("Z10", secondSegment ? QStringLiteral("=") : QString());
     text("W23", QStringLiteral("× %1").arg(in.hvTurnsPerLayer));
     text("AA23", QStringLiteral("× %1").arg(r.winding.layerCount + 1));
+    const double foilBuild = in.lvFoilThick_mm * in.lvTurns
+        + (in.lvTurns - 1) * in.lvLayerInsulCount * in.lvLayerInsul_mm;
+    if (foilBuild > 0.0) {
+        const double displayFactor = std::round(r.winding.lvRadial_mm / foilBuild * 100.0) / 100.0;
+        text("AD23", QStringLiteral("(%1×%2 + %3×%4×%5)×%6 =")
+            .arg(number(in.lvFoilThick_mm)).arg(in.lvTurns).arg(in.lvLayerInsulCount)
+            .arg(number(in.lvLayerInsul_mm)).arg(in.lvTurns - 1).arg(number(displayFactor)),
+            QStringLiteral("原单显示系数按 AK23 除以未取整的辐向厚度后保留两位小数。右侧结果取计算快照。"));
+    }
+    text("AE25", QStringLiteral("%1 + 2×").arg(number(in.lvFoilWidth_mm)));
     text("AJ25", QStringLiteral("= %1").arg(number(r.winding.lvAxial_mm)));
     text("AK25", QStringLiteral("-Hw"));
     text("AC33", QStringLiteral("-Hw"));
@@ -116,35 +127,36 @@ inline void capture(const CalcInput &in, CalcResult &r)
             hvFirstThreeWidths += in.hvDuctWidthSide[i];
         }
     }
-    const QString diameter = number(in.coreDiameter_mm);
-    const QString phaseGap = number(in.phaseGapBase_mm);
-    const QString radius = number(r.core.majorRadius_mm);
-    const QString lvRadial = number(r.winding.lvRadial_mm);
-    const QString hvRadial = number(r.winding.hvRadial_mm);
     const QString mainDuct = number(r.winding.mainDuct_mm);
     const QString p12 = number(r.core.majorAngle_deg);
     const QString s12 = number(r.core.minorAngle_deg);
     const QString geometryNote = QStringLiteral("当前椭圆形算法的操作数展开；数值结果由引擎ROUND到两位小数，说明不额外取整。P12、S12分别读取本次原单角度快照，不按历史成员名称另行推导。单位mm，只读，不参与筛选。");
-    text("AF33", QStringLiteral("π×(%1/2+%2+(%3+%4)/2)×%5/180=")
-        .arg(diameter, phaseGap, lvRadial, number(lvDuctHeightSum), p12),
+    const double wideCore = in.coreDiameter_mm / 2.0 + in.phaseGapBase_mm;
+    const double longCore = r.core.majorRadius_mm + in.phaseGapBase_mm;
+    const double wideFoil = r.winding.lvRadial_mm + lvDuctHeightSum;
+    const double longFoil = r.winding.lvRadial_mm + lvDuctWidthSum;
+    text("AF33", QStringLiteral("π×(%1+%2/2)×%3/180=")
+        .arg(number(wideCore), number(wideFoil), p12),
         geometryNote + QStringLiteral(" 对应AK33；末项为五级低压端部侧油道之和。原表文字先将半径取一位小数，数值公式没有该步骤；这里服从数值公式。"));
-    text("AF34", QStringLiteral("π×(%1+%2+(%3+%4)/2)×%5/180=")
-        .arg(radius, phaseGap, lvRadial, number(lvDuctWidthSum), s12),
+    text("AF34", QStringLiteral("π×(%1+%2/2)×%3/180=")
+        .arg(number(longCore), number(longFoil), s12),
         geometryNote + QStringLiteral(" 对应AK34；末项为五级低压相间侧油道之和。"));
-    text("W36", QStringLiteral("π×(%1/2+%2+%3+%4+%5+(%6+%7)/2)×%8/180=")
-        .arg(diameter, phaseGap, lvRadial, number(lvDuctHeightSum), mainDuct,
-            hvRadial, number(hvDuctHeightSum), p12),
+    const double wideBase = in.coreDiameter_mm / 2.0 + in.phaseGapBase_mm
+        + r.winding.lvRadial_mm + lvDuctHeightSum + r.winding.mainDuct_mm;
+    text("W36", QStringLiteral("π×(%1+%2/2)×%3/180=")
+        .arg(number(wideBase), number(r.winding.hvRadial_mm + hvDuctHeightSum), p12),
         geometryNote + QStringLiteral(" 对应AB36；低压、高压端部侧均累计五级；不使用原表文字的半径额外舍入。"));
     const QString longSideNote = geometryNote + QStringLiteral(" 对应AB39；实际数值公式仅累计前三级低压和高压相间侧油道。原W39拼接文字写五级，与数值公式不一致；本说明按现有数值算法显示，未改成五级。更改后两级仍可能经其他尺寸联动影响本式，不应理解为结果必然不变。");
-    text("W39", QStringLiteral("π×(%1+%2+%3+%4+%5+(%6+%7)/2)×%8/180=")
-        .arg(radius, phaseGap, lvRadial, number(lvFirstThreeWidths), mainDuct,
-            hvRadial, number(hvFirstThreeWidths), s12), longSideNote);
+    const double longBase = r.core.majorRadius_mm + in.phaseGapBase_mm
+        + r.winding.lvRadial_mm + lvFirstThreeWidths + r.winding.mainDuct_mm;
+    text("W39", QStringLiteral("π×(%1+%2/2)×%3/180=")
+        .arg(number(longBase), number(r.winding.hvRadial_mm + hvFirstThreeWidths), s12), longSideNote);
     r.calculationSheetNotes.insert(QStringLiteral("AB39"), longSideNote);
-    text("AF36", QStringLiteral("π×(%1/2+%2+%3+%4+%5/2)×%6/180=")
-        .arg(diameter, phaseGap, lvRadial, number(lvDuctHeightSum), mainDuct, p12),
+    text("AF36", QStringLiteral("π×(%1+%2/2)×%3/180=")
+        .arg(number(wideCore + wideFoil), mainDuct, p12),
         geometryNote + QStringLiteral(" 对应AK36；五级低压端部侧油道累加，主空道只取半值；不使用原表文字的半径额外舍入。"));
-    text("AF39", QStringLiteral("π×(%1+%2+%3+%4+%5/2)×%6/180=")
-        .arg(radius, phaseGap, lvRadial, number(lvDuctWidthSum), mainDuct, s12),
+    text("AF39", QStringLiteral("π×(%1+%2+%3/2)×%4/180=")
+        .arg(number(longCore), number(longFoil), mainDuct, s12),
         geometryNote + QStringLiteral(" 对应AK39；五级低压相间侧油道累加，主空道只取半值。"));
 
     for (int i = 0; i < 5; ++i) {
@@ -197,19 +209,19 @@ inline void capture(const CalcInput &in, CalcResult &r)
     text("E42", QStringLiteral("Sx=%1×%2+%3×%4+%5×%6=")
         .arg(number(r.impedance.a2), number(r.winding.lvMeanTurn_m*1000), number(r.winding.mainDuct_mm),
             detail("Q29"), number(r.impedance.a1), number(r.winding.hvMeanTurn_m*1000)));
-    text("E43", QStringLiteral("X%=%1×3.95×%2×%3×%4/%5/%6/10^5=")
+    text("E43", QStringLiteral("X%=%1×3.95×%2×%3×%4/%5/%6/10⁵=")
         .arg(number(r.impedance.kx), number(r.electrical.lvPhaseCurrent_A), number(in.lvTurns),
             number(r.impedance.leakArea_mm2), number(r.core.turnVoltage_V), number(r.impedance.hx_mm)));
-    text("H44", QStringLiteral("Sg=0.75×%1×%2/10^6=").arg(number(r.mass.tankLength_mm), number(r.mass.tankWidth_mm)));
+    text("H44", QStringLiteral("Sg=0.75×%1×%2/10⁶=").arg(number(r.mass.tankLength_mm), number(r.mass.tankWidth_mm)));
     const double effectiveWaves = r.oilExpansion.shortSideCount > 0.0
         ? r.oilExpansion.longSideCount+r.oilExpansion.shortSideCount-2.0 : r.oilExpansion.longSideCount-1.0;
-    text("E45", QStringLiteral("Sbz=2×%1×(%2−6−2×%3+2×%4)×%5×%6/10^6=")
+    text("E45", QStringLiteral("Sbz=2×%1×(%2−6−2×%3+2×%4)×%5×%6/10⁶=")
         .arg(number(effectiveWaves), number(in.wavePitch_mm), detail("S44"), number(in.waveDepth_mm),
             number(in.waveHeight_mm), detail("S50")),
         QStringLiteral("短边数>0：有效波纹数=S48+S49−2；否则=S48−1。各输入来自当前方案，结果取两位小数。"));
-    text("E46", QStringLiteral("Sbj=%1×%2×%3/10^6=")
+    text("E46", QStringLiteral("Sbj=%1×%2×%3/10⁶=")
         .arg(r.oilExpansion.shortSideCount > 0.0 ? 8 : 4).arg(in.waveDepth_mm).arg(in.waveHeight_mm));
-    text("E47", QStringLiteral("Sb=[(%1−2×45×%2)×%3+2×45×%2×(%3−%4)]/10^6=")
+    text("E47", QStringLiteral("Sb=[(%1−2×45×%2)×%3+2×45×%2×(%3−%4)]/10⁶=")
         .arg(number(2*(r.mass.tankLength_mm+r.mass.tankWidth_mm)), number(effectiveWaves),
             number(r.mass.tankHeight_mm), number(in.waveHeight_mm)));
     text("E49", QStringLiteral("QY=(%1+%2)/%3=")

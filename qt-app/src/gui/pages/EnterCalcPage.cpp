@@ -49,6 +49,7 @@
 #include <QDialogButtonBox>
 #include <QSettings>
 #include <QDialog>
+#include <QEvent>
 #include <QLineEdit>
 #include <QMenu>
 #include <QPrinter>
@@ -64,6 +65,60 @@
 #include <QScopedValueRollback>
 #include <QListWidget>
 #include <memory>
+
+namespace {
+class CalculationSheetDialog final : public QDialog
+{
+public:
+    explicit CalculationSheetDialog(QWidget *parent)
+        : QDialog(parent), m_owner(parent ? parent->window() : nullptr)
+    {
+        if (m_owner) m_owner->installEventFilter(this);
+    }
+
+protected:
+    void changeEvent(QEvent *event) override
+    {
+        QDialog::changeEvent(event);
+        if (event->type() != QEvent::WindowStateChange || !m_owner || !isMinimized()) return;
+
+        const auto oldState = static_cast<QWindowStateChangeEvent *>(event)->oldState();
+        if (oldState.testFlag(Qt::WindowMinimized)) return;
+        m_restoreState = oldState & (Qt::WindowMaximized | Qt::WindowFullScreen);
+        m_minimizedWithOwner = true;
+
+        // Wait for the dialog's native minimize operation before changing the owner.
+        QTimer::singleShot(0, this, [this] {
+            if (!isVisible() || !isMinimized()) {
+                m_minimizedWithOwner = false;
+                return;
+            }
+            if (!m_owner->isMinimized()) m_owner->showMinimized();
+        });
+    }
+
+    bool eventFilter(QObject *watched, QEvent *event) override
+    {
+        if (watched == m_owner && event->type() == QEvent::WindowStateChange
+            && m_minimizedWithOwner && !m_owner->isMinimized()
+            && static_cast<QWindowStateChangeEvent *>(event)->oldState().testFlag(Qt::WindowMinimized)) {
+            QTimer::singleShot(0, this, [this] {
+                if (!m_minimizedWithOwner || m_owner->isMinimized() || !isVisible()) return;
+                m_minimizedWithOwner = false;
+                setWindowState(m_restoreState);
+                raise();
+                activateWindow();
+            });
+        }
+        return QDialog::eventFilter(watched, event);
+    }
+
+private:
+    QWidget *const m_owner;
+    Qt::WindowStates m_restoreState;
+    bool m_minimizedWithOwner = false;
+};
+} // namespace
 
 EnterCalcPage::EnterCalcPage(QWidget *parent)
     : QWidget(parent)
@@ -2486,7 +2541,7 @@ bool EnterCalcPage::editCalculationSheet(OptimizeCandidate original, const Trans
         original.input.lvConnectionBarThicknessText = QStringLiteral("6");
         original.input.lvConnectionBarWidthText = QStringLiteral("50");
     }
-    QDialog dlg(parent);
+    CalculationSheetDialog dlg(parent);
     dlg.setWindowTitle(direct ? QStringLiteral("直接计算")
                               : QStringLiteral("方案计算单 - 方案 %1").arg(schemeIdx));
     dlg.setModal(true);

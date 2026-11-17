@@ -87,6 +87,8 @@ inline QJsonObject toJson(const CalcInput &in)
     o.insert(QStringLiteral("hvStackCount"), in.hvStackCount);
     o.insert(QStringLiteral("hvTurnsPerLayer"), in.hvTurnsPerLayer);
     o.insert(QStringLiteral("hvLayerInsul_mm"), in.hvLayerInsul_mm);
+    if (in.useEnterpriseLayerInsulationLimit)
+        o.insert(QStringLiteral("useEnterpriseLayerInsulationLimit"), true);
     o.insert(QStringLiteral("hvWireInsulAdd_mm"), in.hvWireInsulAdd_mm);
     o.insert(QStringLiteral("hvWireInsulation"), in.resolvedInsulationType());
     o.insert(QStringLiteral("hvCopperWire"), in.hvCopperWire);
@@ -340,6 +342,7 @@ inline CalcInput fromJson(const QJsonObject &o)
     in.hvStackCount = integ("hvStackCount", in.hvStackCount);
     in.hvTurnsPerLayer = integ("hvTurnsPerLayer", in.hvTurnsPerLayer);
     in.hvLayerInsul_mm = num("hvLayerInsul_mm", in.hvLayerInsul_mm);
+    in.useEnterpriseLayerInsulationLimit = o.value(QStringLiteral("useEnterpriseLayerInsulationLimit")).toBool();
     in.hvWireInsulAdd_mm = num("hvWireInsulAdd_mm", in.hvWireInsulAdd_mm);
     // 旧文件没有型号证据，不按数值反推类型；未知类型/冲突值也保留为自定义。
     in.hvWireInsulation = o.value(QStringLiteral("hvWireInsulation")).toString(QStringLiteral("Custom"));
