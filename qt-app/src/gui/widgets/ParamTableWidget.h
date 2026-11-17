@@ -28,6 +28,7 @@ public:
                              const CalcInput &input, bool proMode = false, bool designConnectionUi = false,
                              bool sheetSelectionUi = false);
     TransformerParams getParams() const;
+    QString boundCellInputError(int row, int column, const QString &text) const;
     bool setNonstandardAn3(double value);
     // 当前接法及指标来源是否允许计算；Dd/Yd仅限非标，不代表有内置标准列。
     bool hasSupportedConnectionGroup() const;
@@ -54,6 +55,7 @@ signals:
     void nonstandardAn3StateChanged();
 
 private:
+    QString boundInputError(const QString &key, const QString &text) const;
     // 复合产品型号：型号-M-容量/高压额定电压-低压额定电压
     bool parseCompositeModel(const QString &text, bool commitLowVoltage);
     void applyModelLinkage();

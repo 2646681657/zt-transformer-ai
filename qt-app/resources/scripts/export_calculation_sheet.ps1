@@ -31,7 +31,11 @@ try {
  $tapManager=[Xml.XmlNamespaceManager]::new($sheet.NameTable);$tapManager.AddNamespace('m',$ns)
  $sheet.SelectSingleNode("//m:c[@r='V5']/m:f",$tapManager).InnerText='Y5*(1+L3*N3)'
  $sheet.SelectSingleNode("//m:c[@r='AA5']/m:f",$tapManager).InnerText="Y5*(1-'导出说明'!`$B`$8*N3)"
- # All designs use the template DEFAULT SB20 formulas (including zero-duct guards).
+ # Saved optimization candidates carry the enterprise limit used to size insulation.
+ $enterpriseLimit=$specData.input.useEnterpriseLayerInsulationLimit
+ if(($enterpriseLimit -is [bool]) -and $enterpriseLimit){
+  $sheet.SelectSingleNode("//m:c[@r='X42']/m:f",$tapManager).InnerText='CEILING(2*Y9*AC4/(AC9*5300*X35),1)'
+ }
  # L51 is a fixed default, even if a legacy caller includes a tuned cell value.
  Set-Cell $sheet 'L51' 6 $true
  if($specData.customInsulation){

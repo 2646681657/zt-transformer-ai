@@ -53,6 +53,14 @@ def fixture(number):
 
 
 class LinkedExportFormulaTests(unittest.TestCase):
+    def test_enterprise_insulation_candidate_uses_5300(self):
+        spec = fixture(1)
+        spec['input']['useEnterpriseLayerInsulationLimit'] = True
+        with tempfile.TemporaryDirectory() as tmp:
+            with zipfile.ZipFile(export(spec, Path(tmp))) as archive:
+                main = ET.fromstring(archive.read('xl/worksheets/sheet1.xml'))
+                self.assertEqual(formula(main, 'X42'), 'CEILING(2*Y9*AC4/(AC9*5300*X35),1)')
+
     def test_default_formulas_preserve_real_scheme_inputs(self):
         with zipfile.ZipFile(TEMPLATE) as archive:
             template = ET.fromstring(archive.read('xl/worksheets/sheet1.xml'))

@@ -1,4 +1,5 @@
 #include "ElectromagneticEngine.h"
+#include "GridSearchSpace.h"
 #include "SchemeStore.h"
 #include <QCoreApplication>
 #include <QFile>
@@ -22,5 +23,50 @@ int main(int argc,char **argv) {
    std::printf("baseline %.2f kVA: P0 %.2f Pk %.2f Z %.2f cost %.2f\n",loaded.capacity_kVA,expected.core.noLoadLoss_W,expected.winding.loadLoss_W,expected.impedance.impedance_pct,expected.cost.materialCost);
   }
  }
+ CalcInput base;
+ base.hvLayerInsul_mm = 0.09;
+ const OptimizationSettings settings;
+ const GridSearchSpace space(base, settings);
+ const CalcInput candidate = space.inputFor(GridSearchSpace::Point{});
+ CalcInput savedEnterprise = base;
+ savedEnterprise.useEnterpriseLayerInsulationLimit = true;
+ const CalcInput reopened = SchemeStore::fromJson(SchemeStore::toJson(savedEnterprise));
+ const GridSearchSpace restartedSpace(reopened, settings);
+ const CalcInput restartedCandidate = restartedSpace.inputFor(GridSearchSpace::Point{});
+ CalcResult directResult, candidateResult, reopenedResult, restartedResult;
+ check(engine.calcElectromagnetic(base, directResult, true)
+           && engine.calcElectromagnetic(candidate, candidateResult, true)
+           && engine.calcElectromagnetic(reopened, reopenedResult, true)
+           && engine.calcElectromagnetic(restartedCandidate, restartedResult, true),
+       "insulation limit boundary cases calculate");
+ check(directResult.calculationSheetDetails.value(QStringLiteral("X42")).first == 4,
+       "direct calculation sizes insulation at 4900 V/mm");
+ check(candidateResult.calculationSheetDetails.value(QStringLiteral("X42")).first == 4
+           && restartedResult.calculationSheetDetails.value(QStringLiteral("X42")).first == 4,
+       "new optimization sizes insulation at 4900 V/mm even from a 5300 V/mm scheme");
+ check(reopenedResult.calculationSheetDetails.value(QStringLiteral("X42")).first == 3,
+       "reopening a previously saved 5300 V/mm scheme preserves its insulation count");
+ check(OilTransformerSearchRules::inputFailures(candidate).isEmpty()
+           && OilTransformerSearchRules::resultFailures(candidate, candidateResult).isEmpty(),
+       "default candidate meets the implemented enterprise rules");
+ CalcInput foilWidthCase = candidate;
+ foilWidthCase.lvConnectionBarWidthText = QStringLiteral("50");
+ for (double boundary : {150.0, 1200.0}) {
+     foilWidthCase.lvFoilWidth_mm = boundary;
+     check(OilTransformerSearchRules::inputFailures(foilWidthCase).isEmpty(),
+           "copper foil width endpoints are inclusive and independent of the connection bar");
+ }
+ foilWidthCase.lvFoilWidth_mm = 149.0;
+ check(!OilTransformerSearchRules::inputFailures(foilWidthCase).isEmpty(),
+       "copper foil below the enterprise minimum is rejected");
+ CalcResult magneticBoundary = candidateResult;
+ magneticBoundary.core.fluxDensity_core_T = 1.75;
+ check(!OilTransformerSearchRules::resultFailures(candidate, magneticBoundary).isEmpty(),
+       "the 1.75 T magnetic density ceiling is strict");
+ CalcInput steelCase = base;
+ steelCase.steelGrade = QStringLiteral("23R080");
+ const GridSearchSpace steelSpace(steelCase, settings);
+ check(steelSpace.inputFor(GridSearchSpace::Point{}).stackFactor == 0.96,
+       "optimization assigns the stacking factor for 0.23 mm steel");
  return failures?1:0;
 }

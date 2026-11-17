@@ -248,7 +248,11 @@ struct CalcInput {
     // ---- 其他结构常数 ----
     double phaseGapBase_mm = 3.0;     // B28 相间距基础
     static constexpr double centerDistanceAllowance_mm = 5.0; // 默认中心距进位后固定附加5mm
-    static constexpr double hvLayerInsulCalcFactor = 4900.0; // 默认层绝缘张数公式固定系数4900
+    bool useEnterpriseLayerInsulationLimit = false;
+    double layerInsulationFieldLimit_V_per_mm() const
+    {
+        return useEnterpriseLayerInsulationLimit ? 5300.0 : 4900.0;
+    }
     static constexpr double hvMaxTurnsAdjust = 0.0; // 最大匝数按默认公式取整，不另加减
     static constexpr double activePartHvWeightMode = 0.0; // 默认器身重使用绝缘导线重Z21
     static constexpr double hvAxialAllowance_mm = 1.0; // AA28轴向高度按5mm取整后附加量

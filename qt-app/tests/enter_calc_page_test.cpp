@@ -35,6 +35,8 @@
 #include <QPrinter>
 #include <QFileInfo>
 #include <QLineEdit>
+#include <QKeyEvent>
+#include <QAbstractSpinBox>
 #include "SchemeStore.h"
 #include "StartupSchemeLibrary.h"
 #include <QListWidget>
@@ -128,6 +130,126 @@ int main(int argc, char *argv[])
                     return;
                 }
                 grid->item(11,32)->setText(QStringLiteral("8"));
+                const auto waitForWindowState = [] {
+                    QEventLoop events;
+                    QTimer::singleShot(100, &events, &QEventLoop::quit);
+                    events.exec();
+                };
+                dlg->showMinimized();
+                waitForWindowState();
+                if (!dlg->isMinimized() || !window.isMinimized()) {
+                    qCritical() << "Minimizing the calculation sheet did not minimize both windows";
+                    correctDialog = false;
+                    dlg->reject();
+                    return;
+                }
+                window.setWindowState(window.windowState() & ~Qt::WindowMinimized);
+                waitForWindowState();
+                if (!dlg->isVisible() || dlg->isMinimized() || !dlg->isMaximized()
+                    || QApplication::activeModalWidget() != dlg
+                    || grid->item(11,32)->text() != QStringLiteral("8")) {
+                    qCritical() << "Restoring the main window did not restore the edited calculation sheet";
+                    correctDialog = false;
+                    dlg->reject();
+                    return;
+                }
+                const auto pressReturn = [] {
+                    if (auto *editor = QApplication::focusWidget()) {
+                        QKeyEvent key(QEvent::KeyPress, Qt::Key_Return, Qt::NoModifier);
+                        QApplication::sendEvent(editor, &key);
+                    }
+                    QApplication::processEvents();
+                };
+                auto *firstDuct = grid->item(29, 23); // X30
+                grid->setCurrentItem(firstDuct);
+                grid->editItem(firstDuct);
+                auto *ductEditor = qobject_cast<QLineEdit *>(QApplication::focusWidget());
+                if (!ductEditor) {
+                    qCritical() << "Could not open the first high-voltage duct editor";
+                    correctDialog = false;
+                    dlg->reject();
+                    return;
+                }
+                ductEditor->setText(QStringLiteral("invalid"));
+                pressReturn();
+                if (QApplication::focusWidget() != ductEditor || grid->currentItem() != firstDuct) {
+                    qCritical() << "Invalid duct input did not retain focus";
+                    correctDialog = false;
+                    dlg->reject();
+                    return;
+                }
+                ductEditor->setText(firstDuct->text());
+                pressReturn();
+                const auto *secondSide = qobject_cast<QLineEdit *>(QApplication::focusWidget());
+                if (grid->currentItem() != grid->item(29, 24) || !secondSide
+                    || secondSide->selectedText() != secondSide->text()) {
+                    qCritical() << "Return did not select the other side of the first high-voltage duct";
+                    correctDialog = false;
+                    dlg->reject();
+                    return;
+                }
+                pressReturn();
+                if (grid->currentItem() != grid->item(30, 23)) { // X31
+                    qCritical() << "Return did not stay in the high-voltage duct group";
+                    correctDialog = false;
+                    dlg->reject();
+                    return;
+                }
+                for (int row = 30; row <= 33; ++row) {
+                    pressReturn();
+                    if (grid->currentItem() != grid->item(row, 24)) {
+                        correctDialog = false;
+                        dlg->reject();
+                        return;
+                    }
+                    pressReturn();
+                    if (grid->currentItem() != grid->item(row + 1, 23)) {
+                        qCritical() << "Return left the high-voltage group before its insulation input";
+                        correctDialog = false;
+                        dlg->reject();
+                        return;
+                    }
+                }
+                pressReturn();
+                if (grid->currentItem() != grid->item(7, 33)) { // AH8
+                    qCritical() << "Return did not enter low voltage after finishing high voltage";
+                    correctDialog = false;
+                    dlg->reject();
+                    return;
+                }
+                if (auto *editor = QApplication::focusWidget()) {
+                    QKeyEvent escape(QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier);
+                    QApplication::sendEvent(editor, &escape);
+                }
+                auto *tank = dlg->findChild<QLineEdit *>("tankInput_J23");
+                auto *nextTank = dlg->findChild<QLineEdit *>("tankInput_F24");
+                if (tank) tank->setFocus();
+                pressReturn();
+                if (!tank || !nextTank || QApplication::focusWidget() != nextTank) {
+                    qCritical() << "Return did not advance within the oil tank inputs";
+                    correctDialog = false;
+                    dlg->reject();
+                    return;
+                }
+                auto *tapCell = grid->cellWidget(2, 9);
+                const auto taps = tapCell ? tapCell->findChildren<QAbstractSpinBox *>()
+                                          : QList<QAbstractSpinBox *>();
+                if (taps.size() != 3) {
+                    correctDialog = false;
+                    dlg->reject();
+                    return;
+                }
+                taps[0]->setFocus();
+                for (int i = 1; i < taps.size(); ++i) {
+                    pressReturn();
+                    const auto *focus = QApplication::focusWidget();
+                    if (focus != taps[i] && (!focus || !taps[i]->isAncestorOf(focus))) {
+                        qCritical() << "Return did not follow the three tap controls in order";
+                        correctDialog = false;
+                        dlg->reject();
+                        return;
+                    }
+                }
                 QTimer::singleShot(0, dlg, [&] {
                     auto *file = qobject_cast<QFileDialog *>(QApplication::activeModalWidget());
                     if (file) {
@@ -318,7 +440,7 @@ int main(int argc, char *argv[])
         if(labelGrid->rowSpan(41,1)!=3||labelGrid->rowSpan(32,2)!=3
            ||labelGrid->rowSpan(32,3)!=3||labelGrid->rowSpan(48,3)!=2)return 132;
         if(labelGrid->rowSpan(6,4)!=5||labelGrid->rowSpan(11,4)!=5||labelGrid->columnSpan(25,0)!=4)return 130;
-        for(int r=8;r<25;++r)if(labelGrid->columnSpan(r,0)!=(r==18?1:2))return 131;
+        for(int r=8;r<25;++r)if(labelGrid->columnSpan(r,0)!=2)return 131;
         auto *supplement=sheet->findChild<QPushButton *>(QStringLiteral("supplementParametersButton"));
         if(!supplement||!supplement->isHidden())return 117;
         QTableWidget *grid=nullptr;

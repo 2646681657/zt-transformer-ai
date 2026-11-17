@@ -2,6 +2,7 @@
 #define GRIDSEARCHSPACE_H
 
 #include "IOptimizer.h"
+#include "OilTransformerSearchRules.h"
 #include <array>
 #include <functional>
 
@@ -58,6 +59,7 @@ public:
 
     CalcInput inputFor(const Point &point) const {
         CalcInput in = m_base;
+        in.useEnterpriseLayerInsulationLimit = false;
         // 不参与的变量不做浮点运算（也不读取其可能失效的历史步长）。
         if (m_ranges[0]) in.coreDiameter_mm += double(point[0]) / m_scale * m_settings.diaStep_mm;
         if (m_ranges[1]) in.coreStraight_mm += double(point[1]) / m_scale * m_settings.straightStep_mm;
@@ -76,6 +78,7 @@ public:
             in.steelGrade = m_settings.steelGrades[point[9]];
             in.steelThickness_mm = CalcInput::thicknessFromSteelGrade(in.steelGrade);
         }
+        in.stackFactor = OilTransformerSearchRules::stackFactorForGrade(in);
         // 本轮模式明确覆盖基准候选可能携带的旧价格快照。
         in.useCustomSteelPrice = m_settings.steelPricing == OptimizationSettings::CustomSteelPrices;
         in.steelPriceGrade = in.steelGrade.trimmed();

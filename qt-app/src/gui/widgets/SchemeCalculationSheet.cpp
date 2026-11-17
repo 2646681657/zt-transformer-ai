@@ -22,6 +22,10 @@
 #include <QScrollBar>
 #include <QSignalBlocker>
 #include <QEvent>
+#include <QKeyEvent>
+#include <QToolTip>
+#include <functional>
+#include <tuple>
 #include <QStyledItemDelegate>
 #include <QCommonStyle>
 #include <QPersistentModelIndex>
@@ -40,11 +44,163 @@
 #include <QSaveFile>
 #include "SchemeStore.h"
 #include <QPrinter>
+#include <QApplication>
+#include <QWheelEvent>
 #include <QPainter>
 #include <QLayout>
 
 namespace {
 enum Zone { Basic, Performance, Thermal, Core, High, Low, Duct, Tank, Reference, ZoneCount };
+constexpr int sheetWrap = Qt::TextWordWrap | Qt::TextWrapAnywhere;
+constexpr int sheetTextInset = 3;
+
+constexpr int sheetRowHeight = 26;
+
+bool isInputReturn(QEvent *event)
+{
+    if (event->type() != QEvent::KeyPress) return false;
+    const auto *key = static_cast<QKeyEvent *>(event);
+    return (key->key() == Qt::Key_Return || key->key() == Qt::Key_Enter)
+        && !(key->modifiers() & ~Qt::KeypadModifier);
+}
+
+void showInputError(QWidget *editor, const QString &error)
+{
+    QToolTip::showText(editor->mapToGlobal(QPoint(0, editor->height())), error, editor);
+}
+
+int inputGroup(int row, int column)
+{
+    enum { An3, BasicAndPerformance, Core, Tank, Clearance, HighVoltage, LowVoltage, MainDuct };
+    if (row < 0) return An3;
+    if (column < 19) {
+        if (row < 11) return BasicAndPerformance;
+        if (row < 20 && column >= 4) return Core;
+        if (row == 27 && column == 1) return Clearance; // B28 belongs to center-distance calculation.
+        return Tank;
+    }
+    if (column < 29) return HighVoltage;
+    return row < 40 ? LowVoltage : MainDuct;
+}
+
+void drawSheetText(QPainter &painter, const QRectF &rect, int alignment, const QString &text)
+{
+    if (text.isEmpty() || rect.isEmpty()) return;
+    painter.save();
+    painter.setClipRect(rect, Qt::IntersectClip);
+    const QFont original = painter.font();
+    const QFontMetricsF originalMetrics(original, painter.device());
+    const QRectF measured = originalMetrics.boundingRect(rect, alignment | sheetWrap, text);
+    if (measured.height() <= rect.height() && measured.width() <= rect.width()) {
+        painter.drawText(rect, alignment | sheetWrap, text);
+    } else {
+        QString singleLine = text;
+        singleLine.replace(QLatin1Char('\n'), QLatin1Char(' '));
+        QFont font = original;
+        const qreal scale = std::min(rect.width() / qMax(1.0, originalMetrics.horizontalAdvance(singleLine)),
+                                     rect.height() / qMax(1.0, originalMetrics.height()));
+        if (original.pixelSize() > 0)
+            font.setPixelSize(std::max(8, int(original.pixelSize() * scale)));
+        else
+            font.setPointSizeF(std::max(6.0, original.pointSizeF() * scale));
+        painter.setFont(font);
+        const auto visible = QFontMetrics(font, painter.device()).elidedText(singleLine, Qt::ElideRight,
+                                                                               int(rect.width()));
+        painter.drawText(rect, alignment | Qt::TextSingleLine, visible);
+    }
+    painter.restore();
+}
+
+QString compactResultText(int row, int col, QString value)
+{
+    // Keep fixed precision for the worksheet's percentage results.
+    if (row < 27 || (col == 16 && (row == 33 || row == 34))
+            || (row == 42 && col == 15) || (row == 44 && col == 26)
+            || !value.contains(QLatin1Char('.')) || !value.endsWith(QLatin1Char('0')))
+        return value;
+    bool numeric = false;
+    value.toDouble(&numeric);
+    if (!numeric || value.contains(QLatin1Char('e'), Qt::CaseInsensitive)) return value;
+    while (value.endsWith(QLatin1Char('0'))) value.chop(1);
+    if (value.endsWith(QLatin1Char('.'))) value.chop(1);
+    return value;
+}
+
+// Each run is [vertical, boundary, start, end, weight] in worksheet coordinates.
+void drawLowerSheetBorders(QPainter &painter, const QVector<qreal> &x, const QVector<qreal> &y)
+{
+    static const auto runs = QJsonDocument::fromJson(calculationSheetTemplate)
+        .object().value(QStringLiteral("lowerBorders")).toArray();
+    painter.save();
+    for (const auto &entry : runs) {
+        const auto run = entry.toArray();
+        const int boundary = run[1].toInt();
+        const int start = run[2].toInt();
+        const int end = run[3].toInt();
+        painter.setPen(QPen(QColor("#343434"), run[4].toInt() == 2 ? 1.4 : 0.8));
+        if (run[0].toInt())
+            painter.drawLine(QLineF(x[boundary], y[start], x[boundary], y[end]));
+        else
+            painter.drawLine(QLineF(x[start], y[boundary], x[end], y[boundary]));
+    }
+    painter.restore();
+}
+
+Qt::Alignment sheetResultAlignment(const QString &text)
+{
+    const bool expression = text.size() >= 12
+        && (text.contains(QLatin1Char('=')) || text.contains(QChar(u'×')) || text.contains(QChar(u'÷')));
+    return expression ? Qt::AlignLeft | Qt::AlignVCenter : Qt::AlignCenter;
+}
+
+class SheetComboBox : public QComboBox {
+public:
+    using QComboBox::QComboBox;
+protected:
+    void paintEvent(QPaintEvent *event) override
+    {
+        QStyleOptionComboBox option;
+        initStyleOption(&option);
+        if (isEditable() || !option.currentIcon.isNull()) {
+            QComboBox::paintEvent(event);
+            return;
+        }
+        const QRect field = style()->subControlRect(QStyle::CC_ComboBox, &option,
+                                                    QStyle::SC_ComboBoxEditField, this);
+        QPainter painter(this);
+        style()->drawComplexControl(QStyle::CC_ComboBox, &option, &painter, this);
+        painter.setPen(option.palette.color(isEnabled() ? QPalette::Active : QPalette::Disabled,
+                                            QPalette::ButtonText));
+        drawSheetText(painter, field.adjusted(1, 0, -1, 0), Qt::AlignCenter, option.currentText);
+    }
+};
+
+class TankFormComboBox final : public SheetComboBox {
+public:
+    using SheetComboBox::SheetComboBox;
+protected:
+    void wheelEvent(QWheelEvent *event) override { event->ignore(); }
+};
+
+class CalculationSheetGrid final : public QTableWidget {
+public:
+    using QTableWidget::QTableWidget;
+protected:
+    void paintEvent(QPaintEvent *event) override
+    {
+        QTableWidget::paintEvent(event);
+        if (rowCount() != 54 || columnCount() != 38 || rowViewportPosition(26) >= viewport()->height())
+            return;
+        QVector<qreal> x(columnCount() + 1), y(rowCount() + 1);
+        for (int c = 0; c < columnCount(); ++c) x[c] = columnViewportPosition(c) - 1;
+        for (int r = 0; r < rowCount(); ++r) y[r] = rowViewportPosition(r) - 1;
+        x.last() = x[x.size() - 2] + columnWidth(columnCount() - 1);
+        y.last() = y[y.size() - 2] + rowHeight(rowCount() - 1);
+        QPainter painter(viewport());
+        drawLowerSheetBorders(painter, x, y);
+    }
+};
+
 // Source T-column blocks are bounded by explicit Excel borders, not gridlines.
 // Preserve each caption's source row even when the region is one large cell.
 class WorksheetLabelBlock final : public QWidget {
@@ -77,17 +233,18 @@ protected:
         for(int i=0;i<m_count;++i) {
             int sourceHeight=m_table->rowHeight(m_first+i);
             // Original T10:T11 centers its single caption over both rows.
-            if(m_column==19&&m_first==8&&i==1)sourceHeight+=m_table->rowHeight(m_first+i+1);
+            if(spansTwoRows(i))sourceHeight+=m_table->rowHeight(m_first+i+1);
             const qreal h=height()*qreal(sourceHeight)/qMax(1,total);
             const auto *item=m_table->item(m_first+i,m_column);
             const QString text=item?item->text():QString();
-            if(!text.isEmpty())p.drawText(QRectF(2,y,width()-4,h),Qt::AlignCenter,text);
+            drawSheetText(p, QRectF(sheetTextInset,y,width()-2*sheetTextInset,h), Qt::AlignCenter, text);
             y+=height()*qreal(m_table->rowHeight(m_first+i))/qMax(1,total);
         }
         p.setPen(QPen(Qt::black,1));
         p.drawRect(rect().adjusted(0,0,-1,-1));
     }
 private:
+    bool spansTwoRows(int i) const { return m_column == 19 && m_first == 8 && i == 1; }
     QTableWidget *m_table;
     int m_first,m_count,m_column;
     QStringList m_texts;
@@ -102,27 +259,54 @@ struct Field {
 // 原生单元格也在输入时提交给绑定源；同值回刷不重置光标/撤销历史。
 class LiveInputDelegate : public QStyledItemDelegate {
 public:
-    using QStyledItemDelegate::QStyledItemDelegate;
+    LiveInputDelegate(QObject *parent, std::function<bool(QLineEdit *)> submit)
+        : QStyledItemDelegate(parent), m_submit(std::move(submit)) {}
+
+    bool eventFilter(QObject *object, QEvent *event) override
+    {
+        auto *editor = qobject_cast<QLineEdit *>(object);
+        if (editor && isInputReturn(event)) {
+            if (!static_cast<QKeyEvent *>(event)->isAutoRepeat() && m_submit(editor)) {
+                emit commitData(editor);
+                emit closeEditor(editor, QAbstractItemDelegate::NoHint);
+            }
+            return true;
+        }
+        return QStyledItemDelegate::eventFilter(object, event);
+    }
     void paint(QPainter *painter, const QStyleOptionViewItem &option,
                const QModelIndex &index) const override
     {
-        if ((index.flags() & Qt::ItemIsEditable)
-                && index.data(Qt::BackgroundRole).value<QBrush>().color() == QColor("#FF00FF")) {
-            QStyleOptionViewItem local(option);
-            initStyleOption(&local, index);
-            // The application stylesheet's item rule hides model backgrounds.
-            // Draw editable cells through Qt's unstyled item renderer instead.
-            static QCommonStyle plainStyle;
-            plainStyle.drawControl(QStyle::CE_ItemViewItem, &local, painter);
-            return;
-        }
-        QStyledItemDelegate::paint(painter, option, index);
+        QStyleOptionViewItem local(option);
+        initStyleOption(&local, index);
+        const QString label = local.text;
+        local.text.clear();
+        const bool magenta = (index.flags() & Qt::ItemIsEditable)
+            && local.backgroundBrush.color() == QColor("#FF00FF");
+        // The application stylesheet hides model backgrounds on editable cells.
+        static QCommonStyle plainStyle;
+        const QStyle *style = magenta ? &plainStyle
+            : (option.widget ? option.widget->style() : QApplication::style());
+        style->drawControl(QStyle::CE_ItemViewItem, &local, painter, option.widget);
+
+        painter->save();
+        painter->setClipRect(local.rect, Qt::IntersectClip);
+        painter->setFont(local.font);
+        const auto group = !(local.state & QStyle::State_Enabled) ? QPalette::Disabled
+            : (local.state & QStyle::State_Active) ? QPalette::Active : QPalette::Inactive;
+        const auto role = local.state & QStyle::State_Selected ? QPalette::HighlightedText : QPalette::Text;
+        painter->setPen(local.palette.color(group, role));
+        drawSheetText(*painter, local.rect.adjusted(sheetTextInset, 0, -sheetTextInset, 0),
+                      int(local.displayAlignment), label);
+        painter->restore();
     }
     QWidget *createEditor(QWidget *parent, const QStyleOptionViewItem &option,
                           const QModelIndex &index) const override
     {
         auto *editor = QStyledItemDelegate::createEditor(parent, option, index);
         if (auto *line = qobject_cast<QLineEdit *>(editor)) {
+            line->setAlignment(Qt::AlignCenter);
+            line->setAlignment(Qt::AlignCenter);
             const QPersistentModelIndex persistent(index);
             connect(line, &QLineEdit::textEdited, line, [persistent](const QString &text) {
                 if (persistent.isValid()) const_cast<QAbstractItemModel *>(persistent.model())->setData(persistent, text, Qt::EditRole);
@@ -136,6 +320,9 @@ public:
         if (line && line->hasFocus() && line->text() == index.data(Qt::EditRole).toString()) return;
         QStyledItemDelegate::setEditorData(editor, index);
     }
+
+private:
+    std::function<bool(QLineEdit *)> m_submit;
 };
 
 // Semantic result key -> owning 计算单 address. Different worksheets are never aliased.
@@ -548,13 +735,14 @@ SchemeCalculationSheet::SchemeCalculationSheet(const TransformerParams &params,
     else if (input.hvCoilFormIdx == 2) sheetConfig.hvCoilStructure = StructureConfig::TwoSegCylinder;
     m_input->loadParamsForConfig(params, sheetConfig, input, true, false, true);
     m_input->hide();
-    m_results = new QTableWidget(this);
+    m_results = new CalculationSheetGrid(this);
     m_results->viewport()->installEventFilter(this);
-    m_results->setItemDelegate(new LiveInputDelegate(m_results));
+    m_results->setItemDelegate(new LiveInputDelegate(m_results,
+        [this](QLineEdit *editor) { return submitGridInput(editor); }));
     m_results->setColumnCount(12);
     m_results->horizontalHeader()->hide();
-    m_results->verticalHeader()->setDefaultSectionSize(28);
-    m_results->verticalHeader()->setMinimumSectionSize(26);
+    m_results->verticalHeader()->setDefaultSectionSize(sheetRowHeight);
+    m_results->verticalHeader()->setMinimumSectionSize(sheetRowHeight);
     m_results->setWordWrap(true); m_results->setTextElideMode(Qt::ElideNone);
     m_results->setSelectionBehavior(QAbstractItemView::SelectItems);
     m_results->setStyleSheet(QStringLiteral(
@@ -562,6 +750,7 @@ SchemeCalculationSheet::SchemeCalculationSheet(const TransformerParams &params,
         " selection-background-color:#CDE8D5; selection-color:#185C37;}"
         "QHeaderView::section {background:#E7F2EA; color:#185C37; border:1px solid #D3DDD6; padding:2px;}"
         "QLineEdit,QComboBox,QSpinBox,QDoubleSpinBox {background:#FF00FF; color:#24362B; border:1px solid #A8CDB3; padding:1px;}"
+        "QComboBox {background:#F0FAF2;}"
         "QLineEdit:focus,QComboBox:focus,QSpinBox:focus,QDoubleSpinBox:focus {border:1px solid #217346;}"
         "QLineEdit[readOnly=\"true\"] {background:white;}"
         "QLineEdit:disabled,QComboBox:disabled,QSpinBox:disabled,QDoubleSpinBox:disabled {background:white;}"
@@ -640,7 +829,7 @@ QWidget *SchemeCalculationSheet::mirrorEditor(QWidget *source)
 {
     QWidget *copy = nullptr;
     if (auto *s = qobject_cast<QComboBox *>(source)) {
-        auto *d = new QComboBox(m_results);
+        auto *d = new SheetComboBox(m_results);
         d->setModel(s->model()); d->setModelColumn(s->modelColumn()); d->setCurrentIndex(s->currentIndex());
         connect(d, &QComboBox::currentIndexChanged, s, [s,d](int index) {
             s->setCurrentIndex(index);
@@ -653,7 +842,7 @@ QWidget *SchemeCalculationSheet::mirrorEditor(QWidget *source)
         copy = d;
     } else if (auto *s = qobject_cast<QDoubleSpinBox *>(source)) {
         auto *d = new QDoubleSpinBox(m_results);
-        d->setAlignment(Qt::AlignRight);
+        d->setAlignment(Qt::AlignCenter);
         d->setDecimals(s->decimals()); d->setRange(s->minimum(), s->maximum()); d->setSingleStep(s->singleStep());
         d->setPrefix(s->prefix()); d->setSuffix(s->suffix()); d->setValue(s->value());
         connect(d, &QDoubleSpinBox::valueChanged, s, [s](double value) { s->setValue(value); });
@@ -661,7 +850,7 @@ QWidget *SchemeCalculationSheet::mirrorEditor(QWidget *source)
         copy = d;
     } else if (auto *s = qobject_cast<QSpinBox *>(source)) {
         auto *d = new QSpinBox(m_results);
-        d->setAlignment(Qt::AlignRight);
+        d->setAlignment(Qt::AlignCenter);
         d->setRange(s->minimum(), s->maximum()); d->setSingleStep(s->singleStep());
         d->setPrefix(s->prefix()); d->setSuffix(s->suffix()); d->setValue(s->value());
         connect(d, &QSpinBox::valueChanged, s, [s](int value) { s->setValue(value); });
@@ -669,6 +858,7 @@ QWidget *SchemeCalculationSheet::mirrorEditor(QWidget *source)
         copy = d;
     } else if (auto *s = qobject_cast<QLineEdit *>(source)) {
         auto *d = new QLineEdit(s->text(), m_results);
+        d->setAlignment(Qt::AlignCenter);
         d->setReadOnly(s->isReadOnly()); d->setPlaceholderText(s->placeholderText()); d->setValidator(s->validator());
         connect(d, &QLineEdit::textEdited, s, [s](const QString &text) {
             s->setText(text);
@@ -685,7 +875,9 @@ QWidget *SchemeCalculationSheet::mirrorEditor(QWidget *source)
         });
         copy = d;
     } else if (auto *s = qobject_cast<QLabel *>(source)) {
-        copy = new QLabel(s->text(), m_results);
+        auto *label = new QLabel(s->text(), m_results);
+        label->setAlignment(Qt::AlignCenter);
+        copy = label;
     } else if (source->layout()) {
         copy = new QWidget(m_results);
         auto *layout = new QHBoxLayout(copy);
@@ -724,7 +916,130 @@ bool SchemeCalculationSheet::eventFilter(QObject *source, QEvent *event)
             copy->setEnabled(widget->isEnabled()); copy->setVisible(!widget->isHidden()); copy->setToolTip(widget->toolTip());
         }
     }
+    if (isInputReturn(event)) {
+        auto *widget = qobject_cast<QWidget *>(source);
+        auto *spin = qobject_cast<QAbstractSpinBox *>(widget);
+        if (!spin && widget) spin = qobject_cast<QAbstractSpinBox *>(widget->parentWidget());
+        if (spin) widget = spin;
+        for (int i = 0; i < m_inputOrder.size(); ++i) {
+            const auto &stop = m_inputOrder[i];
+            if (!widget || stop.editor != widget) continue;
+            if (static_cast<QKeyEvent *>(event)->isAutoRepeat()) return true;
+            if (spin) {
+                if (!spin->hasAcceptableInput()) {
+                    showInputError(spin, QStringLiteral("请输入范围内的有效调压数值。"));
+                    return true;
+                }
+                spin->interpretText();
+            } else if (auto *line = qobject_cast<QLineEdit *>(widget)) {
+                if (!checkInputText(stop.row, stop.column, line)) return true;
+                emit line->returnPressed(); // Keep the existing model and low-voltage linkage.
+            }
+            advanceInput(i);
+            return true;
+        }
+    }
     return QWidget::eventFilter(source, event);
+}
+
+void SchemeCalculationSheet::buildInputOrder()
+{
+    m_inputOrder.clear();
+    const auto addEditor = [this](int row, int column, QWidget *widget) {
+        widget->installEventFilter(this);
+        if (auto *spin = qobject_cast<QAbstractSpinBox *>(widget)) {
+            if (auto *line = spin->findChild<QLineEdit *>()) line->installEventFilter(this);
+        }
+        m_inputOrder.append({row, column, false, widget});
+    };
+    addEditor(-1, 0, m_an3Raw);
+    for (const auto &binding : m_bindings) {
+        const int row = binding.cell->row();
+        const int column = binding.cell->column();
+        QWidget *widget = m_panelInputs.value(binding.cell).data();
+        if (!widget) widget = m_results->cellWidget(row, column);
+        if (!widget) {
+            m_inputOrder.append({row, column, true, nullptr});
+        } else if (qobject_cast<QLineEdit *>(widget) || qobject_cast<QAbstractSpinBox *>(widget)) {
+            addEditor(row, column, widget);
+        } else if (widget->layout() && !qobject_cast<QComboBox *>(widget)) {
+            // The three tap inputs share one worksheet cell. Follow the layout's order.
+            for (int i = 0; i < widget->layout()->count(); ++i)
+                if (auto *spin = qobject_cast<QAbstractSpinBox *>(widget->layout()->itemAt(i)->widget()))
+                    addEditor(row, column, spin);
+        }
+    }
+    const auto order = [](const InputStop &stop) {
+        return std::make_tuple(inputGroup(stop.row, stop.column), stop.row, stop.column);
+    };
+    std::stable_sort(m_inputOrder.begin(), m_inputOrder.end(),
+        [&](const InputStop &a, const InputStop &b) { return order(a) < order(b); });
+}
+
+bool SchemeCalculationSheet::checkInputText(int row, int column, QLineEdit *editor) const
+{
+    QString error;
+    if (editor == m_an3Raw) {
+        if (m_an3Invalid || !m_input->getParams().hasNonstandardAn3)
+            error = QStringLiteral("请输入大于0.34的有效数值。");
+    } else if (row == 0 && column == 5) {
+        if (!PerformanceCriteria::validModel(editor->text()))
+            error = QStringLiteral("请输入完整的产品型号，例如 SB20-M-630/10-0.4。");
+    } else {
+        for (const auto &binding : m_bindings) {
+            if (binding.cell->row() != row || binding.cell->column() != column) continue;
+            error = m_input->boundCellInputError(binding.row, binding.col, editor->text());
+            break;
+        }
+    }
+    if (error.isEmpty() && !editor->hasAcceptableInput()) error = QStringLiteral("请输入有效数值。");
+    if (error.isEmpty()) return true;
+    showInputError(editor, error);
+    return false;
+}
+
+bool SchemeCalculationSheet::submitGridInput(QLineEdit *editor)
+{
+    const int row = m_results->currentRow();
+    const int column = m_results->currentColumn();
+    if (!checkInputText(row, column, editor)) return false;
+    for (int i = 0; i < m_inputOrder.size(); ++i) {
+        const auto &stop = m_inputOrder[i];
+        if (stop.gridCell && stop.row == row && stop.column == column) {
+            // The delegate commits and closes the current editor before the next one opens.
+            QTimer::singleShot(0, this, [this, i] { advanceInput(i); });
+            break;
+        }
+    }
+    return true;
+}
+
+void SchemeCalculationSheet::advanceInput(int from)
+{
+    for (int i = from + 1; i < m_inputOrder.size(); ++i) {
+        const auto &stop = m_inputOrder[i];
+        if (stop.gridCell) {
+            auto *cell = m_results->item(stop.row, stop.column);
+            if (!cell || !(cell->flags() & Qt::ItemIsEditable) || !(cell->flags() & Qt::ItemIsEnabled)
+                || m_results->isRowHidden(stop.row) || m_results->isColumnHidden(stop.column)) continue;
+            m_results->setCurrentItem(cell);
+            m_results->scrollToItem(cell);
+            m_results->editItem(cell);
+            if (auto *line = qobject_cast<QLineEdit *>(QApplication::focusWidget())) line->selectAll();
+            return;
+        }
+        auto *editor = stop.editor.data();
+        if (!editor || !editor->isEnabled() || !editor->isVisibleTo(this)) continue;
+        auto *line = qobject_cast<QLineEdit *>(editor);
+        if (line && line->isReadOnly()) continue;
+        const bool tank = m_tankPanel && m_tankPanel->isAncestorOf(editor);
+        if (auto *anchor = m_results->item(tank ? 20 : stop.row, tank ? 4 : stop.column))
+            m_results->scrollToItem(anchor);
+        editor->setFocus(Qt::TabFocusReason);
+        if (line) line->selectAll();
+        if (auto *spin = qobject_cast<QAbstractSpinBox *>(editor)) spin->selectAll();
+        return;
+    }
 }
 
 void SchemeCalculationSheet::syncInputs()
@@ -775,9 +1090,7 @@ void SchemeCalculationSheet::syncInputs()
         const auto *source = m_input->item(b.row, b.col);
         if (!source) continue;
         b.cell->setText(source->text());
-        bool numeric = false;
-        source->text().toDouble(&numeric);
-        b.cell->setTextAlignment((numeric ? Qt::AlignRight : Qt::AlignLeft) | Qt::AlignVCenter);
+        b.cell->setTextAlignment(Qt::AlignCenter);
         auto flags = source->flags();
         if (m_input->cellWidget(b.row, b.col)) flags &= ~Qt::ItemIsEditable;
         b.cell->setFlags(flags);
@@ -850,7 +1163,7 @@ void SchemeCalculationSheet::rebuildSheet()
     m_results->clearSpans(); m_results->setRowCount(0);
     m_results->setColumnCount(38); m_results->setRowCount(54);
     m_tankPanel=new TankDimensionsPanel(m_results);
-    m_tankFormCombo=new QComboBox(m_tankPanel);
+    m_tankFormCombo=new TankFormComboBox(m_tankPanel);
     m_tankFormCombo->setObjectName(QStringLiteral("sheetTankForm"));
     m_tankFormCombo->addItem(QStringLiteral("波纹油箱"),0);
     m_tankFormCombo->addItem(QStringLiteral("片散油箱"),1);
@@ -865,7 +1178,7 @@ void SchemeCalculationSheet::rebuildSheet()
         auto *item = new QTableWidgetItem(text);
         item->setFlags(Qt::ItemIsEnabled | Qt::ItemIsSelectable);
         item->setTextAlignment(Qt::AlignCenter);
-        item->setToolTip(tip);
+        item->setToolTip(text.isEmpty() ? tip : tip.isEmpty() ? text : text + QLatin1Char('\n') + tip);
         m_results->setItem(row, col, item);
         return item;
     };
@@ -893,6 +1206,8 @@ void SchemeCalculationSheet::rebuildSheet()
             &&a[1].toInt()<19&&a[1].toInt()+a[3].toInt()>4)continue;
         m_results->setSpan(a[0].toInt(), a[1].toInt(), a[2].toInt(), a[3].toInt());
     }
+    m_results->setSpan(18,0,1,2); // Align the tank weight caption with the conservator above.
+    m_results->setSpan(18,0,1,2); // Align the tank weight caption with the conservator above.
     m_results->setSpan(20,4,7,15);
     m_results->setCellWidget(20,4,m_tankPanel);
     // Composite model and asymmetric taps need one continuous editing area.
@@ -906,8 +1221,6 @@ void SchemeCalculationSheet::rebuildSheet()
     cell(11,13,QStringLiteral("小圆心角")); cell(11,16,QStringLiteral("大圆心角"));
     cell(11,19,QStringLiteral("总层数 W12"));
     cell(17,5,QStringLiteral("几何值"),QStringLiteral("几何叠厚；不等同于片数取整后的实际叠厚"));
-    cell(22,29,QStringLiteral("箔厚×匝数＋层间绝缘（取整后）"));
-    cell(24,30,QStringLiteral("箔宽＋两端绝缘"));
     for (int i=0; i<5; ++i)
         cell(28+i,4,QStringLiteral("DE2%1　低压第%1油道折算厚").arg(i+1));
     for (int i=0; i<5; ++i)
@@ -916,9 +1229,10 @@ void SchemeCalculationSheet::rebuildSheet()
     QSet<QString> usedInputs;
     QSet<QString> representedAddresses;
     const auto bind = [&](int row, int col, const Field &f, bool withName) {
-        auto *value = cell(row,col,f.value,f.tip);
+        auto *value = cell(row, col, f.row < 0 && !f.key.isEmpty()
+            ? compactResultText(row, col, f.value) : f.value, f.tip);
         value->setForeground(QColor("#24362B"));
-        value->setTextAlignment(Qt::AlignRight | Qt::AlignVCenter);
+        value->setTextAlignment(f.row >= 0 ? Qt::AlignCenter : sheetResultAlignment(f.value));
         if (!f.key.isEmpty()) m_resultBindings.insert(f.key,value);
         if (f.row >= 0) {
             usedInputs.insert(QStringLiteral("%1/%2").arg(f.row).arg(f.col));
@@ -966,7 +1280,7 @@ void SchemeCalculationSheet::rebuildSheet()
     inputAt(QStringLiteral("F3"),QStringLiteral("指标来源模式"));
     // Original dropdowns; unsupported structures are selectable for inspection,
     // but inputsReady rejects them before either preview calculation or confirmation.
-    m_coreShapeCombo = new QComboBox(m_results);
+    m_coreShapeCombo = new SheetComboBox(m_results);
     const auto selection = m_input->calculationConfig();
     for (const auto shape : {StructureConfig::Circle, StructureConfig::LongRound, StructureConfig::Ellipse})
         m_coreShapeCombo->addItem(StructureConfig::coreShapeName(shape)
@@ -986,7 +1300,7 @@ void SchemeCalculationSheet::rebuildSheet()
         m_input->setCoreSelection(shape, m_input->calculationConfig().yokeShape);
         syncInputs(); markPending();
     });
-    m_yokeShapeCombo = new QComboBox(m_results);
+    m_yokeShapeCombo = new SheetComboBox(m_results);
     m_yokeShapeCombo->addItem(QStringLiteral("同心柱（暂不支持计算）"), int(StructureConfig::SameAsCore));
     m_yokeShapeCombo->addItem(QStringLiteral("T形轭"), int(StructureConfig::TYoke));
     int yokeIndex = m_yokeShapeCombo->findData(int(selection.yokeShape));
@@ -1063,7 +1377,7 @@ void SchemeCalculationSheet::rebuildSheet()
             representedAddresses.insert(f.key.section(QLatin1Char('\n'),1));
         }
     // Original workbook's high-voltage coil selector overlays AC9.
-    m_coilFormCombo=new QComboBox(m_results);
+    m_coilFormCombo=new SheetComboBox(m_results);
     m_coilFormCombo->setObjectName(QStringLiteral("sheetCoilForm"));
     m_coilFormCombo->addItem(QStringLiteral("圆筒式"),1);
     m_coilFormCombo->addItem(QStringLiteral("分段式"),2);
@@ -1123,12 +1437,8 @@ void SchemeCalculationSheet::rebuildSheet()
     for (int r=0; r<m_results->rowCount(); ++r)
         for (int c=0; c<38; ++c)
             if (!m_results->item(r,c)) cell(r,c,QString());
-    for (int r : {6,7,8,9,10,11,12,13,14,15,22,24,32,33,35,38,42,43,44,46,47,48,49,50,51,52,53})
-        m_results->setRowHeight(r,36);
-    int tankHeight=0;for(int r=20;r<=26;++r)tankHeight+=m_results->rowHeight(r);
-    const int extra=std::max(0,m_tankPanel->sizeHint().height()+8-tankHeight);
-    for(int r=20;r<=26;++r)m_results->setRowHeight(r,m_results->rowHeight(r)+(extra+6)/7);
-    syncInputs(); mergeFieldSpace(); fitColumnsToViewport(); fitTextRows();
+    syncInputs(); mergeFieldSpace(); fitColumnsToViewport();
+    buildInputOrder();
     m_results->verticalScrollBar()->setValue(scroll);
 }
 
@@ -1158,9 +1468,11 @@ void SchemeCalculationSheet::mergeFieldSpace()
     constexpr int rows=54,columns=38;
     QSet<int> leftBorders;
     const auto sourceLayout=QJsonDocument::fromJson(calculationSheetTemplate).object();
-    for(const auto &entry:sourceLayout.value(QStringLiteral("leftBorders")).toArray()) {
-        const auto boundary=entry.toArray();
-        leftBorders.insert(boundary[0].toInt()*columns+boundary[1].toInt());
+    for (const auto &key : {QStringLiteral("leftBorders"), QStringLiteral("windingBorders")}) {
+        for (const auto &entry : sourceLayout.value(key).toArray()) {
+            const auto boundary = entry.toArray();
+            leftBorders.insert(boundary[0].toInt() * columns + boundary[1].toInt());
+        }
     }
     QSet<QTableWidgetItem *> boundCells;
     for(const auto &binding:m_bindings)boundCells.insert(binding.cell);
@@ -1174,8 +1486,8 @@ void SchemeCalculationSheet::mergeFieldSpace()
     }
     for(int r=2;r<rows;++r)for(int c=0;c<columns;++c){
         // Keep the source workbook grid, including intentional blank cells,
-        // below row 26 and in the left weight/centre-distance block above it.
-        if(c==19||r>=26||(r>=22&&c<4))continue;
+        // below row 26, in the left weight block, and in both winding size blocks.
+        if(c==19||r>=26||(r>=22&&c<4)||(r>=21&&c>=20))continue;
         const int owner=r*columns+c;
         if(owners[owner]!=owner||m_results->rowSpan(r,c)!=1)continue;
         auto *item=m_results->item(r,c);
@@ -1185,7 +1497,7 @@ void SchemeCalculationSheet::mergeFieldSpace()
         const int boundary=c<19?19:c<29?29:columns;
         while(end<boundary){
             // Explicit source borders stop overflow even when the neighbour is empty.
-            if(c<19&&leftBorders.contains(r*columns+end-1))break;
+            if(leftBorders.contains(r*columns+end-1))break;
             const int next=r*columns+end;
             auto *neighbour=m_results->item(r,end);
             if(owners[next]!=next||m_results->rowSpan(r,end)!=1||m_results->columnSpan(r,end)!=1
@@ -1228,15 +1540,16 @@ void SchemeCalculationSheet::fitColumnsToViewport()
     const auto original=templateObject.value(QStringLiteral("widths")).toArray();
     QVector<int> minimum(38, 18);
     const QFontMetrics metrics(m_results->font());
-    const int numericWidth=metrics.horizontalAdvance(QStringLiteral("000.00"))+4;
+    const int numericWidth = metrics.horizontalAdvance(QStringLiteral("000.00")) + 4;
     for (int r=0;r<54;++r) for(int c=0;c<38;++c) {
         auto *item=m_results->item(r,c);
         if (!item || m_results->columnSpan(r,c)!=1 || m_results->rowSpan(r,c)!=1) continue;
-        bool isNumber=false; item->text().trimmed().toDouble(&isNumber);
-        if (isNumber || item->flags().testFlag(Qt::ItemIsEditable))
-            minimum[c]=std::max(minimum[c],numericWidth);
-        else {
-            const QString name=item->text().trimmed();
+        const QString name = item->text().trimmed();
+        bool isNumber = false;
+        name.toDouble(&isNumber);
+        if (isNumber || item->flags().testFlag(Qt::ItemIsEditable)) {
+            minimum[c] = std::max(minimum[c], numericWidth);
+        } else {
             if (!name.isEmpty() && name.size()<=3 && !name.contains(QLatin1Char('\n')))
                 minimum[c]=std::max(minimum[c],std::min(90,metrics.horizontalAdvance(name)+10));
         }
@@ -1247,12 +1560,42 @@ void SchemeCalculationSheet::fitColumnsToViewport()
     minimum[16]=std::max(minimum[16],metrics.horizontalAdvance(QStringLiteral("大圆心角"))+10);
     minimum[19]=std::max(minimum[19],metrics.horizontalAdvance(QStringLiteral("75℃电阻(Ω)"))+12);
     minimum[28]=std::max(minimum[28],metrics.horizontalAdvance(QStringLiteral("圆筒式"))+25);
-    // In a narrow window keep the full sheet visible; longer text can wrap vertically.
+    // Reserve horizontal space for the original core captions and winding label column.
+    QVector<int> compact(38, 8);
+    const auto reserveCaption = [&](int col, const QString &caption) {
+        const int width = metrics.horizontalAdvance(caption) + 2 * sheetTextInset + 1;
+        compact[col] = std::max(compact[col], width);
+        minimum[col] = std::max(minimum[col], width);
+    };
+    // The original weight captions occupy A:B. Leave C:D for the values.
+    const int weightCaptionWidth = metrics.horizontalAdvance(QStringLiteral("冷却装置油重"))
+        + 2 * sheetTextInset + 1;
+    reserveCaption(0, QStringLiteral("相间距"));
+    compact[1] = std::max(compact[1], weightCaptionWidth - compact[0]);
+    minimum[1] = std::max(minimum[1], compact[1]);
+    reserveCaption(11, QStringLiteral("椭圆角"));
+    reserveCaption(16, QStringLiteral("大圆心角"));
+    reserveCaption(19, QStringLiteral("电密(A/mm²)"));
+    reserveCaption(17, QStringLiteral("交接点高"));
+    compact[8] = metrics.horizontalAdvance(QStringLiteral("000.00")) + 12;
+    // The two duct captions occupy the original AD:AE span.
+    const int ductCaptionWidth = metrics.horizontalAdvance(QStringLiteral("主空道宽")) + 2 * sheetTextInset + 1;
+    for (int c : {29, 30}) {
+        compact[c] = std::max(compact[c], (ductCaptionWidth + 1) / 2);
+        minimum[c] = std::max(minimum[c], compact[c]);
+    }
+    // The other columns share the compression before these captions need to wrap.
     int minSum=0; for(int v:minimum)minSum+=v;
     if (minSum>available) {
-        const int fixed=38*8;
-        const double ratio=double(available-fixed)/double(minSum-fixed);
-        for(int &v:minimum)v=8+int((v-8)*ratio);
+        int fixed = 0;
+        for (int width : compact) fixed += width;
+        if (fixed >= available) {
+            compact.fill(8);
+            fixed = 38 * 8;
+        }
+        const double ratio = double(available-fixed) / double(minSum-fixed);
+        for (int c = 0; c < minimum.size(); ++c)
+            minimum[c] = compact[c] + int((minimum[c] - compact[c]) * ratio);
         minSum=0;for(int v:minimum)minSum+=v;
     }
     double totalWeight=0.0;
@@ -1266,40 +1609,17 @@ void SchemeCalculationSheet::fitColumnsToViewport()
     }
     for(int i=0;used<available;++i,++used)++widths[i%38];
     for(int c=0;c<38;++c)if(m_results->columnWidth(c)!=widths[c])m_results->setColumnWidth(c,widths[c]);
-    // Recalculate heights from the baseline on every resize so a temporarily
-    // narrow window does not leave permanently oversized rows after widening.
-    for(int r=0;r<54;++r)m_results->setRowHeight(r,28);
-    for(int r : {6,7,8,9,10,11,12,13,14,15,22,24,32,33,35,38,42,43,44,46,47,48,49,50,51,52,53})
-        m_results->setRowHeight(r,36);
-    if(m_tankPanel) {
-        int height=0;for(int r=20;r<=26;++r)height+=m_results->rowHeight(r);
-        const int extra=std::max(0,m_tankPanel->sizeHint().height()+8-height);
-        for(int r=20;r<=26;++r)m_results->setRowHeight(r,m_results->rowHeight(r)+(extra+6)/7);
-    }
-    fitTextRows();
+    fitTankRows();
 }
 
-void SchemeCalculationSheet::fitTextRows()
+void SchemeCalculationSheet::fitTankRows()
 {
-    // Keep editor instances and current row positions; only grow a row when a
-    // current value/description needs more space. Refreshes never rebuild it.
-    const int rows=m_results->rowCount(),columns=m_results->columnCount();
-    QVector<bool> covered(rows*columns,false);
-    for(int r=0;r<rows;++r)for(int c=0;c<columns;++c){
-        if(covered[r*columns+c])continue;
-        const int height=m_results->rowSpan(r,c),width=m_results->columnSpan(r,c);
-        int pixels=0,available=0;
-        for(int x=c;x<c+width;++x)pixels+=m_results->columnWidth(x);
-        for(int y=r;y<r+height;++y){available+=m_results->rowHeight(y);for(int x=c;x<c+width;++x)covered[y*columns+x]=true;}
-        int needed=0;
-        if(auto *widget=m_results->cellWidget(r,c))needed=widget->sizeHint().height()+4;
-        else if(auto *item=m_results->item(r,c)){
-            const QFontMetrics metrics(item->font());
-            needed=metrics.boundingRect(QRect(0,0,std::max(1,pixels-12),100000),
-                Qt::TextWordWrap|Qt::TextWrapAnywhere,item->text()).height()+10;
-        }
-        if(needed>available)m_results->setRowHeight(r+height-1,m_results->rowHeight(r+height-1)+needed-available);
-    }
+    if (!m_tankPanel) return;
+    constexpr int first = 20;
+    constexpr int count = 7;
+    const int needed = m_tankPanel->sizeHint().height() + 8;
+    const int height = std::max(sheetRowHeight, (needed + count - 1) / count);
+    for (int r = first; r < first + count; ++r) m_results->setRowHeight(r, height);
 }
 
 void SchemeCalculationSheet::markPending()
@@ -1326,7 +1646,7 @@ void SchemeCalculationSheet::markPending()
             m_partialActive = false;
         }
         m_partialStatus.clear();
-        m_resultStatus->setText(QStringLiteral("品红色：可输入　白色：只读　输入已修改，正在自动更新；旧结果暂未刷新"));
+        m_resultStatus->setText(QStringLiteral("品红色：可输入　浅绿色：下拉选择　白色：只读　输入已修改，正在自动更新；旧结果暂未刷新"));
         updateTankPanel();
         if(m_tankPanel)m_tankPanel->setCalculationStatus(QStringLiteral("参数已修改，尺寸待重算；旧值仅供查看。"));
     }
@@ -1337,7 +1657,7 @@ void SchemeCalculationSheet::refreshInputValues()
 {
     syncInputs();
     refreshPartialPreview();
-    fitTextRows();
+    fitTankRows();
 }
 
 bool SchemeCalculationSheet::refreshPartialPreview()
@@ -1359,7 +1679,7 @@ bool SchemeCalculationSheet::refreshPartialPreview()
         }
         m_resultStatus->setText(selectionError);updateTankPanel();
         if(m_tankPanel)m_tankPanel->setCalculationStatus(selectionError);
-        fitTextRows();return true;
+        fitTankRows();return true;
     }
     const auto config = m_input->calculationConfig();
     if (!segmentPreview && config.coreShape == StructureConfig::Ellipse && config.yokeShape == StructureConfig::TYoke) return false;
@@ -1381,9 +1701,10 @@ bool SchemeCalculationSheet::refreshPartialPreview()
         const auto number = partial.values.constFind(address);
         QString value = QStringLiteral("待核对");
         if (partial.texts.contains(address)) value = partial.texts.value(address);
-        else if (number != partial.values.cend()) value = QString::number(number->first, 'f', number->second);
+        else if (number != partial.values.cend())
+            value = compactResultText(cell->row(), cell->column(), QString::number(number->first, 'f', number->second));
         cell->setText(value);
-        cell->setTextAlignment((number != partial.values.cend() ? Qt::AlignRight : Qt::AlignLeft) | Qt::AlignVCenter);
+        cell->setTextAlignment(sheetResultAlignment(value));
         cell->setForeground(QColor(number != partial.values.cend() ? "#185C37" : "#93642E"));
         cell->setToolTip(address + QLatin1Char('\n') + scope + QLatin1Char('\n')
             + partial.note + QLatin1Char('\n') + partial.error);
@@ -1410,7 +1731,7 @@ bool SchemeCalculationSheet::refreshPartialPreview()
             ? QStringLiteral("分段式尺寸预览，仅供核对，非整机确认。")
             : QStringLiteral("当前结构仅部分联动，油箱尺寸待核对。"));
     }
-    fitTextRows();
+    fitTankRows();
     return true;
 }
 
@@ -1546,7 +1867,7 @@ void SchemeCalculationSheet::refreshSupplementDetails()
         coreHtml+=QStringLiteral("</table>");
         if(m_snapshot.calculationSheetDetails.contains(QStringLiteral("CoreWeightCenter"))){
             const auto value=[this](const char *key){return m_snapshot.calculationSheetDetails.value(QString::fromLatin1(key)).first;};
-            coreHtml+=QStringLiteral("<h3>铁芯分项重量核对</h3><p>窗高：%1 mm；中心距：%2 mm；固定默认中心距附加量：%3 mm；固定默认层绝缘计算系数：%4（SB20规则）。</p><p>心柱合重：%5 kg；铁轭重：%6 kg；铁芯总重（取整）：%7 kg。</p><table border='1' cellspacing='0' cellpadding='5'><tr><th>级次</th><th>轭片宽(mm)</th><th>轭阶梯(mm)</th><th>外柱重(kg)</th><th>中柱重(kg)</th><th>铁轭重(kg)</th></tr>")
+            coreHtml+=QStringLiteral("<h3>铁芯分项重量核对</h3><p>窗高：%1 mm；中心距：%2 mm；固定默认中心距附加量：%3 mm；高压层间绝缘场强上限：%4 V/mm。</p><p>心柱合重：%5 kg；铁轭重：%6 kg；铁芯总重（取整）：%7 kg。</p><table border='1' cellspacing='0' cellpadding='5'><tr><th>级次</th><th>轭片宽(mm)</th><th>轭阶梯(mm)</th><th>外柱重(kg)</th><th>中柱重(kg)</th><th>铁轭重(kg)</th></tr>")
                 .arg(value("CoreWeightWindow"),0,'g',15).arg(value("CoreWeightCenter"),0,'g',15)
                 .arg(value("CoreCenterAllowance"),0,'g',15).arg(value("HVLayerCalcFactor"),0,'g',15)
                 .arg(m_snapshot.core.coreLegsWeight_kg,0,'f',2).arg(m_snapshot.core.yokesWeight_kg,0,'f',2).arg(m_snapshot.core.coreWeight_kg,0,'f',0);
@@ -1627,17 +1948,17 @@ void SchemeCalculationSheet::refreshResult(const CalcResult &result)
             for (auto *cell : cells) {
             cell->setForeground(QColor("#24362B"));
             const QString value = row.value(1) + (row.value(2).isEmpty() ? QString() : QLatin1Char(' ') + row.value(2));
-            cell->setText(value); cell->setToolTip(row.value(0) + QStringLiteral("\n计算值（只读）：") + value
+            cell->setText(compactResultText(cell->row(), cell->column(), value));
+            cell->setToolTip(row.value(0) + QStringLiteral("\n计算值（只读）：") + value
                 + (row.value(3).isEmpty() ? QString() : QLatin1Char('\n') + row.value(3)));
-            bool numeric = false; row.value(1).toDouble(&numeric);
-            cell->setTextAlignment((numeric ? Qt::AlignRight : Qt::AlignLeft) | Qt::AlignVCenter);
+            cell->setTextAlignment(sheetResultAlignment(value));
             }
         }
     }
-    m_resultStatus->setText(QStringLiteral("原计算单布局　品红色：可输入　白色：只读　已按当前参数自动计算；— 表示该字段未接入，不能用于判定"));
+    m_resultStatus->setText(QStringLiteral("原计算单布局　品红色：可输入　浅绿色：下拉选择　白色：只读　已按当前参数自动计算；— 表示该字段未接入，不能用于判定"));
     updateTankPanel();
     if(m_tankPanel)m_tankPanel->setCalculationStatus(result.valid?QString():QStringLiteral("尺寸不可用，待重新计算。"));
-    fitTextRows();
+    fitTankRows();
 }
 
 void SchemeCalculationSheet::loadResult(const CalcResult &result)
@@ -1650,7 +1971,7 @@ void SchemeCalculationSheet::loadResult(const CalcResult &result)
     if (refreshPartialPreview()) return;
     m_partialActive = false;
     m_partialStatus.clear();
-    m_resultStatus->setText(result.valid ? QStringLiteral("原计算单布局　品红色：可输入　白色：只读　—：未接入当前方案数据（悬停查看）；其他参数可在顶部查看")
+    m_resultStatus->setText(result.valid ? QStringLiteral("原计算单布局　品红色：可输入　浅绿色：下拉选择　白色：只读　—：未接入当前方案数据（悬停查看）；其他参数可在顶部查看")
         : QStringLiteral("计算结果不可用，修改参数后自动计算；品红色单元格可输入"));
     updateTankPanel();
     if(m_tankPanel)m_tankPanel->setCalculationStatus(result.valid?QString():QStringLiteral("尺寸不可用，待重新计算。"));
@@ -1680,6 +2001,7 @@ void SchemeCalculationSheet::setSupplementParametersVisible(bool visible)
 
 void SchemeCalculationSheet::setOutputMode()
 {
+    m_inputOrder.clear();
     // Keep only the worksheet. AN3 and supplement controls belong to editing.
     for (auto *child : findChildren<QWidget *>(QString(), Qt::FindDirectChildrenOnly))
         if (child != m_results) child->hide();
@@ -1691,7 +2013,7 @@ void SchemeCalculationSheet::setOutputMode()
     m_results->setSelectionMode(QAbstractItemView::NoSelection);
     m_results->verticalHeader()->hide();
     m_results->setStyleSheet(QStringLiteral(
-        "QTableWidget {background:white; color:black; font-size:13px; gridline-color:#777; border:1px solid black;}"
+        "QTableWidget {background:white; color:black; font-size:13px; gridline-color:#C9D8CE; border:1px solid black;}"
         "QLabel {background:white; color:black;}"));
     for (int r = 0; r < m_results->rowCount(); ++r) {
         for (int c = 0; c < m_results->columnCount(); ++c) {
@@ -1756,7 +2078,7 @@ void SchemeCalculationSheet::printTo(QPrinter *printer) const
         for (int rr=r;rr<r+rs;++rr) for (int cc=c;cc<c+cs;++cc) covered[rr*cols+cc]=true;
         const QRectF rect(x[c],y[r],x[c+cs]-x[c],y[r+rs]-y[r]);
         painter.fillRect(rect,Qt::white);
-        painter.setPen(QPen(Qt::black,0.6));
+        painter.setPen(QPen(r >= 26 ? QColor("#D5D5D5") : QColor(Qt::black), 0.6));
         painter.drawRect(rect);
         if (auto *widget=m_results->cellWidget(r,c)) {
             const QRectF contentRect = widget->property("worksheetLabelBlock").toBool()
@@ -1772,9 +2094,12 @@ void SchemeCalculationSheet::printTo(QPrinter *printer) const
             imagePainter.end();
             painter.drawImage(contentRect,image);
         } else if (auto *cell=m_results->item(r,c)) {
-            painter.drawText(rect.adjusted(3,2,-3,-2),Qt::AlignCenter|Qt::TextWordWrap,cell->text());
+            painter.setPen(Qt::black);
+            drawSheetText(painter, rect.adjusted(sheetTextInset, 0, -sheetTextInset, 0),
+                          int(cell->textAlignment()), cell->text());
         }
     }
+    if (rows == 54 && cols == 38) drawLowerSheetBorders(painter, x, y);
 }
 
 

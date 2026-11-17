@@ -51,9 +51,20 @@ signals:
 private:
     bool eventFilter(QObject *source, QEvent *event) override;
     QWidget *mirrorEditor(QWidget *source);
+    void buildInputOrder();
+    bool submitGridInput(QLineEdit *editor);
+    bool checkInputText(int row, int column, QLineEdit *editor) const;
+    void advanceInput(int from);
+    struct InputStop {
+        int row;
+        int column;
+        bool gridCell;
+        QPointer<QWidget> editor;
+    };
+    QVector<InputStop> m_inputOrder;
     void rebuildSheet();
     void mergeFieldSpace();
-    void fitTextRows();
+    void fitTankRows();
     void fitColumnsToViewport();
     bool m_columnFitPending = false;
     void updateTankPanel(const QMap<QString, QPair<double, int>> *overrides = nullptr);

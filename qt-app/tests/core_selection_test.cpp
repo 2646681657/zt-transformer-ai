@@ -7,6 +7,7 @@
 #include "ParamTableWidget.h"
 #include "SchemeCalculationSheet.h"
 #include <QApplication>
+#include <QWheelEvent>
 #include <QComboBox>
 #include <QDebug>
 #include <QTableWidget>
@@ -863,6 +864,12 @@ int main(int argc, char **argv)
                                "Widening the window must restore compact row heights");
                 }
                 check(grid->horizontalScrollBar()->maximum()==0,"Sheet should fit without horizontal scrolling");
+                for (int row = 0; row < grid->rowCount(); ++row)
+                    if (row < 20 || row > 26)
+                        check(grid->rowHeight(row) == 26, "Ordinary worksheet rows must have a uniform height");
+                check(grid->rowSpan(6, 8) == 2 && grid->rowSpan(6, 12) == 2
+                          && grid->visualItemRect(grid->item(6, 8)).height() == 51,
+                      "Performance headers must occupy two ordinary worksheet rows, excluding the grid line");
                 check(grid->visualItemRect(grid->item(11,37)).right()<=grid->viewport()->width(),
                       "The rightmost cell should remain in the viewport");
                 check(grid->item(29,23)->flags().testFlag(Qt::ItemIsEditable),
@@ -997,6 +1004,22 @@ int main(int argc, char **argv)
     check(linkedGrid != nullptr, "Missing original worksheet grid");
     if (linkedGrid) {
         check(linkedGrid->rowCount() == 54, "Original sheet must have exactly 54 rows");
+        check((linkedGrid->item(22, 29)->textAlignment() & Qt::AlignLeft)
+                  && linkedGrid->item(22, 36)->textAlignment() == Qt::AlignCenter
+                  && linkedGrid->item(24, 34)->textAlignment() == Qt::AlignCenter,
+              "Winding expressions must be left aligned and their results and inputs centered");
+        for (int row = 21; row <= 27; ++row) {
+            check(linkedGrid->columnSpan(row, 22) == 2 && linkedGrid->columnSpan(row, 26) == 2
+                      && linkedGrid->columnSpan(row, 24) == 1 && linkedGrid->item(row, 24)->text().isEmpty(),
+                  "High-voltage winding values must leave the original blank Y column between them");
+        }
+        check(linkedGrid->columnSpan(21, 29) == 3 && linkedGrid->columnSpan(23, 29) == 3
+                  && linkedGrid->columnSpan(25, 34) == 2,
+              "Low-voltage winding captions and insulation must keep the workbook spans");
+        check(linkedGrid->item(22, 29)->text().startsWith(QLatin1Char('('))
+                  && linkedGrid->item(22, 29)->text().endsWith(QLatin1Char('='))
+                  && linkedGrid->item(24, 30)->text().endsWith(QStringLiteral(" + 2×")),
+              "Low-voltage radial and axial cells must show the substituted workbook expressions");
         auto *supplement = linked.findChild<QPushButton *>(QStringLiteral("supplementParametersButton"));
         auto *source = linked.inputTable();
         int seamRow = -1, lossLimitRow = -1;
@@ -1183,6 +1206,11 @@ int main(int argc, char **argv)
                   &&tankForm->itemText(1)==QStringLiteral("片散油箱"),
               "Tank form must expose the two original workbook dropdown choices");
         if(tankForm){
+            const QPoint center = tankForm->rect().center();
+            QWheelEvent wheel(center, tankForm->mapToGlobal(center), QPoint(), QPoint(0, -120),
+                              Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
+            QApplication::sendEvent(tankForm, &wheel);
+            check(tankForm->currentIndex() == 0, "Scrolling over a closed tank selector must keep the default tank");
             CalcInput before;linked.inputTable()->saveToInput(before);
             tankForm->setCurrentIndex(1);QString error;
             check(!linked.inputsReady(error)&&error.contains(QStringLiteral("片散油箱")),
@@ -1213,8 +1241,8 @@ int main(int argc, char **argv)
               "Sketch annotations must preserve Q22 rim-height and Q26 top-oil-clearance meanings");
         check(linkedGrid->columnSpan(16,23)==6 && linkedGrid->columnSpan(16,33)==5,
               "Mean-turn-length fields must each use one continuous cell without blank grid subdivisions");
-        check(linkedGrid->columnSpan(18,0)==1 && linkedGrid->columnSpan(18,1)==1,
-              "Tank accessory weight label must preserve the source A19 single-column boundary");
+        check(linkedGrid->columnSpan(18,0)==2 && linkedGrid->columnSpan(18,2)==2,
+              "Tank accessory weight caption must align with the conservator caption above");
         check(linkedGrid->wordWrap() && linkedGrid->textElideMode()==Qt::ElideNone,
               "Worksheet text must wrap rather than disappear behind ellipses");
         check(linkedGrid->columnWidth(8)>=linkedGrid->fontMetrics().horizontalAdvance("000.00")+12,
